@@ -9,6 +9,7 @@ import {
   type AppSettings,
   type SettingsPatch
 } from '@shared/settings'
+import { registerStickyNotesHandlers } from './sticky-notes'
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
@@ -488,6 +489,7 @@ app.whenReady().then(() => {
 
   settings = loadSettingsFromDisk()
   applySettingsToRuntime()
+  registerStickyNotesHandlers()
 
   ipcMain.handle('settings:get', () => settings)
   ipcMain.handle('settings:update', (_, patch: SettingsPatch) => {

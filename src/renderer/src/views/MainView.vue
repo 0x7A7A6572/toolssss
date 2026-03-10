@@ -5,6 +5,7 @@ const router = useRouter()
 const route = useRoute()
 
 const tabs = [
+  { id: 'StickyNotes', label: '便签工具', path: '/sticky-notes' },
   { id: 'EyeProtection', label: '护眼工具', path: '/eye-protection' },
   { id: 'OtherTools', label: '其他工具（预留）', path: '/other-tools' }
 ]
