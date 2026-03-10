@@ -1,13 +1,43 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { DEFAULT_SETTINGS, type AppSettings, type SettingsPatch } from '@shared/settings'
+import { Eye } from 'lucide-vue-next'
 
 const settings = ref<AppSettings>(structuredClone(DEFAULT_SETTINGS))
 const saving = ref(false)
+const breakNextAt = ref<number | null>(null)
+const nowMs = ref(Date.now())
+let timer: number | null = null
+
+function formatCountdown(targetAt: number | null, now: number): string {
+  if (targetAt === null) return '—'
+  const diff = targetAt - now
+  if (diff <= 0) return '即将提醒'
+  const totalSeconds = Math.ceil(diff / 1000)
+  const h = Math.floor(totalSeconds / 3600)
+  const m = Math.floor((totalSeconds % 3600) / 60)
+  const s = totalSeconds % 60
+  if (h > 0) return `${h}小时${String(m).padStart(2, '0')}分${String(s).padStart(2, '0')}秒`
+  return `${m}分${String(s).padStart(2, '0')}秒`
+}
+
+const breakCountdownText = computed(() => {
+  if (!settings.value.break.enabled) return '未开启'
+  return formatCountdown(breakNextAt.value, nowMs.value)
+})
+
+async function refreshBreakStatus(): Promise<void> {
+  const result = await window.electron.ipcRenderer.invoke('break:status:get')
+  if (result && typeof result === 'object') {
+    const nextAt = (result as { nextAt?: unknown }).nextAt
+    breakNextAt.value = typeof nextAt === 'number' ? nextAt : null
+  }
+}
 
 async function refresh(): Promise<void> {
   const result = await window.electron.ipcRenderer.invoke('settings:get')
   settings.value = result as AppSettings
+  refreshBreakStatus().catch(() => null)
 }
 
 async function update(patch: SettingsPatch): Promise<void> {
@@ -15,13 +45,37 @@ async function update(patch: SettingsPatch): Promise<void> {
   try {
     const result = await window.electron.ipcRenderer.invoke('settings:update', patch)
     settings.value = result as AppSettings
+    refreshBreakStatus().catch(() => null)
   } finally {
     saving.value = false
   }
 }
 
+async function previewBreak(): Promise<void> {
+  await window.electron.ipcRenderer.invoke('alarm:preview', { reason: 'break' })
+}
+
+const onBreakStatus = (_: unknown, payload: unknown): void => {
+  if (!payload || typeof payload !== 'object') return
+  const nextAt = (payload as { nextAt?: unknown }).nextAt
+  breakNextAt.value = typeof nextAt === 'number' ? nextAt : null
+}
+
 onMounted(() => {
   refresh().catch(() => null)
+  timer = window.setInterval(() => {
+    nowMs.value = Date.now()
+  }, 1000)
+  refreshBreakStatus().catch(() => null)
+  window.electron.ipcRenderer.on('break:status', onBreakStatus)
+})
+
+onBeforeUnmount(() => {
+  if (timer !== null) {
+    window.clearInterval(timer)
+    timer = null
+  }
+  window.electron.ipcRenderer.removeListener('break:status', onBreakStatus)
 })
 </script>
 
@@ -143,19 +197,26 @@ onMounted(() => {
     <div class="row-group">
       <section class="card">
         <div class="card-head">
-          <div class="card-title">定时休息（全屏提示）</div>
-          <label class="switch">
-            <input
-              type="checkbox"
-              :checked="settings.break.enabled"
-              @change="
-                update({
-                  break: { enabled: ($event.target as HTMLInputElement).checked }
-                })
-              "
-            />
-            <span class="slider" />
-          </label>
+          <div class="card-title">
+            <span>定时休息</span>
+            <div class="preview-btn" type="button" title="预览" @click="previewBreak">
+              <Eye :size="14" />
+            </div>
+          </div>
+          <div class="card-actions">
+            <label class="switch">
+              <input
+                type="checkbox"
+                :checked="settings.break.enabled"
+                @change="
+                  update({
+                    break: { enabled: ($event.target as HTMLInputElement).checked }
+                  })
+                "
+              />
+              <span class="slider" />
+            </label>
+          </div>
         </div>
         <div class="row">
           <div class="label">间隔</div>
@@ -175,6 +236,25 @@ onMounted(() => {
             <option value="90">1.5 小时</option>
             <option value="120">2 小时</option>
           </select>
+        </div>
+        <div class="row">
+          <div class="label">倒计时</div>
+          <div class="countdown">{{ breakCountdownText }}</div>
+        </div>
+        <div class="row">
+          <div class="label">全屏不提醒</div>
+          <label class="switch">
+            <input
+              type="checkbox"
+              :checked="settings.break.disableInFullscreen"
+              @change="
+                update({
+                  break: { disableInFullscreen: ($event.target as HTMLInputElement).checked }
+                })
+              "
+            />
+            <span class="slider" />
+          </label>
         </div>
       </section>
 
@@ -240,6 +320,9 @@ onMounted(() => {
 }
 
 .card-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-size: 14px;
   font-weight: 700;
   color: var(--ev-c-text-1);
@@ -250,6 +333,29 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.preview-btn {
+  padding: 3px 8px;
+  border-radius: 3px;
+  color: var(--ev-c-text-1);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
+.preview-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .row {
@@ -268,6 +374,13 @@ onMounted(() => {
   font-size: 12px;
   color: var(--ev-c-text-2);
   min-width: 44px;
+  text-align: right;
+}
+
+.countdown {
+  grid-column: 2 / span 2;
+  font-size: 12px;
+  color: var(--ev-c-text-2);
   text-align: right;
 }
 

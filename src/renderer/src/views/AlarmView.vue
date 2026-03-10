@@ -72,7 +72,7 @@ onBeforeUnmount(() => {
       <div class="body">{{ body }}</div>
       <div class="actions">
         <button v-if="showSnooze" class="btn" type="button" @click="snooze">稍后 5 分钟</button>
-        <button class="btn primary" type="button" @click="close">关闭</button>
+        <button class="btn" type="button" @click="close">关闭</button>
       </div>
       <div class="hint">按 Esc 也可以关闭</div>
     </div>
@@ -86,17 +86,17 @@ onBeforeUnmount(() => {
   display: grid;
   place-items: center;
   background:
-    radial-gradient(circle at 30% 20%, rgba(59, 130, 246, 0.25), transparent 55%),
+    radial-gradient(circle at 30% 20%, rgba(227, 246, 59, 0.25), transparent 55%),
     radial-gradient(circle at 70% 80%, rgba(249, 115, 22, 0.22), transparent 55%),
-    rgba(0, 0, 0, 0.92);
+    rgba(1, 207, 125, 0.373);
 }
 
 .card {
   width: min(720px, calc(100vw - 80px));
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  /* border: 1px solid rgba(255, 255, 255, 0.12); */
   border-radius: 16px;
   padding: 28px;
-  background: rgba(17, 24, 39, 0.75);
+  /* background: rgba(17, 24, 39, 0.75); */
   backdrop-filter: blur(20px);
   display: flex;
   flex-direction: column;
@@ -108,7 +108,7 @@ onBeforeUnmount(() => {
   font-weight: 800;
   letter-spacing: 0.02em;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 12px;
 }
 
@@ -120,7 +120,7 @@ onBeforeUnmount(() => {
 .countdown {
   font-size: 16px;
   color: rgba(255, 255, 255, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  /* border: 1px solid rgba(255, 255, 255, 0.25); */
   padding: 2px 8px;
   border-radius: 999px;
 }
@@ -144,15 +144,6 @@ onBeforeUnmount(() => {
 
 .btn:hover {
   background: rgba(255, 255, 255, 0.1);
-}
-
-.primary {
-  border-color: rgba(59, 130, 246, 0.55);
-  background: rgba(59, 130, 246, 0.35);
-}
-
-.primary:hover {
-  background: rgba(59, 130, 246, 0.45);
 }
 
 .hint {

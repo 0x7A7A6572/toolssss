@@ -1,4 +1,8 @@
+import { exec } from 'child_process'
+import { promisify } from 'util'
 import { app, shell, BrowserWindow, ipcMain, screen, Tray, Menu, globalShortcut } from 'electron'
+
+const execAsync = promisify(exec)
 import { readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -23,6 +27,21 @@ let dailyAlarmTimer: NodeJS.Timeout | undefined
 let breakTimer: NodeJS.Timeout | undefined
 let snoozeTimer: NodeJS.Timeout | undefined
 let lastAlarmPayload: { reason: AlarmReason; title: string; body: string } | null = null
+let breakNextAt: number | null = null
+
+function getBreakStatus(): { enabled: boolean; intervalMinutes: number; nextAt: number | null } {
+  return {
+    enabled: settings.break.enabled,
+    intervalMinutes: settings.break.intervalMinutes,
+    nextAt: breakNextAt
+  }
+}
+
+function broadcastBreakStatus(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  if (mainWindow.webContents.isLoading()) return
+  mainWindow.webContents.send('break:status', getBreakStatus())
+}
 
 function clampNumber(value: number, min: number, max: number): number {
   if (Number.isNaN(value) || !Number.isFinite(value)) return min
@@ -77,6 +96,10 @@ function normalizeSettings(input: unknown): AppSettings {
 
   base.break.enabled = Boolean(obj.break?.enabled)
   base.break.intervalMinutes = clampNumber(Number(obj.break?.intervalMinutes), 5, 240)
+  base.break.disableInFullscreen =
+    typeof obj.break?.disableInFullscreen === 'boolean'
+      ? obj.break.disableInFullscreen
+      : base.break.disableInFullscreen
 
   return base
 }
@@ -114,6 +137,8 @@ function applySettingsPatch(patch: unknown): AppSettings {
     if (typeof p.break.enabled === 'boolean') next.break.enabled = p.break.enabled
     if (typeof p.break.intervalMinutes === 'number')
       next.break.intervalMinutes = p.break.intervalMinutes
+    if (typeof p.break.disableInFullscreen === 'boolean')
+      next.break.disableInFullscreen = p.break.disableInFullscreen
   }
   {
     const rsv = (p as { reminderSeconds?: unknown }).reminderSeconds
@@ -266,10 +291,18 @@ function ensureBreakTimer(): void {
   if (breakTimer) clearInterval(breakTimer)
   breakTimer = undefined
 
-  if (!settings.break.enabled) return
+  if (!settings.break.enabled) {
+    breakNextAt = null
+    broadcastBreakStatus()
+    return
+  }
   const intervalMs = settings.break.intervalMinutes * 60 * 1000
+  breakNextAt = Date.now() + intervalMs
+  broadcastBreakStatus()
   breakTimer = setInterval(() => {
     triggerAlarm('break')
+    breakNextAt = Date.now() + intervalMs
+    broadcastBreakStatus()
   }, intervalMs)
 }
 
@@ -283,7 +316,73 @@ function triggerAlarm(reason: AlarmReason): void {
   const body =
     reason === 'alarm' ? `现在时间：${settings.alarm.time}` : `休息一下，看看远处 20 秒，眨眨眼。`
 
+  if (reason === 'break' && settings.break.disableInFullscreen) {
+    // Simple check: if the last active window is fullscreen.
+    // Since we can't easily check other apps, we'll skip this check for now or use a heuristic.
+    // Actually, let's implement a PowerShell check for Windows.
+    checkFullscreenWindows().then((isFullscreen) => {
+      if (isFullscreen) {
+        console.log('User is in fullscreen mode, skipping break reminder.')
+        // Snooze for 5 minutes instead of skipping entirely? Or just skip this cycle?
+        // Let's snooze for 5 minutes to try again.
+        snoozeAlarm(5)
+      } else {
+        showAlarmWindows(reason, title, body)
+      }
+    })
+    return
+  }
+
   showAlarmWindows(reason, title, body)
+}
+
+async function checkFullscreenWindows(): Promise<boolean> {
+  if (process.platform !== 'win32') return false
+  try {
+    // PowerShell script to check if the foreground window covers the screen
+    const script = `
+      Add-Type @"
+        using System;
+        using System.Runtime.InteropServices;
+        public class User32 {
+          [DllImport("user32.dll")]
+          public static extern IntPtr GetForegroundWindow();
+          [DllImport("user32.dll")]
+          public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+          [DllImport("user32.dll")]
+          public static extern int GetSystemMetrics(int nIndex);
+          
+          [StructLayout(LayoutKind.Sequential)]
+          public struct RECT {
+            public int Left;
+            public int Top;
+            public int Right;
+            public int Bottom;
+          }
+        }
+"@
+      $hwnd = [User32]::GetForegroundWindow()
+      $rect = New-Object User32+RECT
+      [User32]::GetWindowRect($hwnd, [ref]$rect)
+      $width = $rect.Right - $rect.Left
+      $height = $rect.Bottom - $rect.Top
+      $screenWidth = [User32]::GetSystemMetrics(0)
+      $screenHeight = [User32]::GetSystemMetrics(1)
+      
+      if ($width -eq $screenWidth -and $height -eq $screenHeight) {
+        Write-Output "True"
+      } else {
+        Write-Output "False"
+      }
+    `
+    // Use encoded command to avoid escaping issues
+    const encoded = Buffer.from(script, 'utf16le').toString('base64')
+    const { stdout } = await execAsync(`powershell -EncodedCommand ${encoded}`)
+    return stdout.trim() === 'True'
+  } catch (e) {
+    console.error('Failed to check fullscreen:', e)
+    return false
+  }
 }
 
 function showAlarmWindows(reason: AlarmReason, title: string, body: string): void {
@@ -351,6 +450,13 @@ function createAlarmWindow(display: Electron.Display): BrowserWindow {
   })
 
   return win
+}
+
+function previewAlarm(reason: AlarmReason): void {
+  const title = reason === 'alarm' ? `预览：${settings.alarm.label}` : '预览：休息提醒'
+  const body =
+    reason === 'alarm' ? `现在时间：${settings.alarm.time}` : `休息一下，看看远处 20 秒，眨眨眼。`
+  showAlarmWindows(reason, title, body)
 }
 
 function dismissAlarmWindows(): void {
@@ -492,10 +598,17 @@ app.whenReady().then(() => {
   registerStickyNotesHandlers()
 
   ipcMain.handle('settings:get', () => settings)
+  ipcMain.handle('break:status:get', () => getBreakStatus())
+  ipcMain.handle('alarm:preview', (_, payload: unknown) => {
+    const p = payload && typeof payload === 'object' ? (payload as { reason?: unknown }) : {}
+    const reason: AlarmReason = p.reason === 'alarm' ? 'alarm' : 'break'
+    previewAlarm(reason)
+  })
   ipcMain.handle('settings:update', (_, patch: SettingsPatch) => {
     settings = applySettingsPatch(patch)
     saveSettingsToDisk(settings)
     applySettingsToRuntime()
+    broadcastBreakStatus()
     return settings
   })
 

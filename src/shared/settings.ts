@@ -20,6 +20,7 @@ export interface AppSettings {
   break: {
     enabled: boolean
     intervalMinutes: number
+    disableInFullscreen: boolean
   }
 }
 
@@ -54,6 +55,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   break: {
     enabled: false,
-    intervalMinutes: 45
+    intervalMinutes: 45,
+    disableInFullscreen: true
   }
 }
