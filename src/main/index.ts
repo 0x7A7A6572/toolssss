@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, screen } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, screen, Tray, Menu, globalShortcut } from 'electron'
 import { readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -11,6 +11,8 @@ import {
 } from '@shared/settings'
 
 let mainWindow: BrowserWindow | null = null
+let tray: Tray | null = null
+let isQuitting = false
 
 let settings: AppSettings = DEFAULT_SETTINGS
 const overlayWindows = new Map<number, BrowserWindow>()
@@ -42,6 +44,18 @@ function normalizeSettings(input: unknown): AppSettings {
   if (!input || typeof input !== 'object') return base
   const obj = input as Partial<AppSettings>
 
+  if (obj.general) {
+    base.general.minimizeToTray = Boolean(obj.general.minimizeToTray)
+    base.general.autoStart = Boolean(obj.general.autoStart)
+  }
+
+  if (obj.shortcuts) {
+    if (typeof obj.shortcuts.toggleEye === 'string')
+      base.shortcuts.toggleEye = obj.shortcuts.toggleEye
+    if (typeof obj.shortcuts.toggleAlarm === 'string')
+      base.shortcuts.toggleAlarm = obj.shortcuts.toggleAlarm
+  }
+
   base.eye.enabled = Boolean(obj.eye?.enabled)
   base.eye.opacity = clampNumber(Number(obj.eye?.opacity), 0, 0.7)
   if (typeof obj.eye?.color === 'string' && obj.eye.color.trim()) {
@@ -70,6 +84,18 @@ function applySettingsPatch(patch: unknown): AppSettings {
   if (!patch || typeof patch !== 'object') return settings
   const p = patch as SettingsPatch
   const next: AppSettings = structuredClone(settings)
+
+  if (p.general) {
+    if (typeof p.general.minimizeToTray === 'boolean')
+      next.general.minimizeToTray = p.general.minimizeToTray
+    if (typeof p.general.autoStart === 'boolean') next.general.autoStart = p.general.autoStart
+  }
+
+  if (p.shortcuts) {
+    if (typeof p.shortcuts.toggleEye === 'string') next.shortcuts.toggleEye = p.shortcuts.toggleEye
+    if (typeof p.shortcuts.toggleAlarm === 'string')
+      next.shortcuts.toggleAlarm = p.shortcuts.toggleAlarm
+  }
 
   if (p.eye) {
     if (typeof p.eye.enabled === 'boolean') next.eye.enabled = p.eye.enabled
@@ -336,10 +362,82 @@ function snoozeAlarm(minutes: number): void {
   snoozeTimer = setTimeout(() => triggerAlarm('alarm'), ms)
 }
 
+function ensureTray(): void {
+  if (settings.general.minimizeToTray) {
+    if (tray) return
+    tray = new Tray(icon)
+
+    const showApp = (): void => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow.isMinimized()) mainWindow.restore()
+        mainWindow.show()
+        mainWindow.focus()
+      } else {
+        createWindow()
+      }
+    }
+
+    const contextMenu = Menu.buildFromTemplate([
+      {
+        label: '显示主界面',
+        click: showApp
+      },
+      { type: 'separator' },
+      {
+        label: '退出',
+        click: (): void => {
+          isQuitting = true
+          app.quit()
+        }
+      }
+    ])
+    tray.setToolTip('FreamX')
+    tray.setContextMenu(contextMenu)
+    tray.on('click', showApp)
+    tray.on('double-click', showApp)
+  } else {
+    if (tray) {
+      tray.destroy()
+      tray = null
+    }
+  }
+}
+
+function ensureAutoStart(): void {
+  app.setLoginItemSettings({
+    openAtLogin: settings.general.autoStart,
+    path: app.getPath('exe')
+  })
+}
+
+function ensureShortcuts(): void {
+  globalShortcut.unregisterAll()
+
+  if (settings.shortcuts.toggleEye) {
+    try {
+      globalShortcut.register(settings.shortcuts.toggleEye, () => {
+        settings.eye.enabled = !settings.eye.enabled
+        saveSettingsToDisk(settings)
+        // Only update relevant runtime parts, avoid full re-apply to prevent recursion
+        ensureOverlayWindows()
+        // Notify renderer to update UI
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('settings:changed', settings)
+        }
+      })
+    } catch (e) {
+      console.error('Failed to register shortcut:', settings.shortcuts.toggleEye, e)
+    }
+  }
+}
+
 function applySettingsToRuntime(): void {
   ensureOverlayWindows()
   ensureDailyAlarmTimer()
   ensureBreakTimer()
+  ensureTray()
+  ensureAutoStart()
+  ensureShortcuts()
 }
 
 function createWindow(): void {
@@ -357,6 +455,13 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show()
+  })
+
+  mainWindow.on('close', (event) => {
+    if (settings.general.minimizeToTray && !isQuitting) {
+      event.preventDefault()
+      mainWindow?.hide()
+    }
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {

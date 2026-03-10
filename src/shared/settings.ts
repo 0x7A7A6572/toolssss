@@ -1,6 +1,11 @@
 export type AlarmReason = 'alarm' | 'break'
 
 export interface AppSettings {
+  general: {
+    minimizeToTray: boolean
+    autoStart: boolean
+  }
+  shortcuts: Record<string, string>
   eye: {
     enabled: boolean
     opacity: number
@@ -19,6 +24,8 @@ export interface AppSettings {
 }
 
 export type SettingsPatch = Partial<{
+  general: Partial<AppSettings['general']>
+  shortcuts: Partial<AppSettings['shortcuts']>
   eye: Partial<AppSettings['eye']>
   reminderSeconds: number
   alarm: Partial<AppSettings['alarm']>
@@ -26,6 +33,14 @@ export type SettingsPatch = Partial<{
 }>
 
 export const DEFAULT_SETTINGS: AppSettings = {
+  general: {
+    minimizeToTray: false,
+    autoStart: false
+  },
+  shortcuts: {
+    toggleEye: 'CommandOrControl+Shift+E',
+    toggleAlarm: 'CommandOrControl+Shift+A'
+  },
   eye: {
     enabled: false,
     opacity: 0.18,

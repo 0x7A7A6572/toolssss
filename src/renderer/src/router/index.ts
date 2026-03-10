@@ -1,6 +1,7 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import EyeProtection from '../views/EyeProtection/EyeProtection.vue'
 import OtherTools from '../views/OtherTools/OtherTools.vue'
+import SettingsView from '../views/Settings/SettingsView.vue'
 
 const routes = [
   {
@@ -16,6 +17,11 @@ const routes = [
     path: '/other-tools',
     name: 'OtherTools',
     component: OtherTools
+  },
+  {
+    path: '/settings',
+    name: 'Settings',
+    component: SettingsView
   }
 ]
 

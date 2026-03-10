@@ -28,6 +28,17 @@ function selectTab(path: string): void {
       >
         {{ tab.label }}
       </button>
+
+      <div class="spacer"></div>
+
+      <button
+        class="tab"
+        :class="{ active: route.path === '/settings' }"
+        type="button"
+        @click="selectTab('/settings')"
+      >
+        全局设置
+      </button>
     </aside>
 
     <div class="page">
@@ -66,6 +77,10 @@ function selectTab(path: string): void {
   color: var(--ev-c-text-3);
   padding: 6px 8px;
   letter-spacing: 0.04em;
+}
+
+.spacer {
+  flex: 1;
 }
 
 .tab {
