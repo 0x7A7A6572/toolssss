@@ -8,7 +8,7 @@ import {
   type AlarmReason,
   type AppSettings,
   type SettingsPatch
-} from '../shared/settings'
+} from '@shared/settings'
 
 let mainWindow: BrowserWindow | null = null
 

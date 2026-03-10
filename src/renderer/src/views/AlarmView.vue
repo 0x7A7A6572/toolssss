@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
-import type { AlarmReason } from '../../../shared/settings'
+import type { AlarmReason } from '@shared/settings'
 
 const reason = ref<AlarmReason>('alarm')
 const title = ref('提醒')

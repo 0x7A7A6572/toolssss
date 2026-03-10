@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { DEFAULT_SETTINGS, type AppSettings } from '../../../shared/settings'
+import { DEFAULT_SETTINGS, type AppSettings } from '@shared/settings'
 
 const opacity = ref(DEFAULT_SETTINGS.eye.opacity)
 const color = ref(DEFAULT_SETTINGS.eye.color)
