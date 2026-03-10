@@ -3,6 +3,7 @@ import EyeProtection from '../views/EyeProtection/EyeProtection.vue'
 import OtherTools from '../views/OtherTools/OtherTools.vue'
 import SettingsView from '../views/Settings/SettingsView.vue'
 import StickyNotes from '../views/StickyNotes/StickyNotes.vue'
+import TranslatorView from '../views/Translator/TranslatorView.vue'
 
 const routes = [
   {
@@ -23,6 +24,11 @@ const routes = [
     path: '/other-tools',
     name: 'OtherTools',
     component: OtherTools
+  },
+  {
+    path: '/translator',
+    name: 'Translator',
+    component: TranslatorView
   },
   {
     path: '/settings',

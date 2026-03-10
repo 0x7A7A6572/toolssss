@@ -1,6 +1,17 @@
 import { exec } from 'child_process'
 import { promisify } from 'util'
-import { app, shell, BrowserWindow, ipcMain, screen, Tray, Menu, globalShortcut } from 'electron'
+import { createHash } from 'crypto'
+import {
+  app,
+  shell,
+  BrowserWindow,
+  ipcMain,
+  screen,
+  Tray,
+  Menu,
+  globalShortcut,
+  clipboard
+} from 'electron'
 
 const execAsync = promisify(exec)
 import { readFileSync, writeFileSync } from 'fs'
@@ -14,10 +25,12 @@ import {
   type SettingsPatch
 } from '@shared/settings'
 import { registerStickyNotesHandlers } from './sticky-notes'
+import { TRANSLATOR_EVENTS, type TranslatePayload, type TranslateResult } from '@shared/translator'
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let isQuitting = false
+let translatorPopupWindow: BrowserWindow | null = null
 
 let settings: AppSettings = DEFAULT_SETTINGS
 const overlayWindows = new Map<number, BrowserWindow>()
@@ -74,6 +87,47 @@ function normalizeSettings(input: unknown): AppSettings {
       base.shortcuts.toggleEye = obj.shortcuts.toggleEye
     if (typeof obj.shortcuts.toggleAlarm === 'string')
       base.shortcuts.toggleAlarm = obj.shortcuts.toggleAlarm
+    if (typeof (obj.shortcuts as Record<string, unknown>).translateSelection === 'string')
+      base.shortcuts.translateSelection = (
+        obj.shortcuts as Record<string, string>
+      ).translateSelection
+  }
+
+  if (
+    (obj as { translate?: unknown }).translate &&
+    typeof (obj as { translate?: unknown }).translate === 'object'
+  ) {
+    const tr = (obj as { translate: Record<string, unknown> }).translate
+    const provider = tr['provider']
+    if (provider === 'baidu' || provider === 'bing') base.translate.provider = provider
+    if (typeof tr['defaultSource'] === 'string')
+      base.translate.defaultSource = tr['defaultSource'].trim()
+    if (typeof tr['defaultTarget'] === 'string')
+      base.translate.defaultTarget = tr['defaultTarget'].trim()
+
+    const baidu = tr['baidu']
+    if (baidu && typeof baidu === 'object') {
+      const b = baidu as Record<string, unknown>
+      if (typeof b['baseUrl'] === 'string') base.translate.baidu.baseUrl = b['baseUrl'].trim()
+      if (typeof b['appId'] === 'string') base.translate.baidu.appId = b['appId'].trim()
+      if (typeof b['secret'] === 'string') base.translate.baidu.secret = b['secret']
+    } else {
+      const legacyBaseUrl = tr['baseUrl']
+      if (typeof legacyBaseUrl === 'string' && legacyBaseUrl.trim())
+        base.translate.baidu.baseUrl = legacyBaseUrl.trim()
+      const legacyKey = tr['apiKey']
+      if (typeof legacyKey === 'string') base.translate.baidu.secret = legacyKey
+      const legacyAppId = tr['appId']
+      if (typeof legacyAppId === 'string') base.translate.baidu.appId = legacyAppId.trim()
+    }
+
+    const bing = tr['bing']
+    if (bing && typeof bing === 'object') {
+      const b = bing as Record<string, unknown>
+      if (typeof b['baseUrl'] === 'string') base.translate.bing.baseUrl = b['baseUrl'].trim()
+      if (typeof b['key'] === 'string') base.translate.bing.key = b['key']
+      if (typeof b['region'] === 'string') base.translate.bing.region = b['region'].trim()
+    }
   }
 
   base.eye.enabled = Boolean(obj.eye?.enabled)
@@ -119,6 +173,35 @@ function applySettingsPatch(patch: unknown): AppSettings {
     if (typeof p.shortcuts.toggleEye === 'string') next.shortcuts.toggleEye = p.shortcuts.toggleEye
     if (typeof p.shortcuts.toggleAlarm === 'string')
       next.shortcuts.toggleAlarm = p.shortcuts.toggleAlarm
+    if (typeof (p.shortcuts as Record<string, unknown>).translateSelection === 'string')
+      next.shortcuts.translateSelection = (p.shortcuts as Record<string, string>).translateSelection
+  }
+
+  if (
+    (p as { translate?: unknown }).translate &&
+    typeof (p as { translate?: unknown }).translate === 'object'
+  ) {
+    const tr = (p as { translate: Record<string, unknown> }).translate
+    const provider = tr['provider']
+    if (provider === 'baidu' || provider === 'bing') next.translate.provider = provider
+    if (typeof tr['defaultSource'] === 'string') next.translate.defaultSource = tr['defaultSource']
+    if (typeof tr['defaultTarget'] === 'string') next.translate.defaultTarget = tr['defaultTarget']
+
+    const baidu = tr['baidu']
+    if (baidu && typeof baidu === 'object') {
+      const b = baidu as Record<string, unknown>
+      if (typeof b['baseUrl'] === 'string') next.translate.baidu.baseUrl = b['baseUrl']
+      if (typeof b['appId'] === 'string') next.translate.baidu.appId = b['appId']
+      if (typeof b['secret'] === 'string') next.translate.baidu.secret = b['secret']
+    }
+
+    const bing = tr['bing']
+    if (bing && typeof bing === 'object') {
+      const b = bing as Record<string, unknown>
+      if (typeof b['baseUrl'] === 'string') next.translate.bing.baseUrl = b['baseUrl']
+      if (typeof b['key'] === 'string') next.translate.bing.key = b['key']
+      if (typeof b['region'] === 'string') next.translate.bing.region = b['region']
+    }
   }
 
   if (p.eye) {
@@ -452,6 +535,264 @@ function createAlarmWindow(display: Electron.Display): BrowserWindow {
   return win
 }
 
+function loadWindowForPopup(win: BrowserWindow, query: Record<string, string>): Promise<void> {
+  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    const params = new URLSearchParams(query)
+    return win.loadURL(`${process.env['ELECTRON_RENDERER_URL']}?${params.toString()}`)
+  }
+  return win.loadFile(join(__dirname, '../renderer/index.html'), { query })
+}
+
+function ensureTranslatorPopupWindow(): BrowserWindow {
+  if (translatorPopupWindow && !translatorPopupWindow.isDestroyed()) return translatorPopupWindow
+
+  const display = screen.getPrimaryDisplay()
+  const w = 520
+  const h = 360
+  const x = display.workArea.x + display.workArea.width - w - 20
+  const y = display.workArea.y + 80
+  const win = new BrowserWindow({
+    x,
+    y,
+    width: w,
+    height: h,
+    show: false,
+    frame: false,
+    resizable: true,
+    movable: true,
+    fullscreen: false,
+    skipTaskbar: true,
+    alwaysOnTop: false,
+    backgroundColor: '#0b0b0c',
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false
+    }
+  })
+
+  // win.setAlwaysOnTop(true, 'pop-up-menu')
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  translatorPopupWindow = win
+
+  loadWindowForPopup(win, { mode: 'translator-popup' }).catch(() => null)
+
+  win.on('closed', () => {
+    if (translatorPopupWindow === win) translatorPopupWindow = null
+  })
+
+  return win
+}
+
+function focusTranslatorPopupWindow(win: BrowserWindow): void {
+  win.setAlwaysOnTop(true, 'pop-up-menu')
+  // win.minimize()
+  win.show()
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  try {
+    app.focus()
+  } catch {
+    // ignore
+  }
+  win.moveTop()
+  win.focus()
+  try {
+    win.webContents.focus()
+  } catch {
+    // ignore
+  }
+}
+
+function openTranslatorPopup(payload: { text: string; source?: string; target?: string }): void {
+  const win = ensureTranslatorPopupWindow()
+  if (win.webContents.isLoading()) {
+    win.webContents.once('did-finish-load', () => {
+      win.webContents.send('translator-popup:open', payload)
+      focusTranslatorPopupWindow(win)
+    })
+  } else {
+    win.webContents.send('translator-popup:open', payload)
+    focusTranslatorPopupWindow(win)
+  }
+}
+
+async function sendCtrlCWindows(): Promise<void> {
+  const script = `
+    Add-Type -AssemblyName System.Windows.Forms
+    [System.Windows.Forms.SendKeys]::SendWait("^c")
+  `
+  const encoded = Buffer.from(script, 'utf16le').toString('base64')
+  await execAsync(`powershell -STA -EncodedCommand ${encoded}`)
+}
+
+async function captureSelectionText(): Promise<string> {
+  if (process.platform === 'win32') {
+    try {
+      const original = clipboard.readText()
+      await sendCtrlCWindows()
+      await new Promise((r) => setTimeout(r, 120))
+      const text = clipboard.readText()
+      if (text && text.trim()) return text
+      if (original && original.trim()) return original
+      return ''
+    } catch {
+      const t = clipboard.readText()
+      return typeof t === 'string' ? t : ''
+    }
+  }
+  const t = clipboard.readText()
+  return typeof t === 'string' ? t : ''
+}
+
+function resolveTranslateConfig(payload: TranslatePayload): {
+  provider: AppSettings['translate']['provider']
+  source: string
+  target: string
+  text: string
+} {
+  const text = typeof payload.text === 'string' ? payload.text : ''
+  const source =
+    typeof payload.source === 'string' && payload.source.trim()
+      ? payload.source.trim()
+      : settings.translate.defaultSource
+  const target =
+    typeof payload.target === 'string' && payload.target.trim()
+      ? payload.target.trim()
+      : settings.translate.defaultTarget
+  return {
+    provider: settings.translate.provider,
+    source,
+    target,
+    text
+  }
+}
+
+function md5Hex(input: string): string {
+  return createHash('md5').update(input).digest('hex')
+}
+
+async function translateWithBaidu(args: {
+  baseUrl: string
+  appId: string
+  secret: string
+  text: string
+  source: string
+  target: string
+}): Promise<string> {
+  const base = args.baseUrl.trim()
+  if (!base) throw new Error('未配置百度翻译 baseUrl')
+  if (!args.appId) throw new Error('未配置百度翻译 appId')
+  if (!args.secret) throw new Error('未配置百度翻译 secret')
+  if (!args.target) throw new Error('未指定目标语言')
+
+  const url = new URL('/api/trans/vip/translate', base)
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 20000)
+  try {
+    const salt = String(Date.now())
+    const sign = md5Hex(`${args.appId}${args.text}${salt}${args.secret}`)
+    const from = args.source && args.source !== 'auto' ? args.source : 'auto'
+    const body = new URLSearchParams({
+      q: args.text,
+      from,
+      to: args.target,
+      appid: args.appId,
+      salt,
+      sign
+    })
+    const res = await fetch(url.toString(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+      body: body.toString(),
+      signal: controller.signal
+    })
+    const raw = await res.text()
+    if (!res.ok) throw new Error(raw || `HTTP ${res.status}`)
+    const data = JSON.parse(raw) as {
+      error_code?: unknown
+      error_msg?: unknown
+      trans_result?: Array<{ dst?: unknown }>
+    }
+    if (data.error_code) {
+      const msg = typeof data.error_msg === 'string' ? data.error_msg : String(data.error_code)
+      throw new Error(`百度翻译失败：${msg}`)
+    }
+    const out =
+      data.trans_result?.map((x) => (typeof x.dst === 'string' ? x.dst : '')).join('\n') ?? ''
+    return out
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+async function translateWithBing(args: {
+  baseUrl: string
+  key: string
+  region: string
+  text: string
+  source: string
+  target: string
+}): Promise<string> {
+  const base = args.baseUrl.trim()
+  if (!base) throw new Error('未配置必应翻译 baseUrl')
+  if (!args.key) throw new Error('未配置必应翻译 key')
+  if (!args.region) throw new Error('未配置必应翻译 region')
+  if (!args.target) throw new Error('未指定目标语言')
+
+  const url = new URL('/translate', base)
+  url.searchParams.set('api-version', '3.0')
+  if (args.source && args.source !== 'auto') url.searchParams.set('from', args.source)
+  url.searchParams.set('to', args.target)
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 20000)
+  try {
+    const res = await fetch(url.toString(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Ocp-Apim-Subscription-Key': args.key,
+        'Ocp-Apim-Subscription-Region': args.region
+      },
+      body: JSON.stringify([{ Text: args.text }]),
+      signal: controller.signal
+    })
+    const raw = await res.text()
+    if (!res.ok) throw new Error(raw || `HTTP ${res.status}`)
+    const data = JSON.parse(raw) as Array<{
+      translations?: Array<{ text?: unknown }>
+    }>
+    const t = data?.[0]?.translations?.[0]?.text
+    return typeof t === 'string' ? t : ''
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+async function translate(payload: TranslatePayload): Promise<TranslateResult> {
+  const cfg = resolveTranslateConfig(payload)
+  const text = cfg.text.trim()
+  if (!text) return { text: '' }
+  if (cfg.provider === 'bing') {
+    const out = await translateWithBing({
+      baseUrl: settings.translate.bing.baseUrl,
+      key: settings.translate.bing.key,
+      region: settings.translate.bing.region,
+      text,
+      source: cfg.source,
+      target: cfg.target
+    })
+    return { text: out }
+  }
+  const out = await translateWithBaidu({
+    baseUrl: settings.translate.baidu.baseUrl,
+    appId: settings.translate.baidu.appId,
+    secret: settings.translate.baidu.secret,
+    text,
+    source: cfg.source,
+    target: cfg.target
+  })
+  return { text: out }
+}
+
 function previewAlarm(reason: AlarmReason): void {
   const title = reason === 'alarm' ? `预览：${settings.alarm.label}` : '预览：休息提醒'
   const body =
@@ -536,6 +877,39 @@ function ensureShortcuts(): void {
       console.error('Failed to register shortcut:', settings.shortcuts.toggleEye, e)
     }
   }
+
+  if (settings.shortcuts.toggleAlarm) {
+    try {
+      globalShortcut.register(settings.shortcuts.toggleAlarm, () => {
+        settings.alarm.enabled = !settings.alarm.enabled
+        saveSettingsToDisk(settings)
+        ensureDailyAlarmTimer()
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('settings:changed', settings)
+        }
+      })
+    } catch (e) {
+      console.error('Failed to register shortcut:', settings.shortcuts.toggleAlarm, e)
+    }
+  }
+
+  if ((settings.shortcuts as Record<string, unknown>).translateSelection) {
+    const acc = (settings.shortcuts as Record<string, string>).translateSelection
+    if (acc) {
+      try {
+        globalShortcut.register(acc, async () => {
+          const text = await captureSelectionText()
+          openTranslatorPopup({
+            text,
+            source: settings.translate.defaultSource,
+            target: settings.translate.defaultTarget
+          })
+        })
+      } catch (e) {
+        console.error('Failed to register shortcut:', acc, e)
+      }
+    }
+  }
 }
 
 function applySettingsToRuntime(): void {
@@ -599,6 +973,30 @@ app.whenReady().then(() => {
 
   ipcMain.handle('settings:get', () => settings)
   ipcMain.handle('break:status:get', () => getBreakStatus())
+  ipcMain.handle(TRANSLATOR_EVENTS.TRANSLATE, async (_e, payload: TranslatePayload) => {
+    return translate(payload)
+  })
+  ipcMain.handle(TRANSLATOR_EVENTS.OPEN_POPUP, async () => {
+    const text = await captureSelectionText()
+    openTranslatorPopup({
+      text,
+      source: settings.translate.defaultSource,
+      target: settings.translate.defaultTarget
+    })
+    return true
+  })
+  ipcMain.handle('translator-popup:close', (event) => {
+    try {
+      const win = BrowserWindow.fromWebContents(event.sender)
+      if (win && !win.isDestroyed()) {
+        win.hide()
+        win.close()
+      }
+      return true
+    } catch {
+      return false
+    }
+  })
   ipcMain.handle('alarm:preview', (_, payload: unknown) => {
     const p = payload && typeof payload === 'object' ? (payload as { reason?: unknown }) : {}
     const reason: AlarmReason = p.reason === 'alarm' ? 'alarm' : 'break'

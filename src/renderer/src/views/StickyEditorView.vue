@@ -3,8 +3,7 @@ import { onMounted, onBeforeUnmount, ref } from 'vue'
 import type { StickyNote } from '@shared/sticky-notes'
 import { STICKY_NOTES_EVENTS } from '@shared/sticky-notes'
 import NoteEditor from './StickyNotes/components/NoteEditor.vue'
-import { Check, Trash2, X } from 'lucide-vue-next'
-import confirm from '../utils/confirm'
+import { Check, X } from 'lucide-vue-next'
 
 const params = new URLSearchParams(window.location.search)
 const noteId = params.get('id') ?? ''
@@ -52,13 +51,13 @@ async function save(): Promise<void> {
   }
 }
 
-async function remove(): Promise<void> {
-  if (!note.value) return
-  const ok = await confirm('确定要删除这个便签吗？', { title: '删除便签' })
-  if (!ok) return
-  await window.electron.ipcRenderer.invoke(STICKY_NOTES_EVENTS.DELETE, note.value.id)
-  close()
-}
+// async function remove(): Promise<void> {
+//   if (!note.value) return
+//   const ok = await confirm('确定要删除这个便签吗？', { title: '删除便签' })
+//   if (!ok) return
+//   await window.electron.ipcRenderer.invoke(STICKY_NOTES_EVENTS.DELETE, note.value.id)
+//   close()
+// }
 
 function onKeyDown(e: KeyboardEvent): void {
   if (e.key === 'Escape') close()
@@ -84,13 +83,12 @@ onBeforeUnmount(() => {
       <header class="header">
         <div class="title">便签编辑</div>
         <div class="actions">
+          <!-- <button class="btn danger" type="button" :disabled="saving" @click="remove">
+            <Trash2 :size="18" />
+          </button> -->
           <button class="btn primary" type="button" :disabled="saving" @click="save">
             <Check :size="18" />
             <!-- 保存 -->
-          </button>
-          <button class="btn danger" type="button" :disabled="saving" @click="remove">
-            <Trash2 :size="18" />
-            <!-- 删除 -->
           </button>
           <button class="btn" type="button" :disabled="saving" @click="close">
             <X :size="18" />

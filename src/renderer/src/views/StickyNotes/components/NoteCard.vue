@@ -159,7 +159,7 @@ function openFullscreen(): void {
 .note-body {
   flex: 1;
   min-height: 100px;
-  max-height: 400px;
+  max-height: 300px;
   overflow-y: auto;
   /* 滑动条透明 */
   scrollbar-width: thin;

@@ -6,6 +6,21 @@ export interface AppSettings {
     autoStart: boolean
   }
   shortcuts: Record<string, string>
+  translate: {
+    provider: 'baidu' | 'bing'
+    defaultSource: string
+    defaultTarget: string
+    baidu: {
+      baseUrl: string
+      appId: string
+      secret: string
+    }
+    bing: {
+      baseUrl: string
+      key: string
+      region: string
+    }
+  }
   eye: {
     enabled: boolean
     opacity: number
@@ -27,6 +42,10 @@ export interface AppSettings {
 export type SettingsPatch = Partial<{
   general: Partial<AppSettings['general']>
   shortcuts: Partial<AppSettings['shortcuts']>
+  translate: Partial<Omit<AppSettings['translate'], 'baidu' | 'bing'>> & {
+    baidu?: Partial<AppSettings['translate']['baidu']>
+    bing?: Partial<AppSettings['translate']['bing']>
+  }
   eye: Partial<AppSettings['eye']>
   reminderSeconds: number
   alarm: Partial<AppSettings['alarm']>
@@ -40,7 +59,23 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   shortcuts: {
     toggleEye: 'CommandOrControl+Shift+E',
-    toggleAlarm: 'CommandOrControl+Shift+A'
+    toggleAlarm: 'CommandOrControl+Shift+A',
+    translateSelection: 'CommandOrControl+Shift+T'
+  },
+  translate: {
+    provider: 'baidu',
+    defaultSource: 'auto',
+    defaultTarget: 'zh',
+    baidu: {
+      baseUrl: 'https://fanyi-api.baidu.com',
+      appId: '',
+      secret: ''
+    },
+    bing: {
+      baseUrl: 'https://api.cognitive.microsofttranslator.com',
+      key: '',
+      region: ''
+    }
   },
   eye: {
     enabled: false,

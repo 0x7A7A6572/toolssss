@@ -105,7 +105,187 @@ onMounted(() => {
         />
       </div>
 
+      <div class="row">
+        <div class="label">划词翻译弹窗</div>
+        <ShortcutInput
+          :model-value="settings.shortcuts.translateSelection"
+          placeholder="未设置"
+          @update:model-value="
+            update({
+              shortcuts: { translateSelection: $event }
+            })
+          "
+        />
+      </div>
+
       <div class="hint">点击上方快捷键进行录制，支持 Ctrl, Alt, Shift, Meta 组合</div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <div class="card-title">翻译服务</div>
+      </div>
+
+      <div class="row">
+        <div class="label">Provider</div>
+        <select
+          class="select"
+          :value="settings.translate.provider"
+          @change="
+            update({
+              translate: {
+                provider: ($event.target as HTMLSelectElement).value as 'baidu' | 'bing'
+              }
+            })
+          "
+        >
+          <option value="baidu">百度翻译</option>
+          <option value="bing">必应翻译（Microsoft Translator）</option>
+        </select>
+      </div>
+
+      <template v-if="settings.translate.provider === 'baidu'">
+        <div class="row">
+          <div class="label">Base URL</div>
+          <input
+            class="text"
+            type="text"
+            :value="settings.translate.baidu.baseUrl"
+            placeholder="默认：https://fanyi-api.baidu.com"
+            @change="
+              update({
+                translate: { baidu: { baseUrl: ($event.target as HTMLInputElement).value } }
+              })
+            "
+          />
+        </div>
+
+        <div class="row">
+          <div class="label">App ID</div>
+          <input
+            class="text"
+            type="text"
+            :value="settings.translate.baidu.appId"
+            placeholder="百度翻译开放平台 appid"
+            @change="
+              update({
+                translate: { baidu: { appId: ($event.target as HTMLInputElement).value } }
+              })
+            "
+          />
+        </div>
+
+        <div class="row">
+          <div class="label">Secret</div>
+          <input
+            class="text"
+            type="password"
+            :value="settings.translate.baidu.secret"
+            placeholder="百度翻译开放平台 secret"
+            @change="
+              update({
+                translate: { baidu: { secret: ($event.target as HTMLInputElement).value } }
+              })
+            "
+          />
+        </div>
+      </template>
+
+      <template v-else>
+        <div class="row">
+          <div class="label">Base URL</div>
+          <input
+            class="text"
+            type="text"
+            :value="settings.translate.bing.baseUrl"
+            placeholder="默认：https://api.cognitive.microsofttranslator.com"
+            @change="
+              update({
+                translate: { bing: { baseUrl: ($event.target as HTMLInputElement).value } }
+              })
+            "
+          />
+        </div>
+
+        <div class="row">
+          <div class="label">Key</div>
+          <input
+            class="text"
+            type="password"
+            :value="settings.translate.bing.key"
+            placeholder="Microsoft Translator key"
+            @change="
+              update({
+                translate: { bing: { key: ($event.target as HTMLInputElement).value } }
+              })
+            "
+          />
+        </div>
+
+        <div class="row">
+          <div class="label">Region</div>
+          <input
+            class="text"
+            type="text"
+            :value="settings.translate.bing.region"
+            placeholder="例如：eastasia / westeurope"
+            @change="
+              update({
+                translate: { bing: { region: ($event.target as HTMLInputElement).value } }
+              })
+            "
+          />
+        </div>
+      </template>
+
+      <div class="row">
+        <div class="label">默认源语言</div>
+        <select
+          class="select"
+          :value="settings.translate.defaultSource"
+          @change="
+            update({
+              translate: { defaultSource: ($event.target as HTMLSelectElement).value }
+            })
+          "
+        >
+          <option value="auto">自动识别</option>
+          <option value="en">英语</option>
+          <option value="zh">中文</option>
+          <option value="ja">日语</option>
+          <option value="ko">韩语</option>
+          <option value="fr">法语</option>
+          <option value="de">德语</option>
+          <option value="es">西班牙语</option>
+          <option value="ru">俄语</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <div class="label">默认目标语言</div>
+        <select
+          class="select"
+          :value="settings.translate.defaultTarget"
+          @change="
+            update({
+              translate: { defaultTarget: ($event.target as HTMLSelectElement).value }
+            })
+          "
+        >
+          <option value="zh">中文（简体）</option>
+          <option value="en">英语</option>
+          <option value="ja">日语</option>
+          <option value="ko">韩语</option>
+          <option value="fr">法语</option>
+          <option value="de">德语</option>
+          <option value="es">西班牙语</option>
+          <option value="ru">俄语</option>
+        </select>
+      </div>
+
+      <div class="hint">
+        百度翻译接口：/api/trans/vip/translate；必应翻译接口：/translate?api-version=3.0
+      </div>
     </section>
 
     <footer class="footer">
@@ -234,7 +414,23 @@ onMounted(() => {
   text-align: right;
 }
 
+.select {
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.2);
+  color: var(--ev-c-text-1);
+  outline: none;
+  font-size: 13px;
+  width: 200px;
+  text-align: right;
+}
+
 .text:focus {
+  border-color: rgba(59, 130, 246, 0.5);
+}
+
+.select:focus {
   border-color: rgba(59, 130, 246, 0.5);
 }
 

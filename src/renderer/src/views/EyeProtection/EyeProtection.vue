@@ -242,7 +242,7 @@ onBeforeUnmount(() => {
           <div class="countdown">{{ breakCountdownText }}</div>
         </div>
         <div class="row">
-          <div class="label">全屏不提醒</div>
+          <div class="label">全屏时不提醒</div>
           <label class="switch">
             <input
               type="checkbox"
