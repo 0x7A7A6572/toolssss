@@ -6,6 +6,7 @@ import { MasonryWall } from '@yeger/vue-masonry-wall'
 import NoteCard from './components/NoteCard.vue'
 import NoteEditor from './components/NoteEditor.vue'
 import { Plus, Check, X, Trash2, StickyNote as StickyNoteIcon } from 'lucide-vue-next'
+import confirm from '../../utils/confirm'
 
 const notes = ref<StickyNote[]>([])
 const loading = ref(true)
@@ -87,7 +88,8 @@ async function updateNote(note: StickyNote): Promise<void> {
 }
 
 async function deleteNote(id: string): Promise<void> {
-  if (!confirm('确定要删除这个便签吗？')) return
+  const ok = await confirm('确定要删除这个便签吗？', { title: '删除便签' })
+  if (!ok) return
 
   // Optimistic update
   notes.value = notes.value.filter((n) => n.id !== id)
@@ -234,7 +236,7 @@ onMounted(() => {
 }
 
 .add-btn {
-  background: #3b82f6; /* Blue-500 */
+  background: var(--ev-c-theme);
   color: white;
   border: none;
   border-radius: 8px;

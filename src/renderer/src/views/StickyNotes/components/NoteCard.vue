@@ -159,5 +159,15 @@ function openFullscreen(): void {
 .note-body {
   flex: 1;
   min-height: 100px;
+  max-height: 400px;
+  overflow-y: auto;
+  /* 滑动条透明 */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.418) transparent;
+}
+
+.note-body::-webkit-scrollbar {
+  width: 6px;
+  background: transparent;
 }
 </style>

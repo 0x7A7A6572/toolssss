@@ -88,7 +88,7 @@ onBeforeUnmount(() => {
   background:
     radial-gradient(circle at 30% 20%, rgba(227, 246, 59, 0.25), transparent 55%),
     radial-gradient(circle at 70% 80%, rgba(249, 115, 22, 0.22), transparent 55%),
-    rgba(1, 207, 125, 0.373);
+    rgba(13, 34, 26, 0.373);
 }
 
 .card {
