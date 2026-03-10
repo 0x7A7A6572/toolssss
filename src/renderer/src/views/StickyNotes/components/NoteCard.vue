@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import type { StickyNote } from '@shared/sticky-notes'
-import { Trash2, Edit2, Check, X } from 'lucide-vue-next'
+import { Trash2, Edit2, Check, X, Maximize2 } from 'lucide-vue-next'
 import NoteEditor from './NoteEditor.vue'
 
 const props = defineProps<{
@@ -11,6 +11,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'update', note: StickyNote): void
   (e: 'delete', id: string): void
+  (e: 'fullscreen', payload: { note: StickyNote; content: string }): void
 }>()
 
 const isEditing = ref(false)
@@ -45,14 +46,22 @@ function cancelEdit(): void {
   localContent.value = props.note.content
   isEditing.value = false
 }
+
+function openFullscreen(): void {
+  emit('fullscreen', { note: props.note, content: localContent.value })
+  isEditing.value = false
+}
 </script>
 
 <template>
   <div class="note-card" :style="{ backgroundColor: note.color }">
     <div class="note-header">
-      <span class="date">{{ new Date(note.updatedAt).toLocaleDateString() }}</span>
+      <span class="date">{{ new Date(note.updatedAt).toLocaleString() }}</span>
       <div class="actions">
         <template v-if="isEditing">
+          <button class="btn-icon" title="全屏编辑" @click="openFullscreen">
+            <Maximize2 :size="16" />
+          </button>
           <button class="btn-icon save" title="保存" @click="saveEdit">
             <Check :size="16" />
           </button>
@@ -75,6 +84,7 @@ function cancelEdit(): void {
       <NoteEditor
         :model-value="isEditing ? localContent : note.content"
         :editable="isEditing"
+        :image-max-height="220"
         @update:model-value="onEditorUpdate"
       />
     </div>

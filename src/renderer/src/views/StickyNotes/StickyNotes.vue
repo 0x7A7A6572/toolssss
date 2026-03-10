@@ -4,10 +4,14 @@ import type { StickyNote } from '@shared/sticky-notes'
 import { STICKY_NOTES_EVENTS } from '@shared/sticky-notes'
 import { MasonryWall } from '@yeger/vue-masonry-wall'
 import NoteCard from './components/NoteCard.vue'
-import { Plus } from 'lucide-vue-next'
+import NoteEditor from './components/NoteEditor.vue'
+import { Plus, Check, X, Trash2, StickyNote as StickyNoteIcon } from 'lucide-vue-next'
 
 const notes = ref<StickyNote[]>([])
 const loading = ref(true)
+const fullscreenNote = ref<StickyNote | null>(null)
+const fullscreenContent = ref('')
+const fullscreenSaving = ref(false)
 
 function sortNotes(): void {
   notes.value.sort((a, b) => b.updatedAt - a.updatedAt)
@@ -99,6 +103,34 @@ async function deleteNote(id: string): Promise<void> {
   }
 }
 
+function openFullscreen(payload: { note: StickyNote; content: string }): void {
+  fullscreenNote.value = { ...payload.note }
+  fullscreenContent.value = payload.content
+}
+
+function closeFullscreen(): void {
+  fullscreenNote.value = null
+  fullscreenContent.value = ''
+  fullscreenSaving.value = false
+}
+
+async function saveFullscreen(): Promise<void> {
+  if (!fullscreenNote.value) return
+  fullscreenSaving.value = true
+  try {
+    await updateNote({ ...fullscreenNote.value, content: fullscreenContent.value })
+    closeFullscreen()
+  } finally {
+    fullscreenSaving.value = false
+  }
+}
+
+async function deleteFullscreen(): Promise<void> {
+  if (!fullscreenNote.value) return
+  await deleteNote(fullscreenNote.value.id)
+  closeFullscreen()
+}
+
 onMounted(() => {
   loadNotes()
 })
@@ -114,17 +146,67 @@ onMounted(() => {
     <div class="content-area">
       <MasonryWall :items="notes" :ssr-columns="1" :column-width="280" :gap="16">
         <template #default="{ item }">
-          <NoteCard :note="item" @update="updateNote" @delete="deleteNote" />
+          <NoteCard
+            :note="item"
+            @update="updateNote"
+            @delete="deleteNote"
+            @fullscreen="openFullscreen"
+          />
         </template>
       </MasonryWall>
 
       <div v-if="notes.length === 0 && !loading" class="empty-state">
-        <div class="empty-icon">📝</div>
+        <div class="empty-icon">
+          <StickyNoteIcon :size="148" />
+        </div>
         <p>还没有便签</p>
         <p class="sub-text">点击右上角创建一个吧</p>
       </div>
     </div>
   </div>
+
+  <Teleport to="body">
+    <div v-if="fullscreenNote" class="fullscreen-overlay">
+      <div class="fullscreen-modal" :style="{ backgroundColor: fullscreenNote.color }">
+        <header class="fullscreen-header">
+          <div class="fullscreen-title">便签编辑</div>
+          <div class="fullscreen-actions">
+            <button
+              class="fs-btn primary"
+              type="button"
+              :disabled="fullscreenSaving"
+              @click="saveFullscreen"
+            >
+              <Check :size="18" />
+              保存
+            </button>
+            <button
+              class="fs-btn danger"
+              type="button"
+              :disabled="fullscreenSaving"
+              @click="deleteFullscreen"
+            >
+              <Trash2 :size="18" />
+              删除
+            </button>
+            <button
+              class="fs-btn"
+              type="button"
+              :disabled="fullscreenSaving"
+              @click="closeFullscreen"
+            >
+              <X :size="18" />
+              关闭
+            </button>
+          </div>
+        </header>
+
+        <div class="fullscreen-body">
+          <NoteEditor v-model="fullscreenContent" :editable="true" :image-max-height="600" />
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -202,5 +284,86 @@ onMounted(() => {
   font-size: 14px;
   margin-top: 8px;
   opacity: 0.7;
+}
+
+.fullscreen-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+  z-index: 9999;
+}
+
+.fullscreen-modal {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  color: #111827;
+}
+
+.fullscreen-header {
+  flex-shrink: 0;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.12);
+}
+
+.fullscreen-title {
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.fullscreen-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.fs-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  background: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.fs-btn:hover {
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.fs-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.fs-btn.primary {
+  background: rgba(34, 197, 94, 0.18);
+  border-color: rgba(34, 197, 94, 0.35);
+}
+
+.fs-btn.primary:hover {
+  background: rgba(34, 197, 94, 0.25);
+}
+
+.fs-btn.danger {
+  background: rgba(239, 68, 68, 0.14);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.fs-btn.danger:hover {
+  background: rgba(239, 68, 68, 0.22);
+}
+
+.fullscreen-body {
+  flex: 1;
+  padding: 18px 20px 24px;
+  overflow: auto;
 }
 </style>

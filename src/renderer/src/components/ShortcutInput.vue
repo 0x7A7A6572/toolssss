@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { Pencil } from 'lucide-vue-next'
 
 const props = defineProps<{
   modelValue: string
@@ -143,7 +144,9 @@ function clear(): void {
         <span v-for="k in currentShortcutDisplay" :key="k" class="key-badge small">{{ k }}</span>
       </template>
       <span v-else class="placeholder">{{ placeholder || '点击设置快捷键' }}</span>
-      <span class="edit-icon">✏️</span>
+      <span class="edit-icon">
+        <Pencil :size="12" />
+      </span>
     </div>
 
     <Teleport to="body">
@@ -210,7 +213,7 @@ function clear(): void {
 }
 
 .key-badge {
-  background: #00d4d8; /* Cyan-ish */
+  background: var(--color-text); /* Cyan-ish */
   color: #000;
   font-weight: 600;
   border-radius: 4px;
@@ -322,7 +325,7 @@ function clear(): void {
 }
 
 .btn.primary {
-  background: #00d4d8;
+  background: var(--color-text);
   color: #000;
   border-color: transparent;
   font-weight: 600;

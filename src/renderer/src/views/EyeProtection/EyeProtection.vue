@@ -96,7 +96,7 @@ onMounted(() => {
       </div>
     </section>
 
-    <section class="card">
+    <!-- <section class="card">
       <div class="card-head">
         <div class="card-title">闹钟（全屏提示）</div>
         <label class="switch">
@@ -138,7 +138,7 @@ onMounted(() => {
           "
         />
       </div>
-    </section>
+    </section> -->
 
     <div class="row-group">
       <section class="card">
