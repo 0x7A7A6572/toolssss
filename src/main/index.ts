@@ -35,6 +35,8 @@ let translatorPopupWindow: BrowserWindow | null = null
 let settings: AppSettings = DEFAULT_SETTINGS
 const overlayWindows = new Map<number, BrowserWindow>()
 const alarmWindows = new Map<number, BrowserWindow>()
+const stickerWindows = new Map<number, BrowserWindow>()
+let stickersHidden = false
 
 let dailyAlarmTimer: NodeJS.Timeout | undefined
 let breakTimer: NodeJS.Timeout | undefined
@@ -91,6 +93,14 @@ function normalizeSettings(input: unknown): AppSettings {
       base.shortcuts.translateSelection = (
         obj.shortcuts as Record<string, string>
       ).translateSelection
+    if (typeof (obj.shortcuts as Record<string, unknown>).snipStart === 'string')
+      base.shortcuts.snipStart = (obj.shortcuts as Record<string, string>).snipStart
+    if (typeof (obj.shortcuts as Record<string, unknown>).stickerPaste === 'string')
+      base.shortcuts.stickerPaste = (obj.shortcuts as Record<string, string>).stickerPaste
+    if (typeof (obj.shortcuts as Record<string, unknown>).stickersToggleHidden === 'string')
+      base.shortcuts.stickersToggleHidden = (
+        obj.shortcuts as Record<string, string>
+      ).stickersToggleHidden
   }
 
   if (
@@ -175,6 +185,14 @@ function applySettingsPatch(patch: unknown): AppSettings {
       next.shortcuts.toggleAlarm = p.shortcuts.toggleAlarm
     if (typeof (p.shortcuts as Record<string, unknown>).translateSelection === 'string')
       next.shortcuts.translateSelection = (p.shortcuts as Record<string, string>).translateSelection
+    if (typeof (p.shortcuts as Record<string, unknown>).snipStart === 'string')
+      next.shortcuts.snipStart = (p.shortcuts as Record<string, string>).snipStart
+    if (typeof (p.shortcuts as Record<string, unknown>).stickerPaste === 'string')
+      next.shortcuts.stickerPaste = (p.shortcuts as Record<string, string>).stickerPaste
+    if (typeof (p.shortcuts as Record<string, unknown>).stickersToggleHidden === 'string')
+      next.shortcuts.stickersToggleHidden = (
+        p.shortcuts as Record<string, string>
+      ).stickersToggleHidden
   }
 
   if (
@@ -231,6 +249,157 @@ function applySettingsPatch(patch: unknown): AppSettings {
   }
 
   return normalizeSettings(next)
+}
+
+type StickerPayload = { kind: 'image' | 'text' | 'color'; data: string }
+
+function normalizeClipboardColorText(text: string): string | null {
+  const raw = text.trim()
+  if (!raw) return null
+  const hex = raw.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i)
+  if (hex) {
+    let v = hex[1].toLowerCase()
+    if (v.length === 3) v = v[0] + v[0] + v[1] + v[1] + v[2] + v[2]
+    return `#${v}`
+  }
+
+  const rgb = raw.match(/^rgb\(\s*(\d{1,3})\s*[, ]\s*(\d{1,3})\s*[, ]\s*(\d{1,3})\s*\)$/i)
+  if (rgb) {
+    const r = clampNumber(Number(rgb[1]), 0, 255)
+    const g = clampNumber(Number(rgb[2]), 0, 255)
+    const b = clampNumber(Number(rgb[3]), 0, 255)
+    return (
+      '#' +
+      [r, g, b]
+        .map((n) => Math.round(n).toString(16).padStart(2, '0'))
+        .join('')
+        .toLowerCase()
+    )
+  }
+
+  const tripleInt = raw.match(/^(\d{1,3})\s*[, ]\s*(\d{1,3})\s*[, ]\s*(\d{1,3})$/)
+  if (tripleInt) {
+    const r = clampNumber(Number(tripleInt[1]), 0, 255)
+    const g = clampNumber(Number(tripleInt[2]), 0, 255)
+    const b = clampNumber(Number(tripleInt[3]), 0, 255)
+    return (
+      '#' +
+      [r, g, b]
+        .map((n) => Math.round(n).toString(16).padStart(2, '0'))
+        .join('')
+        .toLowerCase()
+    )
+  }
+
+  return null
+}
+
+function readClipboardAsStickerPayload(): StickerPayload | null {
+  const image = clipboard.readImage()
+  if (!image.isEmpty()) {
+    return { kind: 'image', data: image.toDataURL() }
+  }
+
+  const text = clipboard.readText()
+  const color = normalizeClipboardColorText(text)
+  if (color) return { kind: 'color', data: color }
+  if (text && text.trim()) return { kind: 'text', data: text }
+
+  return null
+}
+
+function createStickerWindow(payload: StickerPayload): BrowserWindow {
+  const display = screen.getPrimaryDisplay()
+  const work = display.workArea
+
+  let w = 460
+  let h = 360
+  if (payload.kind === 'image') {
+    const image = clipboard.readImage()
+    const size = image.getSize()
+    const maxW = Math.max(360, Math.round(work.width * 0.6))
+    const maxH = Math.max(260, Math.round(work.height * 0.6))
+    w = clampNumber(size.width, 220, maxW)
+    h = clampNumber(size.height, 160, maxH)
+  } else if (payload.kind === 'color') {
+    w = 260
+    h = 220
+  }
+
+  const x = work.x + Math.round((work.width - w) / 2)
+  const y = work.y + Math.round((work.height - h) / 2)
+
+  const win = new BrowserWindow({
+    x,
+    y,
+    width: w,
+    height: h,
+    show: false,
+    frame: false,
+    resizable: true,
+    movable: true,
+    fullscreen: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    hasShadow: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    ...(process.platform === 'linux' ? { icon } : {}),
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false
+    }
+  })
+
+  win.setAlwaysOnTop(true, 'screen-saver')
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+
+  loadWindow(win, { mode: 'sticker' }).catch(() => null)
+
+  win.webContents.once('did-finish-load', () => {
+    try {
+      win.webContents.send('sticker:init', payload)
+    } catch {
+      // ignore
+    }
+    win.showInactive()
+    try {
+      app.focus()
+    } catch {
+      // ignore
+    }
+    win.moveTop()
+    win.focus()
+  })
+
+  win.on('closed', () => {
+    stickerWindows.delete(win.id)
+  })
+
+  stickerWindows.set(win.id, win)
+  return win
+}
+
+function pasteStickerFromClipboard(): void {
+  const payload = readClipboardAsStickerPayload()
+  if (!payload) return
+  stickersHidden = false
+  createStickerWindow(payload)
+}
+
+function toggleStickersHidden(): void {
+  stickersHidden = !stickersHidden
+  for (const win of stickerWindows.values()) {
+    if (win.isDestroyed()) continue
+    if (stickersHidden) win.hide()
+    else win.showInactive()
+  }
+}
+
+function startSystemSnip(): void {
+  if (process.platform === 'win32') {
+    shell.openExternal('ms-screenclip:').catch(() => null)
+  }
 }
 
 function settingsFilePath(): string {
@@ -910,6 +1079,39 @@ function ensureShortcuts(): void {
       }
     }
   }
+
+  if ((settings.shortcuts as Record<string, unknown>).snipStart) {
+    const acc = (settings.shortcuts as Record<string, string>).snipStart
+    if (acc) {
+      try {
+        globalShortcut.register(acc, () => startSystemSnip())
+      } catch (e) {
+        console.error('Failed to register shortcut:', acc, e)
+      }
+    }
+  }
+
+  if ((settings.shortcuts as Record<string, unknown>).stickerPaste) {
+    const acc = (settings.shortcuts as Record<string, string>).stickerPaste
+    if (acc) {
+      try {
+        globalShortcut.register(acc, () => pasteStickerFromClipboard())
+      } catch (e) {
+        console.error('Failed to register shortcut:', acc, e)
+      }
+    }
+  }
+
+  if ((settings.shortcuts as Record<string, unknown>).stickersToggleHidden) {
+    const acc = (settings.shortcuts as Record<string, string>).stickersToggleHidden
+    if (acc) {
+      try {
+        globalShortcut.register(acc, () => toggleStickersHidden())
+      } catch (e) {
+        console.error('Failed to register shortcut:', acc, e)
+      }
+    }
+  }
 }
 
 function applySettingsToRuntime(): void {
@@ -995,6 +1197,58 @@ app.whenReady().then(() => {
       return true
     } catch {
       return false
+    }
+  })
+  ipcMain.handle('sticker:close', (event) => {
+    try {
+      const win = BrowserWindow.fromWebContents(event.sender)
+      if (win && !win.isDestroyed()) {
+        win.hide()
+        win.close()
+      }
+      return true
+    } catch {
+      return false
+    }
+  })
+  ipcMain.on('sticker:set-position', (event, payload: unknown) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed()) return
+    if (!payload || typeof payload !== 'object') return
+    const p = payload as { x?: unknown; y?: unknown }
+    const x = Number(p.x)
+    const y = Number(p.y)
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return
+    try {
+      win.setPosition(Math.round(x), Math.round(y), false)
+    } catch {
+      // ignore
+    }
+  })
+  ipcMain.on('sticker:set-bounds', (event, payload: unknown) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed()) return
+    if (!payload || typeof payload !== 'object') return
+    const p = payload as { x?: unknown; y?: unknown; width?: unknown; height?: unknown }
+    const x = Number(p.x)
+    const y = Number(p.y)
+    const width = Number(p.width)
+    const height = Number(p.height)
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return
+    if (!Number.isFinite(width) || !Number.isFinite(height)) return
+    if (width <= 0 || height <= 0) return
+    try {
+      win.setBounds(
+        {
+          x: Math.round(x),
+          y: Math.round(y),
+          width: Math.round(width),
+          height: Math.round(height)
+        },
+        false
+      )
+    } catch {
+      // ignore
     }
   })
   ipcMain.handle('alarm:preview', (_, payload: unknown) => {

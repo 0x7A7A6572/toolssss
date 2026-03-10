@@ -36,8 +36,5 @@ export default defineConfig(
       ]
     }
   },
-  {
-    endOfLine: 'auto'
-  },
   eslintConfigPrettier
 )

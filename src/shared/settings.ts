@@ -60,7 +60,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   shortcuts: {
     toggleEye: 'Ctrl+Shift+E',
     toggleAlarm: 'Ctrl+Shift+A',
-    translateSelection: 'Ctrl+Shift+T'
+    translateSelection: 'Ctrl+Shift+T',
+    snipStart: 'F1',
+    stickerPaste: 'F3',
+    stickersToggleHidden: 'Shift+F3'
   },
   translate: {
     provider: 'baidu',

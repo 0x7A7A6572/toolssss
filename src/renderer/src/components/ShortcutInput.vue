@@ -190,7 +190,7 @@ function clear(): void {
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(0, 0, 0, 0.2);
   cursor: pointer;
-  min-width: 120px;
+  /* min-width: 120px; */
   min-height: 32px;
   justify-content: flex-end;
 }

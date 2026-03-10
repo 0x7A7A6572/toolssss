@@ -118,6 +118,45 @@ onMounted(() => {
         />
       </div>
 
+      <div class="row">
+        <div class="label">开始截图</div>
+        <ShortcutInput
+          :model-value="settings.shortcuts.snipStart"
+          placeholder="未设置"
+          @update:model-value="
+            update({
+              shortcuts: { snipStart: $event }
+            })
+          "
+        />
+      </div>
+
+      <div class="row">
+        <div class="label">剪贴板贴图</div>
+        <ShortcutInput
+          :model-value="settings.shortcuts.stickerPaste"
+          placeholder="未设置"
+          @update:model-value="
+            update({
+              shortcuts: { stickerPaste: $event }
+            })
+          "
+        />
+      </div>
+
+      <div class="row">
+        <div class="label">隐藏/显示所有贴图</div>
+        <ShortcutInput
+          :model-value="settings.shortcuts.stickersToggleHidden"
+          placeholder="未设置"
+          @update:model-value="
+            update({
+              shortcuts: { stickersToggleHidden: $event }
+            })
+          "
+        />
+      </div>
+
       <div class="hint">点击上方快捷键进行录制，支持 Ctrl, Alt, Shift, Meta 组合</div>
     </section>
 
