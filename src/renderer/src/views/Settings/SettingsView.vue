@@ -415,22 +415,11 @@ onMounted(() => {
 }
 
 .select {
-  padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(0, 0, 0, 0.2);
-  color: var(--ev-c-text-1);
-  outline: none;
-  font-size: 13px;
   width: 200px;
   text-align: right;
 }
 
 .text:focus {
-  border-color: rgba(59, 130, 246, 0.5);
-}
-
-.select:focus {
   border-color: rgba(59, 130, 246, 0.5);
 }
 

@@ -3,6 +3,14 @@ import { computed, onMounted, ref } from 'vue'
 import { ArrowLeftRight, Copy, Wand2 } from 'lucide-vue-next'
 import { TRANSLATOR_EVENTS } from '@shared/translator'
 import type { AppSettings } from '@shared/settings'
+import confirm from '@renderer/utils/confirm'
+import {
+  appendTranslationHistory,
+  clearTranslationHistory,
+  getTranslationHistory,
+  removeTranslationHistoryItem,
+  type TranslationHistoryItem
+} from '@renderer/utils/translationHistory'
 
 const inputText = ref('')
 const outputText = ref('')
@@ -13,6 +21,8 @@ const settings = ref<AppSettings | null>(null)
 
 const source = ref('auto')
 const target = ref('zh')
+
+const historyItems = ref<TranslationHistoryItem[]>([])
 
 const canTranslate = computed(() => inputText.value.trim().length > 0 && !loading.value)
 const missingConfigHint = computed(() => {
@@ -29,6 +39,47 @@ const missingConfigHint = computed(() => {
   if (!s.translate.baidu.secret) return '未配置百度翻译 secret，请到「全局设置」完善。'
   return ''
 })
+
+function refreshHistory(): void {
+  historyItems.value = getTranslationHistory()
+}
+
+function formatTime(ts: number): string {
+  try {
+    return new Date(ts).toLocaleString()
+  } catch {
+    return ''
+  }
+}
+
+function applyHistoryItem(item: TranslationHistoryItem): void {
+  inputText.value = item.input
+  outputText.value = item.output
+  errorText.value = ''
+  source.value = item.source || 'auto'
+  target.value = item.target || 'zh'
+}
+
+async function copyText(text: string): Promise<void> {
+  const t = text.trim()
+  if (!t) return
+  try {
+    await navigator.clipboard.writeText(t)
+  } catch {
+    return
+  }
+}
+
+async function deleteHistoryItem(id: string): Promise<void> {
+  historyItems.value = removeTranslationHistoryItem(id)
+}
+
+async function clearHistory(): Promise<void> {
+  const ok = await confirm('确定清空翻译历史吗？', { title: '清空历史', confirmText: '清空' })
+  if (!ok) return
+  clearTranslationHistory()
+  refreshHistory()
+}
 
 async function refreshSettings(): Promise<void> {
   const s = (await window.electron.ipcRenderer.invoke('settings:get')) as AppSettings
@@ -55,6 +106,14 @@ async function translate(): Promise<void> {
       target: target.value
     })) as { text?: unknown }
     outputText.value = typeof result?.text === 'string' ? result.text : ''
+    if (outputText.value.trim()) {
+      historyItems.value = appendTranslationHistory({
+        input: text,
+        output: outputText.value,
+        source: source.value,
+        target: target.value
+      })
+    }
   } catch (e) {
     outputText.value = ''
     errorText.value = e instanceof Error ? e.message : '翻译失败'
@@ -75,6 +134,7 @@ async function copyResult(): Promise<void> {
 
 onMounted(() => {
   refreshSettings().catch(() => null)
+  refreshHistory()
   window.electron.ipcRenderer.on('settings:changed', (_: unknown, s: unknown) => {
     settings.value = s as AppSettings
   })
@@ -148,6 +208,44 @@ onMounted(() => {
         <div v-else-if="missingConfigHint" class="hint">{{ missingConfigHint }}</div>
       </div>
     </section>
+
+    <section class="history">
+      <div class="history-head">
+        <div class="history-title">历史记录</div>
+        <div class="history-actions">
+          <button
+            class="btn"
+            type="button"
+            :disabled="historyItems.length === 0"
+            @click="clearHistory"
+          >
+            清空
+          </button>
+        </div>
+      </div>
+
+      <div v-if="historyItems.length === 0" class="hint">暂无历史记录</div>
+      <div v-else class="history-list">
+        <div v-for="item in historyItems" :key="item.id" class="history-item">
+          <div class="history-meta">
+            <div class="history-time">{{ formatTime(item.createdAt) }}</div>
+            <div class="history-lang">{{ item.source || 'auto' }} → {{ item.target }}</div>
+            <div class="spacer" />
+            <button class="mini-btn" type="button" @click="applyHistoryItem(item)">应用</button>
+            <button class="mini-btn" type="button" @click="copyText(item.output)">复制</button>
+            <button class="mini-btn danger" type="button" @click="deleteHistoryItem(item.id)">
+              删除
+            </button>
+          </div>
+          <div class="history-text">
+            <div class="history-label">原文</div>
+            <div class="history-content">{{ item.input }}</div>
+            <div class="history-label">译文</div>
+            <div class="history-content">{{ item.output }}</div>
+          </div>
+        </div>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -156,7 +254,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  height: 100%;
+  /* height: 100%; */
 }
 
 .header {
@@ -200,11 +298,7 @@ onMounted(() => {
 
 .select {
   height: 34px;
-  border-radius: 10px;
   padding: 0 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(0, 0, 0, 0.25);
-  color: rgba(235, 235, 245, 0.88);
 }
 
 .swap {
@@ -266,7 +360,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  min-height: 0;
+  min-height: 300px;
 }
 
 .panel-head {
@@ -329,5 +423,112 @@ onMounted(() => {
 .hint {
   font-size: 12px;
   color: rgba(235, 235, 245, 0.62);
+}
+
+.history {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  user-select: text;
+}
+
+.history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.history-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ev-c-text-1);
+}
+
+.history-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.history-item {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.15);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.history-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.history-time {
+  font-size: 12px;
+  color: rgba(235, 235, 245, 0.62);
+}
+
+.history-lang {
+  font-size: 12px;
+  color: rgba(235, 235, 245, 0.72);
+  font-weight: 700;
+}
+
+.mini-btn {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(235, 235, 245, 0.88);
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.mini-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.mini-btn.danger {
+  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.history-text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.history-label {
+  font-size: 12px;
+  color: rgba(235, 235, 245, 0.62);
+}
+
+.history-content {
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.18);
+  color: rgba(235, 235, 245, 0.9);
+  font-size: 13px;
+  line-height: 18px;
 }
 </style>

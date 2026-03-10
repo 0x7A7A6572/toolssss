@@ -30,6 +30,14 @@
   --color-background-mute: var(--ev-c-black-mute);
 
   --color-text: var(--ev-c-text-1);
+
+  --ev-control-border: rgba(255, 255, 255, 0.12);
+  --ev-control-bg: rgba(0, 0, 0, 0.2);
+  --ev-control-text: var(--ev-c-text-1);
+  --ev-control-radius: 10px;
+  --ev-control-font-size: 13px;
+  --ev-control-focus-border: rgba(59, 130, 246, 0.5);
+  --ev-control-disabled-opacity: 0.6;
 }
 
 *,
@@ -65,4 +73,28 @@ body {
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+select {
+  border: 1px solid var(--ev-control-border);
+  border-radius: var(--ev-control-radius);
+  background: var(--ev-control-bg);
+  color: var(--ev-control-text);
+  outline: none;
+  padding: 6px 10px;
+  font-size: var(--ev-control-font-size);
+}
+
+select:focus {
+  border-color: var(--ev-control-focus-border);
+}
+
+select:disabled {
+  opacity: var(--ev-control-disabled-opacity);
+  cursor: not-allowed;
+}
+
+select option {
+  background: #0b0f16;
+  color: rgba(235, 235, 245, 0.92);
 }

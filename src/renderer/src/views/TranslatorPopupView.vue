@@ -2,6 +2,7 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { Copy, X } from 'lucide-vue-next'
 import { TRANSLATOR_EVENTS } from '@shared/translator'
+import { appendTranslationHistory } from '@renderer/utils/translationHistory'
 
 const inputText = ref('')
 const outputText = ref('')
@@ -26,6 +27,14 @@ async function translate(): Promise<void> {
       target: target.value
     })) as { text?: unknown }
     outputText.value = typeof result?.text === 'string' ? result.text : ''
+    if (outputText.value.trim()) {
+      appendTranslationHistory({
+        input: text,
+        output: outputText.value,
+        source: source.value,
+        target: target.value
+      })
+    }
   } catch (e) {
     outputText.value = ''
     errorText.value = e instanceof Error ? e.message : '翻译失败'
@@ -244,11 +253,7 @@ onBeforeUnmount(() => {
 
 .select {
   height: 30px;
-  border-radius: 10px;
   padding: 0 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(0, 0, 0, 0.35);
-  color: rgba(235, 235, 245, 0.92);
 }
 
 .arrow {

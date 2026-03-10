@@ -58,9 +58,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
     autoStart: false
   },
   shortcuts: {
-    toggleEye: 'CommandOrControl+Shift+E',
-    toggleAlarm: 'CommandOrControl+Shift+A',
-    translateSelection: 'CommandOrControl+Shift+T'
+    toggleEye: 'Ctrl+Shift+E',
+    toggleAlarm: 'Ctrl+Shift+A',
+    translateSelection: 'Ctrl+Shift+T'
   },
   translate: {
     provider: 'baidu',

@@ -419,8 +419,7 @@ onBeforeUnmount(() => {
 }
 
 .time,
-.text,
-.select {
+.text {
   width: 100%;
   padding: 8px 10px;
   border-radius: 8px;
@@ -428,6 +427,11 @@ onBeforeUnmount(() => {
   background: rgba(0, 0, 0, 0.2);
   color: var(--ev-c-text-1);
   outline: none;
+}
+
+.select {
+  width: 100%;
+  padding: 8px 10px;
 }
 
 .text {
