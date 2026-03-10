@@ -46,8 +46,8 @@ function applyWindowScale(nextScale: number): void {
   const base = baseOuter.value
   if (!base) return
 
-  const w = Math.round(clamp(base.w * nextScale, 180, 6000))
-  const h = Math.round(clamp(base.h * nextScale, 140, 6000))
+  const w = Math.round(clamp(base.w * nextScale, 120, 6000))
+  const h = Math.round(clamp(base.h * nextScale, 90, 6000))
 
   const cx = window.screenX + window.outerWidth / 2
   const cy = window.screenY + window.outerHeight / 2
@@ -206,13 +206,13 @@ onBeforeUnmount(() => {
     @pointercancel="stopDrag"
   >
     <div v-if="payload?.kind === 'image'" class="content">
-      <div class="stage" :style="baseInner ? { width: `${baseInner.w}px`, height: `${baseInner.h}px` } : {}">
+      <div class="stage">
         <img class="img" :src="payload.data" :style="stageStyle" />
       </div>
     </div>
 
     <div v-else-if="payload?.kind === 'color'" class="content">
-      <div class="stage" :style="baseInner ? { width: `${baseInner.w}px`, height: `${baseInner.h}px` } : {}">
+      <div class="stage">
         <div class="color" :style="{ ...stageStyle, backgroundColor: payload.data }">
           <div class="color-text">{{ payload.data }}</div>
         </div>
@@ -220,7 +220,7 @@ onBeforeUnmount(() => {
     </div>
 
     <div v-else-if="payload?.kind === 'text'" class="content no-drag">
-      <div class="stage" :style="baseInner ? { width: `${baseInner.w}px`, height: `${baseInner.h}px` } : {}">
+      <div class="stage">
         <div class="text" :style="stageStyle">
           {{ payload.data }}
         </div>
@@ -248,13 +248,17 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   display: grid;
-  place-items: center;
+  place-items: stretch;
   padding: 12px;
+  box-sizing: border-box;
 }
 
 .stage {
   display: grid;
   place-items: center;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
 }
 
 .img {
@@ -264,8 +268,10 @@ onBeforeUnmount(() => {
   display: block;
   pointer-events: none;
   user-select: none;
-  border-radius: 10px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  border-radius: 14px;
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.35),
+    0 0 28px color-mix(in srgb, var(--ev-c-theme) 42%, transparent);
   object-fit: contain;
 }
 
@@ -273,7 +279,9 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   border-radius: 14px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.35),
+    0 0 28px color-mix(in srgb, var(--ev-c-theme) 42%, transparent);
   border: 1px solid rgba(255, 255, 255, 0.14);
   display: flex;
   align-items: flex-end;
@@ -301,7 +309,9 @@ onBeforeUnmount(() => {
   background: rgba(15, 15, 16, 0.78);
   color: rgba(255, 255, 255, 0.92);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.35),
+    0 0 28px color-mix(in srgb, var(--ev-c-theme) 42%, transparent);
   white-space: pre-wrap;
   word-break: break-word;
   user-select: text;

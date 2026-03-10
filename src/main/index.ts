@@ -6,16 +6,20 @@ import {
   shell,
   BrowserWindow,
   ipcMain,
+  dialog,
   screen,
   Tray,
   Menu,
   globalShortcut,
-  clipboard
+  clipboard,
+  nativeImage,
+  type OpenDialogOptions
 } from 'electron'
 
 const execAsync = promisify(exec)
-import { readFileSync, writeFileSync } from 'fs'
+import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { join } from 'path'
+import { promises as fsp } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import {
@@ -26,11 +30,14 @@ import {
 } from '@shared/settings'
 import { registerStickyNotesHandlers } from './sticky-notes'
 import { TRANSLATOR_EVENTS, type TranslatePayload, type TranslateResult } from '@shared/translator'
+import Screenshots from 'electron-screenshots'
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let isQuitting = false
 let translatorPopupWindow: BrowserWindow | null = null
+let screenshots: Screenshots | null = null
+let isScreenshotsHooked = false
 
 let settings: AppSettings = DEFAULT_SETTINGS
 const overlayWindows = new Map<number, BrowserWindow>()
@@ -82,6 +89,11 @@ function normalizeSettings(input: unknown): AppSettings {
   if (obj.general) {
     base.general.minimizeToTray = Boolean(obj.general.minimizeToTray)
     base.general.autoStart = Boolean(obj.general.autoStart)
+  }
+
+  if (obj.snip) {
+    base.snip.provider = obj.snip.provider === 'app' ? 'app' : 'system'
+    base.snip.saveDir = typeof obj.snip.saveDir === 'string' ? obj.snip.saveDir : base.snip.saveDir
   }
 
   if (obj.shortcuts) {
@@ -177,6 +189,12 @@ function applySettingsPatch(patch: unknown): AppSettings {
     if (typeof p.general.minimizeToTray === 'boolean')
       next.general.minimizeToTray = p.general.minimizeToTray
     if (typeof p.general.autoStart === 'boolean') next.general.autoStart = p.general.autoStart
+  }
+
+  if (p.snip) {
+    if (p.snip.provider === 'system' || p.snip.provider === 'app')
+      next.snip.provider = p.snip.provider
+    if (typeof p.snip.saveDir === 'string') next.snip.saveDir = p.snip.saveDir
   }
 
   if (p.shortcuts) {
@@ -315,12 +333,14 @@ function createStickerWindow(payload: StickerPayload): BrowserWindow {
   let w = 460
   let h = 360
   if (payload.kind === 'image') {
-    const image = clipboard.readImage()
+    const image = payload.data.startsWith('data:')
+      ? nativeImage.createFromDataURL(payload.data)
+      : clipboard.readImage()
     const size = image.getSize()
     const maxW = Math.max(360, Math.round(work.width * 0.6))
     const maxH = Math.max(260, Math.round(work.height * 0.6))
-    w = clampNumber(size.width, 220, maxW)
-    h = clampNumber(size.height, 160, maxH)
+    w = clampNumber(size.width + 24, 120, maxW)
+    h = clampNumber(size.height + 24, 90, maxH)
   } else if (payload.kind === 'color') {
     w = 260
     h = 220
@@ -356,6 +376,11 @@ function createStickerWindow(payload: StickerPayload): BrowserWindow {
 
   loadWindow(win, { mode: 'sticker' }).catch(() => null)
 
+  win.webContents.on('context-menu', (event) => {
+    event.preventDefault()
+    showStickerContextMenu(win, payload)
+  })
+
   win.webContents.once('did-finish-load', () => {
     try {
       win.webContents.send('sticker:init', payload)
@@ -380,6 +405,74 @@ function createStickerWindow(payload: StickerPayload): BrowserWindow {
   return win
 }
 
+function showStickerContextMenu(win: BrowserWindow, payload: StickerPayload | null): void {
+  const kind =
+    payload?.kind === 'image' || payload?.kind === 'text' || payload?.kind === 'color'
+      ? payload.kind
+      : null
+  const data = typeof payload?.data === 'string' ? payload.data : ''
+  const hasData = Boolean(kind && data)
+
+  const doCopy = (): void => {
+    if (!hasData || !kind) return
+    try {
+      if (kind === 'image') {
+        const img = nativeImage.createFromDataURL(data)
+        if (!img.isEmpty()) clipboard.writeImage(img)
+        return
+      }
+      clipboard.writeText(data)
+    } catch {
+      return
+    }
+  }
+
+  const doSaveAs = async (): Promise<void> => {
+    if (!hasData || !kind) return
+    const ts = formatSnipFileName(Date.now()).replace(/\.png$/i, '')
+    const ext = kind === 'image' ? 'png' : 'txt'
+    const result = await dialog.showSaveDialog(win, {
+      defaultPath: join(app.getPath('pictures'), `freamx-sticker-${ts}.${ext}`),
+      filters:
+        kind === 'image'
+          ? [{ name: 'PNG Image', extensions: ['png'] }]
+          : [{ name: 'Text', extensions: ['txt'] }]
+    })
+    if (result.canceled || !result.filePath) return
+
+    try {
+      if (kind === 'image') {
+        const img = nativeImage.createFromDataURL(data)
+        if (img.isEmpty()) return
+        await fsp.writeFile(result.filePath, img.toPNG())
+        return
+      }
+      await fsp.writeFile(result.filePath, data, 'utf-8')
+    } catch {
+      return
+    }
+  }
+
+  const menu = Menu.buildFromTemplate([
+    { label: '复制', enabled: hasData, click: () => doCopy() },
+    { label: '另存为', enabled: hasData, click: () => void doSaveAs() },
+    { type: 'separator' },
+    {
+      label: '关闭',
+      click: () => {
+        try {
+          win.hide()
+          win.close()
+        } catch {
+          // ignore
+        }
+      }
+    }
+  ])
+
+  menu.popup({ window: win })
+}
+
 function pasteStickerFromClipboard(): void {
   const payload = readClipboardAsStickerPayload()
   if (!payload) return
@@ -396,10 +489,127 @@ function toggleStickersHidden(): void {
   }
 }
 
+function broadcastSnipSavedChanged(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  if (mainWindow.webContents.isLoading()) return
+  mainWindow.webContents.send('snip:saved:changed')
+}
+
+function defaultSnipSaveDir(): string {
+  return join(app.getPath('pictures'), 'freamx', 'screenshots')
+}
+
+function resolveSnipSaveDir(): string {
+  const raw = settings.snip.saveDir.trim()
+  return raw ? raw : defaultSnipSaveDir()
+}
+
+function formatSnipFileName(ts: number): string {
+  const d = new Date(ts)
+  const yyyy = String(d.getFullYear())
+  const MM = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  const HH = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  const ss = String(d.getSeconds()).padStart(2, '0')
+  const SSS = String(d.getMilliseconds()).padStart(3, '0')
+  return `${yyyy}${MM}${dd}${HH}${mm}${ss}${SSS}.png`
+}
+
+async function saveSnipBufferToDisk(buffer: Buffer): Promise<string | null> {
+  const dir = resolveSnipSaveDir()
+  try {
+    await fsp.mkdir(dir, { recursive: true })
+  } catch {
+    return null
+  }
+
+  const filePath = join(dir, formatSnipFileName(Date.now()))
+  try {
+    await fsp.writeFile(filePath, buffer)
+    broadcastSnipSavedChanged()
+    return filePath
+  } catch {
+    return null
+  }
+}
+
 function startSystemSnip(): void {
   if (process.platform === 'win32') {
     shell.openExternal('ms-screenclip:').catch(() => null)
   }
+}
+
+function startAppSnip(): void {
+  if (!screenshots) {
+    screenshots = new Screenshots()
+    isScreenshotsHooked = false
+  }
+
+  if (!isScreenshotsHooked) {
+    isScreenshotsHooked = true
+    const wc = screenshots.$view.webContents
+    wc.on('before-input-event', (event, input) => {
+      if (input.type !== 'keyDown') return
+      if (input.control || input.meta || input.alt) return
+      if (String(input.key).toLowerCase() !== 'c') return
+      event.preventDefault()
+
+      wc.executeJavaScript(
+        `(() => {
+          const items = Array.from(document.querySelectorAll('.screenshots-magnifier-footer-item'));
+          const line = items.map((n) => n.textContent || '').find((s) => /RGB:/i.test(s));
+          if (!line) return null;
+          const m = line.match(/RGB:\\s*#?([0-9A-Fa-f]{6})/);
+          if (!m) return null;
+          return m[1].toUpperCase();
+        })()`,
+        true
+      )
+        .then((hex: unknown) => {
+          if (typeof hex !== 'string' || !/^[0-9A-F]{6}$/.test(hex)) return
+          if (input.shift) {
+            const r = parseInt(hex.slice(0, 2), 16)
+            const g = parseInt(hex.slice(2, 4), 16)
+            const b = parseInt(hex.slice(4, 6), 16)
+            clipboard.writeText(`rgb(${r}, ${g}, ${b})`)
+            return
+          }
+          clipboard.writeText(`#${hex}`)
+        })
+        .catch(() => null)
+    })
+
+    screenshots.on('save', (event, buffer) => {
+      event.preventDefault()
+      try {
+        const img = nativeImage.createFromBuffer(buffer)
+        if (!img.isEmpty()) clipboard.writeImage(img)
+      } catch {
+        // ignore
+      }
+      void saveSnipBufferToDisk(buffer).finally(() => {
+        screenshots?.endCapture().catch(() => null)
+      })
+    })
+
+    screenshots.on('ok', (_event, buffer) => {
+      try {
+        const img = nativeImage.createFromBuffer(buffer)
+        if (img.isEmpty()) return
+        clipboard.writeImage(img)
+      } catch {
+        return
+      }
+    })
+  }
+
+  screenshots.startCapture().catch(() => null)
+}
+
+function startSnip(): void {
+  if (settings.snip.provider === 'app') startAppSnip()
+  else startSystemSnip()
 }
 
 function settingsFilePath(): string {
@@ -1084,7 +1294,7 @@ function ensureShortcuts(): void {
     const acc = (settings.shortcuts as Record<string, string>).snipStart
     if (acc) {
       try {
-        globalShortcut.register(acc, () => startSystemSnip())
+        globalShortcut.register(acc, () => startSnip())
       } catch (e) {
         console.error('Failed to register shortcut:', acc, e)
       }
@@ -1174,6 +1384,98 @@ app.whenReady().then(() => {
   registerStickyNotesHandlers()
 
   ipcMain.handle('settings:get', () => settings)
+  ipcMain.handle('snip:saveDir:choose', async () => {
+    const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
+    const options: OpenDialogOptions = { properties: ['openDirectory', 'createDirectory'] }
+    const result = parent
+      ? await dialog.showOpenDialog(parent, options)
+      : await dialog.showOpenDialog(options)
+    if (result.canceled) return null
+    const p = result.filePaths?.[0]
+    return typeof p === 'string' && p.trim() ? p : null
+  })
+  ipcMain.handle('snip:saved:list', async () => {
+    const dir = resolveSnipSaveDir()
+    try {
+      await fsp.mkdir(dir, { recursive: true })
+    } catch {
+      return []
+    }
+
+    if (!existsSync(dir)) return []
+    const files = await fsp.readdir(dir)
+    const meta: Array<{
+      name: string
+      filePath: string
+      mtimeMs: number
+      size: number
+    }> = []
+    for (const name of files) {
+      const lower = name.toLowerCase()
+      if (!lower.endsWith('.png') && !lower.endsWith('.jpg') && !lower.endsWith('.jpeg')) continue
+      const filePath = join(dir, name)
+      try {
+        const st = await fsp.stat(filePath)
+        if (!st.isFile()) continue
+        meta.push({
+          name,
+          filePath,
+          mtimeMs: st.mtimeMs,
+          size: st.size
+        })
+      } catch {
+        continue
+      }
+    }
+    meta.sort((a, b) => b.mtimeMs - a.mtimeMs)
+
+    const top = meta.slice(0, 120)
+    const items: Array<{
+      name: string
+      filePath: string
+      thumbUrl: string | null
+      mtimeMs: number
+      size: number
+    }> = []
+
+    for (const it of top) {
+      let thumbUrl: string | null = null
+      try {
+        const img = nativeImage.createFromPath(it.filePath)
+        if (!img.isEmpty()) {
+          const resized = img.resize({ width: 420 })
+          const png = resized.toPNG()
+          thumbUrl = `data:image/png;base64,${png.toString('base64')}`
+        }
+      } catch {
+        thumbUrl = null
+      }
+      items.push({ ...it, thumbUrl })
+    }
+
+    return items
+  })
+  ipcMain.handle('snip:saved:reveal', async (_event, payload: unknown) => {
+    if (typeof payload !== 'string' || !payload.trim()) return false
+    try {
+      shell.showItemInFolder(payload)
+      return true
+    } catch {
+      return false
+    }
+  })
+  ipcMain.handle('snip:saved:stick', async (_event, payload: unknown) => {
+    if (typeof payload !== 'string' || !payload.trim()) return false
+    try {
+      const img = nativeImage.createFromPath(payload)
+      if (img.isEmpty()) return false
+      stickersHidden = false
+      createStickerWindow({ kind: 'image', data: img.toDataURL() })
+      return true
+    } catch {
+      return false
+    }
+  })
   ipcMain.handle('break:status:get', () => getBreakStatus())
   ipcMain.handle(TRANSLATOR_EVENTS.TRANSLATE, async (_e, payload: TranslatePayload) => {
     return translate(payload)
@@ -1210,6 +1512,22 @@ app.whenReady().then(() => {
     } catch {
       return false
     }
+  })
+  ipcMain.handle('sticker:context-menu', (event, payload: unknown) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed()) return false
+
+    const p = payload && typeof payload === 'object' ? (payload as Partial<StickerPayload>) : null
+    const safePayload: StickerPayload | null =
+      p &&
+      (p.kind === 'image' || p.kind === 'text' || p.kind === 'color') &&
+      typeof p.data === 'string' &&
+      p.data
+        ? { kind: p.kind, data: p.data }
+        : null
+
+    showStickerContextMenu(win, safePayload)
+    return true
   })
   ipcMain.on('sticker:set-position', (event, payload: unknown) => {
     const win = BrowserWindow.fromWebContents(event.sender)

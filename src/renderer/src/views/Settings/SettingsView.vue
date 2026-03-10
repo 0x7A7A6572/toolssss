@@ -21,6 +21,12 @@ async function update(patch: SettingsPatch): Promise<void> {
   }
 }
 
+async function chooseSnipSaveDir(): Promise<void> {
+  const p = await window.electron.ipcRenderer.invoke('snip:saveDir:choose')
+  if (typeof p !== 'string' || !p.trim()) return
+  update({ snip: { saveDir: p } }).catch(() => null)
+}
+
 onMounted(() => {
   refresh().catch(() => null)
   window.electron.ipcRenderer.on('settings:changed', (_: unknown, s: unknown) => {
@@ -71,6 +77,42 @@ onMounted(() => {
           />
           <span class="slider" />
         </label>
+      </div>
+
+      <div class="row">
+        <div class="label">截图方式</div>
+        <select
+          class="select"
+          :value="settings.snip.provider"
+          @change="
+            update({
+              snip: {
+                provider: ($event.target as HTMLSelectElement).value as 'system' | 'app'
+              }
+            })
+          "
+        >
+          <option value="system">系统截图（Windows：ms-screenclip）</option>
+          <option value="app">应用截图（electron-screenshots）</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <div class="label">截图保存目录</div>
+        <div class="path-row">
+          <input
+            class="text path"
+            type="text"
+            :value="settings.snip.saveDir"
+            placeholder="默认：系统图片目录/freamx/screenshots"
+            @change="
+              update({
+                snip: { saveDir: ($event.target as HTMLInputElement).value }
+              })
+            "
+          />
+          <button class="btn" type="button" @click="chooseSnipSaveDir">选择…</button>
+        </div>
       </div>
     </section>
 
@@ -451,6 +493,32 @@ onMounted(() => {
   font-size: 13px;
   width: 200px;
   text-align: right;
+}
+
+.path-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.path {
+  width: 360px;
+  text-align: left;
+}
+
+.btn {
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 245, 0.92);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn:hover {
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .select {

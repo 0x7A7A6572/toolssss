@@ -5,6 +5,10 @@ export interface AppSettings {
     minimizeToTray: boolean
     autoStart: boolean
   }
+  snip: {
+    provider: 'system' | 'app'
+    saveDir: string
+  }
   shortcuts: Record<string, string>
   translate: {
     provider: 'baidu' | 'bing'
@@ -41,6 +45,7 @@ export interface AppSettings {
 
 export type SettingsPatch = Partial<{
   general: Partial<AppSettings['general']>
+  snip: Partial<AppSettings['snip']>
   shortcuts: Partial<AppSettings['shortcuts']>
   translate: Partial<Omit<AppSettings['translate'], 'baidu' | 'bing'>> & {
     baidu?: Partial<AppSettings['translate']['baidu']>
@@ -56,6 +61,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   general: {
     minimizeToTray: false,
     autoStart: false
+  },
+  snip: {
+    provider: 'system',
+    saveDir: ''
   },
   shortcuts: {
     toggleEye: 'Ctrl+Shift+E',
