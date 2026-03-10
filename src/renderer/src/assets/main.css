@@ -3,6 +3,25 @@
 body {
   -webkit-user-select: none;
   user-select: none;
+
+  /* 修改全局滑动条样式 */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background-color: var(--ev-c-gray-3);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--ev-c-gray-2);
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--ev-c-gray-1);
+  }
 }
 
 html,

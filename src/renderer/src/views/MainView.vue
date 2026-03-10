@@ -61,9 +61,8 @@ onMounted(() => {
 
       <template v-if="activeTab === 'eye'">
         <section class="card">
-          <div class="card-title">护眼遮罩</div>
-          <div class="row">
-            <div class="label">启用</div>
+          <div class="card-head">
+            <div class="card-title">护眼遮罩</div>
             <label class="switch">
               <input
                 type="checkbox"
@@ -94,12 +93,40 @@ onMounted(() => {
             />
             <div class="value">{{ Math.round(settings.eye.opacity * 100) }}%</div>
           </div>
+          <div class="row colors">
+            <div class="label">颜色</div>
+            <div class="palette">
+              <button
+                v-for="c in [
+                  '#FFA046',
+                  '#F59E0B',
+                  '#EF4444',
+                  '#F43F5E',
+                  '#FB7185',
+                  '#22C55E',
+                  '#10B981',
+                  '#14B8A6',
+                  '#0EA5E9',
+                  '#3B82F6',
+                  '#8B5CF6',
+                  '#A855F7',
+                  '#94A3B8'
+                ]"
+                :key="c"
+                class="swatch"
+                :class="{ active: settings.eye.color === c }"
+                :style="{ backgroundColor: c }"
+                type="button"
+                title="选择颜色"
+                @click="update({ eye: { color: c } })"
+              />
+            </div>
+          </div>
         </section>
 
         <section class="card">
-          <div class="card-title">闹钟（全屏提示）</div>
-          <div class="row">
-            <div class="label">启用</div>
+          <div class="card-head">
+            <div class="card-title">闹钟（全屏提示）</div>
             <label class="switch">
               <input
                 type="checkbox"
@@ -141,43 +168,64 @@ onMounted(() => {
           </div>
         </section>
 
-        <section class="card">
-          <div class="card-title">定时休息（全屏提示）</div>
-          <div class="row">
-            <div class="label">启用</div>
-            <label class="switch">
-              <input
-                type="checkbox"
-                :checked="settings.break.enabled"
+        <div class="row-group">
+          <section class="card">
+            <div class="card-head">
+              <div class="card-title">定时休息（全屏提示）</div>
+              <label class="switch">
+                <input
+                  type="checkbox"
+                  :checked="settings.break.enabled"
+                  @change="
+                    update({
+                      break: { enabled: ($event.target as HTMLInputElement).checked }
+                    })
+                  "
+                />
+                <span class="slider" />
+              </label>
+            </div>
+            <div class="row">
+              <div class="label">间隔</div>
+              <select
+                class="select"
+                :value="String(settings.break.intervalMinutes)"
                 @change="
                   update({
-                    break: { enabled: ($event.target as HTMLInputElement).checked }
+                    break: { intervalMinutes: Number(($event.target as HTMLSelectElement).value) }
                   })
                 "
-              />
-              <span class="slider" />
-            </label>
-          </div>
-          <div class="row">
-            <div class="label">间隔</div>
-            <select
-              class="select"
-              :value="String(settings.break.intervalMinutes)"
-              @change="
-                update({
-                  break: { intervalMinutes: Number(($event.target as HTMLSelectElement).value) }
-                })
-              "
-            >
-              <option value="15">15 分钟</option>
-              <option value="30">30 分钟</option>
-              <option value="45">45 分钟</option>
-              <option value="60">1 小时</option>
-              <option value="90">1.5 小时</option>
-              <option value="120">2 小时</option>
-            </select>
-          </div>
-        </section>
+              >
+                <option value="15">15 分钟</option>
+                <option value="30">30 分钟</option>
+                <option value="45">45 分钟</option>
+                <option value="60">1 小时</option>
+                <option value="90">1.5 小时</option>
+                <option value="120">2 小时</option>
+              </select>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card-title">提醒时长</div>
+            <div class="row">
+              <div class="label">时长</div>
+              <select
+                class="select"
+                :value="String(settings.reminderSeconds)"
+                @change="
+                  update({ reminderSeconds: Number(($event.target as HTMLSelectElement).value) })
+                "
+              >
+                <option value="10">10 秒</option>
+                <option value="20">20 秒</option>
+                <option value="30">30 秒</option>
+                <option value="45">45 秒</option>
+                <option value="60">60 秒</option>
+              </select>
+            </div>
+          </section>
+        </div>
       </template>
 
       <template v-else>
@@ -196,21 +244,28 @@ onMounted(() => {
 
 <style scoped>
 .layout {
-  height: 100%;
+  height: 100vh;
   width: 100%;
   display: grid;
   grid-template-columns: 170px 1fr;
   background-color: black;
+  /* overflow-y: scroll; */
 }
 
 .sidebar {
-  height: 100%;
+  height: 100vh;
   border-right: 1px solid rgba(255, 255, 255, 0.08);
   padding: 18px 12px;
   display: flex;
   flex-direction: column;
   gap: 10px;
   background: rgba(255, 255, 255, 0.02);
+  overflow-y: scroll;
+  scrollbar-width: none; /* Firefox */
+}
+
+.sidebar::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Edge */
 }
 
 .sidebar-title {
@@ -250,6 +305,8 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  height: 100vh;
+  overflow-y: scroll;
 }
 
 .header {
@@ -285,6 +342,13 @@ onMounted(() => {
   color: var(--ev-c-text-1);
 }
 
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .row {
   display: grid;
   grid-template-columns: 84px 1fr auto;
@@ -306,6 +370,36 @@ onMounted(() => {
 
 .range {
   width: 100%;
+}
+
+.row-group {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.colors {
+  align-items: center;
+}
+
+.palette {
+  display: grid;
+  grid-template-columns: repeat(8, 28px);
+  gap: 8px;
+}
+
+.swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 0;
+  cursor: pointer;
+}
+
+.swatch.active {
+  outline: 2px solid rgba(255, 255, 255, 0.9);
+  outline-offset: 2px;
 }
 
 .time,

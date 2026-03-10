@@ -5,15 +5,39 @@ import type { AlarmReason } from '../../../shared/settings'
 const reason = ref<AlarmReason>('alarm')
 const title = ref('提醒')
 const body = ref('')
+const secondsLeft = ref<number | null>(null)
+let timer: number | null = null
 
 const showSnooze = computed(() => reason.value === 'alarm')
 
+function clearTimer(): void {
+  if (timer !== null) {
+    window.clearInterval(timer)
+    timer = null
+  }
+}
+
 const onShow = (_: unknown, payload: unknown): void => {
   if (!payload || typeof payload !== 'object') return
-  const p = payload as { reason?: unknown; title?: unknown; body?: unknown }
+  const p = payload as { reason?: unknown; title?: unknown; body?: unknown; timeoutSec?: unknown }
   if (p.reason === 'alarm' || p.reason === 'break') reason.value = p.reason
   if (typeof p.title === 'string') title.value = p.title
   if (typeof p.body === 'string') body.value = p.body
+  const total = typeof p.timeoutSec === 'number' ? p.timeoutSec : undefined
+  clearTimer()
+  if (total && total > 0) {
+    secondsLeft.value = Math.floor(total)
+    timer = window.setInterval(() => {
+      if (secondsLeft.value === null) return
+      secondsLeft.value = Math.max(0, secondsLeft.value - 1)
+      if (secondsLeft.value <= 0) {
+        clearTimer()
+        close()
+      }
+    }, 1000)
+  } else {
+    secondsLeft.value = null
+  }
 }
 
 const onKeyDown = (e: KeyboardEvent): void => {
@@ -34,13 +58,17 @@ window.addEventListener('keydown', onKeyDown)
 onBeforeUnmount(() => {
   window.electron.ipcRenderer.removeListener('alarm:show', onShow)
   window.removeEventListener('keydown', onKeyDown)
+  clearTimer()
 })
 </script>
 
 <template>
   <div class="wrap">
     <div class="card">
-      <div class="title">{{ title }}</div>
+      <div class="title">
+        <span>{{ title }}</span>
+        <span v-if="secondsLeft !== null" class="countdown">{{ secondsLeft }}s</span>
+      </div>
       <div class="body">{{ body }}</div>
       <div class="actions">
         <button v-if="showSnooze" class="btn" type="button" @click="snooze">稍后 5 分钟</button>
@@ -79,11 +107,22 @@ onBeforeUnmount(() => {
   font-size: 34px;
   font-weight: 800;
   letter-spacing: 0.02em;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
 }
 
 .body {
   font-size: 18px;
   color: rgba(235, 235, 245, 0.86);
+}
+
+.countdown {
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  padding: 2px 8px;
+  border-radius: 999px;
 }
 
 .actions {

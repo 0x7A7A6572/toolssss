@@ -4,7 +4,9 @@ export interface AppSettings {
   eye: {
     enabled: boolean
     opacity: number
+    color: string
   }
+  reminderSeconds: number
   alarm: {
     enabled: boolean
     time: string
@@ -18,6 +20,7 @@ export interface AppSettings {
 
 export type SettingsPatch = Partial<{
   eye: Partial<AppSettings['eye']>
+  reminderSeconds: number
   alarm: Partial<AppSettings['alarm']>
   break: Partial<AppSettings['break']>
 }>
@@ -25,8 +28,10 @@ export type SettingsPatch = Partial<{
 export const DEFAULT_SETTINGS: AppSettings = {
   eye: {
     enabled: false,
-    opacity: 0.18
+    opacity: 0.18,
+    color: '#FFA046'
   },
+  reminderSeconds: 20,
   alarm: {
     enabled: false,
     time: '09:00',

@@ -44,6 +44,14 @@ function normalizeSettings(input: unknown): AppSettings {
 
   base.eye.enabled = Boolean(obj.eye?.enabled)
   base.eye.opacity = clampNumber(Number(obj.eye?.opacity), 0, 0.7)
+  if (typeof obj.eye?.color === 'string' && obj.eye.color.trim()) {
+    base.eye.color = obj.eye.color.trim()
+  }
+
+  const rs = (obj as { reminderSeconds?: unknown }).reminderSeconds
+  if (typeof rs === 'number') {
+    base.reminderSeconds = clampNumber(rs, 5, 600)
+  }
 
   base.alarm.enabled = Boolean(obj.alarm?.enabled)
   base.alarm.time = normalizeTimeString(obj.alarm?.time) ?? base.alarm.time
@@ -66,6 +74,7 @@ function applySettingsPatch(patch: unknown): AppSettings {
   if (p.eye) {
     if (typeof p.eye.enabled === 'boolean') next.eye.enabled = p.eye.enabled
     if (typeof p.eye.opacity === 'number') next.eye.opacity = p.eye.opacity
+    if (typeof p.eye.color === 'string') next.eye.color = p.eye.color
   }
 
   if (p.alarm) {
@@ -78,6 +87,12 @@ function applySettingsPatch(patch: unknown): AppSettings {
     if (typeof p.break.enabled === 'boolean') next.break.enabled = p.break.enabled
     if (typeof p.break.intervalMinutes === 'number')
       next.break.intervalMinutes = p.break.intervalMinutes
+  }
+  {
+    const rsv = (p as { reminderSeconds?: unknown }).reminderSeconds
+    if (typeof rsv === 'number') {
+      next.reminderSeconds = clampNumber(rsv, 5, 600)
+    }
   }
 
   return normalizeSettings(next)
@@ -255,7 +270,13 @@ function showAlarmWindows(reason: AlarmReason, title: string, body: string): voi
 
   for (const win of alarmWindows.values()) {
     if (win.isDestroyed()) continue
-    if (!win.webContents.isLoading()) win.webContents.send('alarm:show', { reason, title, body })
+    if (!win.webContents.isLoading())
+      win.webContents.send('alarm:show', {
+        reason,
+        title,
+        body,
+        timeoutSec: settings.reminderSeconds
+      })
     if (!win.isVisible()) win.show()
   }
 }
@@ -287,9 +308,15 @@ function createAlarmWindow(display: Electron.Display): BrowserWindow {
   loadWindow(win, { mode: 'alarm' }).catch(() => null)
 
   win.webContents.once('did-finish-load', () => {
-    if (lastAlarmPayload) win.webContents.send('alarm:show', lastAlarmPayload)
+    if (lastAlarmPayload)
+      win.webContents.send('alarm:show', {
+        ...lastAlarmPayload,
+        timeoutSec: settings.reminderSeconds
+      })
     win.show()
     win.focus()
+    win.setFullScreen(true)
+    win.setKiosk(true)
   })
 
   win.on('closed', () => {
