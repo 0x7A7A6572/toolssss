@@ -97,7 +97,13 @@ onBeforeUnmount(() => {
         </div>
       </header>
       <div class="body">
-        <NoteEditor v-model="content" :editable="true" :image-max-height="600" />
+        <NoteEditor
+          v-model="content"
+          :editable="true"
+          :image-max-height="600"
+          :show-toolbar="true"
+          :autofocus="true"
+        />
       </div>
     </div>
   </div>

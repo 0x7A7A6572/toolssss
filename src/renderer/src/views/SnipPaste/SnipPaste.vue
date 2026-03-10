@@ -53,7 +53,7 @@ onBeforeUnmount(() => {
       <div class="header-row">
         <div class="header-left">
           <div class="title">截屏贴图</div>
-          <div class="subtitle">开始截图（系统截图） + 剪贴板贴图置顶</div>
+          <div class="subtitle">开始截图（应用截图） + 剪贴板贴图置顶</div>
         </div>
         <button class="btn help-btn" type="button" @click="helpOpen = true">说明</button>
       </div>
@@ -112,7 +112,7 @@ onBeforeUnmount(() => {
             <div class="modal-line">开始截图：快捷键（默认 F1）</div>
             <div class="modal-line">取消截图：任何时刻按 Esc；或点击工具条关闭</div>
             <div class="modal-line">
-              默认通过系统截图（Windows：ms-screenclip）完成选区；可在「全局设置」切换为应用截图（electron-screenshots）。截图结果在系统剪贴板中。
+              使用应用截图（electron-screenshots）完成选区。截图结果在系统剪贴板中。
             </div>
             <div class="modal-line">应用截图中，按 C 复制 HEX；按 Shift + C 复制 RGB</div>
             <div class="modal-line">点击截图工具条“保存”会自动保存到「截图保存目录」</div>

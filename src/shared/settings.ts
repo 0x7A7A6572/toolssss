@@ -6,7 +6,7 @@ export interface AppSettings {
     autoStart: boolean
   }
   snip: {
-    provider: 'system' | 'app'
+    provider: 'app'
     saveDir: string
   }
   shortcuts: Record<string, string>
@@ -63,7 +63,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     autoStart: false
   },
   snip: {
-    provider: 'system',
+    provider: 'app',
     saveDir: ''
   },
   shortcuts: {

@@ -92,7 +92,7 @@ function normalizeSettings(input: unknown): AppSettings {
   }
 
   if (obj.snip) {
-    base.snip.provider = obj.snip.provider === 'app' ? 'app' : 'system'
+    base.snip.provider = 'app'
     base.snip.saveDir = typeof obj.snip.saveDir === 'string' ? obj.snip.saveDir : base.snip.saveDir
   }
 
@@ -192,8 +192,7 @@ function applySettingsPatch(patch: unknown): AppSettings {
   }
 
   if (p.snip) {
-    if (p.snip.provider === 'system' || p.snip.provider === 'app')
-      next.snip.provider = p.snip.provider
+    if (p.snip.provider === 'app') next.snip.provider = p.snip.provider
     if (typeof p.snip.saveDir === 'string') next.snip.saveDir = p.snip.saveDir
   }
 
@@ -534,12 +533,6 @@ async function saveSnipBufferToDisk(buffer: Buffer): Promise<string | null> {
   }
 }
 
-function startSystemSnip(): void {
-  if (process.platform === 'win32') {
-    shell.openExternal('ms-screenclip:').catch(() => null)
-  }
-}
-
 function startAppSnip(): void {
   if (!screenshots) {
     screenshots = new Screenshots()
@@ -608,8 +601,7 @@ function startAppSnip(): void {
 }
 
 function startSnip(): void {
-  if (settings.snip.provider === 'app') startAppSnip()
-  else startSystemSnip()
+  startAppSnip()
 }
 
 function settingsFilePath(): string {

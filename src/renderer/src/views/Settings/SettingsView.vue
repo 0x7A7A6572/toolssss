@@ -80,24 +80,6 @@ onMounted(() => {
       </div>
 
       <div class="row">
-        <div class="label">截图方式</div>
-        <select
-          class="select"
-          :value="settings.snip.provider"
-          @change="
-            update({
-              snip: {
-                provider: ($event.target as HTMLSelectElement).value as 'system' | 'app'
-              }
-            })
-          "
-        >
-          <option value="system">系统截图（Windows：ms-screenclip）</option>
-          <option value="app">应用截图（electron-screenshots）</option>
-        </select>
-      </div>
-
-      <div class="row">
         <div class="label">截图保存目录</div>
         <div class="path-row">
           <input
