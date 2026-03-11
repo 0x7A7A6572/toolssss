@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { WeatherTool } from '../../utils/weather'
 import type { WeatherDashboard } from '@shared/weather'
 import { RefreshCw } from 'lucide-vue-next'
@@ -58,6 +58,19 @@ const lastRefreshMs = ref<number>(0)
 const lastRefreshKey = ref<string>('')
 const MIN_INTERVAL_MS = 60 * 1000
 const cascValue = ref<Array<string | number>>([])
+const cityPickerOpen = ref(false)
+
+function openCityPicker(): void {
+  cityPickerOpen.value = true
+}
+
+function closeCityPicker(): void {
+  cityPickerOpen.value = false
+}
+
+function onKeydown(e: KeyboardEvent): void {
+  if (e.key === 'Escape') closeCityPicker()
+}
 
 const provinceOptions = computed(() =>
   PROVINCES.map((p) => ({
@@ -92,6 +105,7 @@ const onCascChange = (payload: {
     stationId.value = city
     localStorage.setItem('weather.stationId', stationId.value)
     refresh().catch(() => null)
+    closeCityPicker()
   }
 }
 
@@ -166,6 +180,7 @@ async function refresh(): Promise<void> {
 }
 
 onMounted(() => {
+  window.addEventListener('keydown', onKeydown)
   loadCities()
     .then(() => {
       if (chosenCityId.value) {
@@ -178,6 +193,10 @@ onMounted(() => {
       refresh().catch(() => null)
     })
 })
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKeydown)
+})
 </script>
 
 <template>
@@ -189,22 +208,17 @@ onMounted(() => {
 
     <section class="card">
       <div class="card-head">
-        <div class="controls">
-          <LazyCascader
-            v-model="cascValue"
-            :options="provinceOptions"
-            :lazy-load="lazyLoadCities"
-            :lazy-load-level="0"
-            :props-config="{
-              label: 'label',
-              value: 'value',
-              children: 'children',
-              disabled: 'disabled'
-            }"
-            @change="onCascChange"
-          />
-        </div>
         <div class="actions">
+          <button
+            v-if="!dashboard"
+            class="btn"
+            type="button"
+            :disabled="citiesLoading || loading"
+            title="选择城市"
+            @click="openCityPicker"
+          >
+            城市
+          </button>
           <button class="btn" :disabled="loading" title="刷新" @click="refresh">
             <RefreshCw v-if="!loading" :size="16" />
             <div v-else class="loading-spinner"></div>
@@ -224,7 +238,10 @@ onMounted(() => {
 
             <div class="block-title">今日</div>
             <div class="now-main">
-              <div class="location">{{ dashboard.now.locationName }}</div>
+              <button class="location location-btn" type="button" @click="openCityPicker">
+                <span>{{ dashboard.now.locationName }}</span>
+                <span class="location-caret">▾</span>
+              </button>
               <div class="temp">
                 <span class="temp-value">{{
                   dashboard.now.temperatureC === null ? '—' : Math.round(dashboard.now.temperatureC)
@@ -317,6 +334,31 @@ onMounted(() => {
         </div>
       </div>
     </section>
+
+    <Teleport to="body">
+      <div v-if="cityPickerOpen" class="picker-overlay" @click.self="closeCityPicker">
+        <div class="picker-card">
+          <div class="picker-title">选择城市</div>
+          <LazyCascader
+            v-model="cascValue"
+            :options="provinceOptions"
+            :lazy-load="lazyLoadCities"
+            :lazy-load-level="0"
+            :props-config="{
+              label: 'label',
+              value: 'value',
+              children: 'children',
+              disabled: 'disabled'
+            }"
+            @change="onCascChange"
+          />
+          <div class="picker-actions">
+            <button class="btn" type="button" @click="closeCityPicker">关闭</button>
+          </div>
+        </div>
+      </div>
+      <div v-if="cityPickerOpen" class="picker-backdrop" />
+    </Teleport>
   </div>
 </template>
 
@@ -457,6 +499,72 @@ onMounted(() => {
 .btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.location-btn {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-align: left;
+}
+
+.location-btn:hover {
+  text-decoration: underline;
+}
+
+.location-caret {
+  font-size: 12px;
+  color: rgba(235, 235, 245, 0.62);
+}
+
+.picker-overlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  z-index: 10000;
+}
+
+.picker-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  z-index: 9999;
+}
+
+.picker-card {
+  width: min(420px, calc(100vw - 64px));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 18px;
+  background: rgba(17, 24, 39, 0.9);
+  color: var(--ev-c-text-1);
+  z-index: 10001;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  top: 10%;
+  position: absolute;
+}
+
+.picker-title {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.picker-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.picker-card :deep(.lazy-cascader) {
+  width: 100%;
 }
 
 .error {
