@@ -58,6 +58,7 @@ function buildOption(): EChartsOption {
       axisLabel: { color: text2, fontSize: 11 }
     },
     yAxis: {
+      show: false,
       type: 'value',
       min: d.min,
       max: d.max,

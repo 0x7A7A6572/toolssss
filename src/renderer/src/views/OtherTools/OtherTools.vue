@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { WeatherTool } from '../../utils/weather'
 import type { WeatherDashboard } from '@shared/weather'
+import { DEFAULT_SETTINGS, type AppSettings } from '@shared/settings'
 import { RefreshCw, Settings } from 'lucide-vue-next'
 import LazyCascader from '../../components/LazyCascader.vue'
 import SevenDayTempChart from '../../components/SevenDayTempChart.vue'
@@ -87,6 +88,76 @@ const answerSpotlightStyle = computed<Record<string, string>>(() => ({
   '--answer-spot-x': `${answerSpotlightX.value}px`,
   '--answer-spot-y': `${answerSpotlightY.value}px`
 }))
+
+const settings = ref<AppSettings>(structuredClone(DEFAULT_SETTINGS))
+
+const FUN_FACT_YMD_KEY = 'ai.funFact.ymd'
+const FUN_FACT_TEXT_KEY = 'ai.funFact.text'
+const funFactYmd = ref<string>(localStorage.getItem(FUN_FACT_YMD_KEY) ?? '')
+const funFactText = ref<string>(localStorage.getItem(FUN_FACT_TEXT_KEY) ?? '')
+const funFactLoading = ref(false)
+const funFactErrorText = ref('')
+
+function ymdLocal(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+const funFactTodayYmd = computed(() => ymdLocal(new Date(nowTickMs.value)))
+
+const aiReady = computed(() => {
+  const ai = settings.value.ai
+  return Boolean(ai.enabled && ai.apiKeySet && ai.baseUrl.trim() && ai.model.trim())
+})
+
+function normalizeCachedFunFact(): void {
+  if (!funFactYmd.value) return
+  if (funFactYmd.value === funFactTodayYmd.value) return
+  funFactYmd.value = ''
+  funFactText.value = ''
+  localStorage.removeItem(FUN_FACT_YMD_KEY)
+  localStorage.removeItem(FUN_FACT_TEXT_KEY)
+}
+
+const onSettingsChanged = (_: unknown, s: unknown): void => {
+  settings.value = s as AppSettings
+}
+
+async function refreshSettings(): Promise<void> {
+  const result = await window.electron.ipcRenderer.invoke('settings:get')
+  settings.value = result as AppSettings
+}
+
+async function refreshDailyFunFact(force: boolean): Promise<void> {
+  normalizeCachedFunFact()
+  if (!aiReady.value) {
+    funFactErrorText.value = '请到「全局设置」启用 AI 并配置 Base URL / Key / Model'
+    return
+  }
+  if (!force && funFactYmd.value === funFactTodayYmd.value && funFactText.value.trim()) {
+    funFactErrorText.value = ''
+    return
+  }
+  funFactLoading.value = true
+  funFactErrorText.value = ''
+  try {
+    const ret = (await window.electron.ipcRenderer.invoke('ai:funfact:daily', {
+      force
+    })) as { ymd?: unknown; text?: unknown }
+    const ymd = typeof ret?.ymd === 'string' ? ret.ymd : ''
+    const text = typeof ret?.text === 'string' ? ret.text : ''
+    funFactYmd.value = ymd
+    funFactText.value = text
+    if (ymd) localStorage.setItem(FUN_FACT_YMD_KEY, ymd)
+    if (text) localStorage.setItem(FUN_FACT_TEXT_KEY, text)
+  } catch (e) {
+    funFactErrorText.value = e instanceof Error ? e.message : '获取冷知识失败'
+  } finally {
+    funFactLoading.value = false
+  }
+}
 
 function openCityPicker(): void {
   cityPickerOpen.value = true
@@ -363,9 +434,21 @@ async function refresh(): Promise<void> {
 
 onMounted(() => {
   window.addEventListener('keydown', onKeydown)
+  window.electron.ipcRenderer.on('settings:changed', onSettingsChanged)
   tickTimer = window.setInterval(() => {
     nowTickMs.value = Date.now()
+    normalizeCachedFunFact()
   }, 60 * 1000)
+  refreshSettings()
+    .then(() => {
+      normalizeCachedFunFact()
+      if (
+        aiReady.value &&
+        (!funFactText.value.trim() || funFactYmd.value !== funFactTodayYmd.value)
+      )
+        refreshDailyFunFact(false).catch(() => null)
+    })
+    .catch(() => null)
   loadCities()
     .then(() => {
       if (chosenCityId.value) {
@@ -381,6 +464,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
+  window.electron.ipcRenderer.removeListener('settings:changed', onSettingsChanged)
   if (tickTimer !== null) {
     window.clearInterval(tickTimer)
     tickTimer = null
@@ -611,6 +695,28 @@ onUnmounted(() => {
         </div>
       </section>
     </div>
+
+    <section class="card fun-fact-card">
+      <div class="fun-fact-head">
+        <div class="fun-fact-title">每日冷知识</div>
+        <div class="actions">
+          <button
+            class="btn"
+            type="button"
+            :disabled="funFactLoading || !aiReady"
+            @click="refreshDailyFunFact(true)"
+          >
+            换一条
+          </button>
+        </div>
+      </div>
+
+      <div v-if="funFactErrorText" class="error">{{ funFactErrorText }}</div>
+      <div v-else class="fun-fact-body">
+        <div class="fun-fact-meta">{{ funFactYmd || funFactTodayYmd }}</div>
+        <div class="fun-fact-text">{{ funFactText || '—' }}</div>
+      </div>
+    </section>
 
     <Teleport to="body">
       <div v-if="cityPickerOpen" class="picker-overlay" @click.self="closeCityPicker">
@@ -957,6 +1063,39 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 10px;
   min-height: 0;
+}
+
+.fun-fact-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.fun-fact-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: rgba(235, 235, 245, 0.92);
+}
+
+.fun-fact-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fun-fact-meta {
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(235, 235, 245, 0.62);
+}
+
+.fun-fact-text {
+  font-size: 14px;
+  font-weight: 700;
+  color: rgba(235, 235, 245, 0.92);
+  white-space: pre-wrap;
+  line-height: 1.35;
 }
 
 .tips {

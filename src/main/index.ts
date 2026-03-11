@@ -13,6 +13,7 @@ import {
   globalShortcut,
   clipboard,
   nativeImage,
+  safeStorage,
   type MenuItemConstructorOptions,
   type OpenDialogOptions
 } from 'electron'
@@ -169,6 +170,16 @@ function normalizeSettings(input: unknown): AppSettings {
     }
   }
 
+  if ((obj as { ai?: unknown }).ai && typeof (obj as { ai?: unknown }).ai === 'object') {
+    const ai = (obj as { ai: Record<string, unknown> }).ai
+    base.ai.enabled = Boolean(ai['enabled'])
+    const provider = ai['provider']
+    if (provider === 'openai' || provider === 'custom') base.ai.provider = provider
+    if (typeof ai['baseUrl'] === 'string') base.ai.baseUrl = ai['baseUrl'].trim()
+    if (typeof ai['model'] === 'string') base.ai.model = ai['model'].trim()
+    if (typeof ai['apiKeySet'] === 'boolean') base.ai.apiKeySet = ai['apiKeySet'] as boolean
+  }
+
   base.eye.enabled = Boolean(obj.eye?.enabled)
   base.eye.opacity = clampNumber(Number(obj.eye?.opacity), 0, 0.7)
   if (typeof obj.eye?.color === 'string' && obj.eye.color.trim()) {
@@ -263,6 +274,16 @@ function applySettingsPatch(patch: unknown): AppSettings {
       if (typeof b['key'] === 'string') next.translate.bing.key = b['key']
       if (typeof b['region'] === 'string') next.translate.bing.region = b['region']
     }
+  }
+
+  if ((p as { ai?: unknown }).ai && typeof (p as { ai?: unknown }).ai === 'object') {
+    const ai = (p as { ai: Record<string, unknown> }).ai
+    if (typeof ai['enabled'] === 'boolean') next.ai.enabled = ai['enabled'] as boolean
+    const provider = ai['provider']
+    if (provider === 'openai' || provider === 'custom') next.ai.provider = provider
+    if (typeof ai['baseUrl'] === 'string') next.ai.baseUrl = ai['baseUrl'] as string
+    if (typeof ai['model'] === 'string') next.ai.model = ai['model'] as string
+    if (typeof ai['apiKeySet'] === 'boolean') next.ai.apiKeySet = ai['apiKeySet'] as boolean
   }
 
   if (p.eye) {
@@ -845,13 +866,122 @@ function settingsFilePath(): string {
   return join(app.getPath('userData'), 'settings.json')
 }
 
+type SecretsV1 = {
+  v: 1
+  aiApiKey?: string
+}
+
+function secretsFilePath(): string {
+  return join(app.getPath('userData'), 'secrets.json')
+}
+
+function loadSecretsFromDisk(): SecretsV1 {
+  try {
+    const raw = readFileSync(secretsFilePath(), 'utf-8')
+    const v = JSON.parse(raw) as unknown
+    if (!v || typeof v !== 'object') return { v: 1 }
+    const obj = v as Record<string, unknown>
+    const out: SecretsV1 = { v: 1 }
+    if (typeof obj['aiApiKey'] === 'string') out.aiApiKey = obj['aiApiKey']
+    return out
+  } catch {
+    return { v: 1 }
+  }
+}
+
+function saveSecretsToDisk(next: SecretsV1): void {
+  try {
+    writeFileSync(secretsFilePath(), JSON.stringify(next), 'utf-8')
+  } catch {
+    return
+  }
+}
+
+function encryptToBase64(text: string): string | null {
+  if (!text.trim()) return null
+  try {
+    const buf = safeStorage.encryptString(text)
+    return buf.toString('base64')
+  } catch {
+    return null
+  }
+}
+
+function decryptFromBase64(base64: string): string | null {
+  if (!base64.trim()) return null
+  try {
+    return safeStorage.decryptString(Buffer.from(base64, 'base64'))
+  } catch {
+    return null
+  }
+}
+
+function getAiApiKeyFromSecrets(): string | null {
+  const secrets = loadSecretsFromDisk()
+  if (typeof secrets.aiApiKey !== 'string' || !secrets.aiApiKey.trim()) return null
+  const v = decryptFromBase64(secrets.aiApiKey)
+  return typeof v === 'string' && v.trim() ? v : null
+}
+
+function setAiApiKeyToSecrets(apiKey: string): boolean {
+  const trimmed = apiKey.trim()
+  if (!trimmed) return false
+  const enc = encryptToBase64(trimmed)
+  if (!enc) return false
+  const secrets = loadSecretsFromDisk()
+  saveSecretsToDisk({ ...secrets, v: 1, aiApiKey: enc })
+  return true
+}
+
+function clearAiApiKeyFromSecrets(): boolean {
+  try {
+    const secrets = loadSecretsFromDisk()
+    if (!('aiApiKey' in secrets)) return true
+    const next: SecretsV1 = { ...secrets, v: 1 }
+    delete next.aiApiKey
+    saveSecretsToDisk(next)
+    return true
+  } catch {
+    return false
+  }
+}
+
 function loadSettingsFromDisk(): AppSettings {
+  let parsed: unknown = null
   try {
     const raw = readFileSync(settingsFilePath(), 'utf-8')
-    return normalizeSettings(JSON.parse(raw))
+    parsed = JSON.parse(raw)
   } catch {
-    return DEFAULT_SETTINGS
+    parsed = null
   }
+
+  const normalized = normalizeSettings(parsed)
+  const existing = getAiApiKeyFromSecrets()
+  if (existing) {
+    normalized.ai.apiKeySet = true
+    return normalized
+  }
+
+  const legacyKey =
+    parsed && typeof parsed === 'object'
+      ? ((parsed as Record<string, unknown>)['ai'] as Record<string, unknown> | undefined)?.[
+          'apiKey'
+        ]
+      : undefined
+  const legacyTrimmed = typeof legacyKey === 'string' ? legacyKey.trim() : ''
+  if (!legacyTrimmed) {
+    normalized.ai.apiKeySet = false
+    return normalized
+  }
+
+  if (!setAiApiKeyToSecrets(legacyTrimmed)) {
+    normalized.ai.apiKeySet = false
+    return normalized
+  }
+
+  normalized.ai.apiKeySet = true
+  saveSettingsToDisk(normalized)
+  return normalized
 }
 
 function saveSettingsToDisk(next: AppSettings): void {
@@ -1447,6 +1577,129 @@ async function translate(payload: TranslatePayload): Promise<TranslateResult> {
   return { text: out }
 }
 
+type AiDailyFunFactResult = {
+  ymd: string
+  text: string
+}
+
+let aiDailyFunFactCache: AiDailyFunFactResult | null = null
+
+function ymdLocal(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+function trimAiText(text: string): string {
+  const t = text.replace(/\r\n/g, '\n').trim()
+  if (t.length <= 800) return t
+  return t.slice(0, 800).trimEnd()
+}
+
+function extractAiErrorMessage(raw: string): string | null {
+  try {
+    const obj = JSON.parse(raw) as unknown
+    const root = obj && typeof obj === 'object' ? (obj as Record<string, unknown>) : null
+    const err = root?.['error']
+    const e = err && typeof err === 'object' ? (err as Record<string, unknown>) : null
+    const msg = typeof e?.['message'] === 'string' ? e.message : ''
+    return msg.trim() ? msg.trim() : null
+  } catch {
+    return null
+  }
+}
+
+function buildAiChatCompletionsUrl(baseUrl: string): URL {
+  const base = baseUrl.trim()
+  if (!base) throw new Error('未配置 AI Base URL，请到「全局设置」完善。')
+  const normalized = base.replace(/\/+$/, '')
+  if (/\/chat\/completions$/i.test(normalized)) return new URL(normalized)
+  if (/\/v1$/i.test(normalized)) return new URL(`${normalized}/chat/completions`)
+  return new URL(`${normalized}/v1/chat/completions`)
+}
+
+async function requestDailyFunFactFromAi(ymd: string): Promise<string> {
+  if (!settings.ai.enabled) throw new Error('AI 未启用，请到「全局设置」开启。')
+  const base = settings.ai.baseUrl.trim()
+  if (!base) throw new Error('未配置 AI Base URL，请到「全局设置」完善。')
+  const model = settings.ai.model.trim()
+  if (!model) throw new Error('未配置 AI Model，请到「全局设置」完善。')
+  const apiKey = getAiApiKeyFromSecrets()
+  if (!apiKey) throw new Error('未配置 AI API Key，请到「全局设置」完善。')
+
+  const url = buildAiChatCompletionsUrl(base)
+  const controller = new AbortController()
+  const timeoutMs = 60000
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    let res: Response
+    try {
+      res = await fetch(url.toString(), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0.7,
+          max_tokens: 220,
+          messages: [
+            {
+              role: 'system',
+              content:
+                '你是一个严谨的科普编辑。只输出一条冷知识，中文，尽量准确，不要编造具体数字或来源。'
+            },
+            {
+              role: 'user',
+              content: `给我一条“每日冷知识”，日期：${ymd}。\n要求：1) 1-3 句；2) 不要列表；3) 不要标题符号；4) 不要输出多余解释。`
+            }
+          ]
+        }),
+        signal: controller.signal
+      })
+    } catch (e) {
+      const name =
+        e &&
+        typeof e === 'object' &&
+        'name' in e &&
+        typeof (e as { name?: unknown }).name === 'string'
+          ? ((e as { name: string }).name as string)
+          : ''
+      if (name === 'AbortError')
+        throw new Error(`AI 请求超时（${Math.round(timeoutMs / 1000)}秒），请稍后重试`)
+      throw e
+    }
+
+    const raw = await res.text()
+    if (!res.ok) {
+      const msg = extractAiErrorMessage(raw)
+      throw new Error(msg ? `AI 请求失败：${msg}` : raw || `AI 请求失败：HTTP ${res.status}`)
+    }
+
+    const data = JSON.parse(raw) as {
+      choices?: Array<{ message?: { content?: unknown } }>
+    }
+    const content = data?.choices?.[0]?.message?.content
+    if (typeof content !== 'string' || !content.trim()) throw new Error('AI 未返回有效内容')
+    return trimAiText(content)
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+async function getAiDailyFunFact(force: boolean): Promise<AiDailyFunFactResult> {
+  const ymd = ymdLocal(new Date())
+  if (!force && aiDailyFunFactCache?.ymd === ymd && aiDailyFunFactCache.text.trim()) {
+    return aiDailyFunFactCache
+  }
+  const text = await requestDailyFunFactFromAi(ymd)
+  const out: AiDailyFunFactResult = { ymd, text }
+  aiDailyFunFactCache = out
+  return out
+}
+
 function previewAlarm(reason: AlarmReason): void {
   const title = reason === 'alarm' ? `预览：${settings.alarm.label}` : '预览：休息提醒'
   const body =
@@ -1660,6 +1913,31 @@ app.whenReady().then(() => {
     }
   })
   ipcMain.handle('settings:get', () => settings)
+  ipcMain.handle('ai:apiKey:set', (_event, payload: unknown) => {
+    const apiKey = typeof payload === 'string' ? payload.trim() : ''
+    if (!apiKey) return settings
+    if (!setAiApiKeyToSecrets(apiKey)) return settings
+    settings.ai.apiKeySet = true
+    saveSettingsToDisk(settings)
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('settings:changed', settings)
+    }
+    return settings
+  })
+  ipcMain.handle('ai:apiKey:clear', () => {
+    if (!clearAiApiKeyFromSecrets()) return settings
+    settings.ai.apiKeySet = false
+    saveSettingsToDisk(settings)
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('settings:changed', settings)
+    }
+    return settings
+  })
+  ipcMain.handle('ai:funfact:daily', async (_event, payload: unknown) => {
+    const p = payload && typeof payload === 'object' ? (payload as { force?: unknown }) : {}
+    const force = Boolean(p.force)
+    return await getAiDailyFunFact(force)
+  })
   ipcMain.handle('snip:saveDir:choose', async () => {
     const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
     const options: OpenDialogOptions = { properties: ['openDirectory', 'createDirectory'] }

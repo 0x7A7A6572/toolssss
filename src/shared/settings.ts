@@ -29,6 +29,13 @@ export interface AppSettings {
       region: string
     }
   }
+  ai: {
+    enabled: boolean
+    provider: 'openai' | 'custom'
+    baseUrl: string
+    model: string
+    apiKeySet: boolean
+  }
   eye: {
     enabled: boolean
     opacity: number
@@ -56,6 +63,7 @@ export type SettingsPatch = Partial<{
     baidu?: Partial<AppSettings['translate']['baidu']>
     bing?: Partial<AppSettings['translate']['bing']>
   }
+  ai: Partial<AppSettings['ai']>
   eye: Partial<AppSettings['eye']>
   reminderSeconds: number
   alarm: Partial<AppSettings['alarm']>
@@ -97,6 +105,13 @@ export const DEFAULT_SETTINGS: AppSettings = {
       key: '',
       region: ''
     }
+  },
+  ai: {
+    enabled: false,
+    provider: 'openai',
+    baseUrl: 'https://api.openai.com',
+    model: 'gpt-4o-mini',
+    apiKeySet: false
   },
   eye: {
     enabled: false,

@@ -7,6 +7,7 @@ import { FolderOpen } from 'lucide-vue-next'
 const settings = ref<AppSettings>(structuredClone(DEFAULT_SETTINGS))
 const saving = ref(false)
 const appPaths = ref<{ userData: string; pictures: string } | null>(null)
+const aiApiKeyDraft = ref('')
 
 function joinPath(base: string, tail: string): string {
   const b = base.trim().replace(/[\\/]+$/, '')
@@ -41,6 +42,30 @@ async function update(patch: SettingsPatch): Promise<void> {
   try {
     const result = await window.electron.ipcRenderer.invoke('settings:update', patch)
     settings.value = result as AppSettings
+  } finally {
+    saving.value = false
+  }
+}
+
+async function setAiApiKey(): Promise<void> {
+  const v = aiApiKeyDraft.value.trim()
+  if (!v) return
+  saving.value = true
+  try {
+    const result = await window.electron.ipcRenderer.invoke('ai:apiKey:set', v)
+    settings.value = result as AppSettings
+    aiApiKeyDraft.value = ''
+  } finally {
+    saving.value = false
+  }
+}
+
+async function clearAiApiKey(): Promise<void> {
+  saving.value = true
+  try {
+    const result = await window.electron.ipcRenderer.invoke('ai:apiKey:clear')
+    settings.value = result as AppSettings
+    aiApiKeyDraft.value = ''
   } finally {
     saving.value = false
   }
@@ -439,6 +464,99 @@ onMounted(() => {
       <div class="hint">
         百度翻译接口：/api/trans/vip/translate；必应翻译接口：/translate?api-version=3.0
       </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <div class="card-title">AI 服务</div>
+      </div>
+
+      <div class="row">
+        <div class="label">启用</div>
+        <label class="switch">
+          <input
+            type="checkbox"
+            :checked="settings.ai.enabled"
+            @change="
+              update({
+                ai: { enabled: ($event.target as HTMLInputElement).checked }
+              })
+            "
+          />
+          <span class="slider" />
+        </label>
+      </div>
+
+      <div class="row">
+        <div class="label">Provider</div>
+        <select
+          class="select"
+          :value="settings.ai.provider"
+          @change="
+            update({
+              ai: {
+                provider: ($event.target as HTMLSelectElement).value as 'openai' | 'custom'
+              }
+            })
+          "
+        >
+          <option value="openai">OpenAI Compatible</option>
+          <option value="custom">Custom</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <div class="label">Base URL</div>
+        <input
+          class="text"
+          type="text"
+          :value="settings.ai.baseUrl"
+          placeholder="默认：https://api.openai.com"
+          @change="
+            update({
+              ai: { baseUrl: ($event.target as HTMLInputElement).value }
+            })
+          "
+        />
+      </div>
+
+      <div class="row">
+        <div class="label">API Key</div>
+        <div class="path-row">
+          <input
+            v-model="aiApiKeyDraft"
+            class="text"
+            type="password"
+            :placeholder="settings.ai.apiKeySet ? '已保存（输入新 Key 覆盖）' : '未设置'"
+            @change="setAiApiKey"
+          />
+          <button
+            class="btn"
+            type="button"
+            :disabled="!settings.ai.apiKeySet"
+            @click="clearAiApiKey"
+          >
+            清除
+          </button>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="label">Model</div>
+        <input
+          class="text"
+          type="text"
+          :value="settings.ai.model"
+          placeholder="例如：gpt-4o-mini"
+          @change="
+            update({
+              ai: { model: ($event.target as HTMLInputElement).value }
+            })
+          "
+        />
+      </div>
+
+      <div class="hint">预留配置：后续 AI 能力工具将复用此处设置</div>
     </section>
 
     <footer class="footer">
