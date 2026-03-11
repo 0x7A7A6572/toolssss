@@ -4,6 +4,7 @@ import { WeatherTool } from '../../utils/weather'
 import type { WeatherDashboard } from '@shared/weather'
 import { RefreshCw } from 'lucide-vue-next'
 import LazyCascader from '../../components/LazyCascader.vue'
+import SevenDayTempChart from '../../components/SevenDayTempChart.vue'
 
 const PROVINCES: Array<{ name: string; code: string }> = [
   { name: '北京', code: 'BJ' },
@@ -134,11 +135,6 @@ const todayWeatherEmoji = computed(() => {
   if (text.includes('多云')) return '⛅'
   if (text.includes('晴')) return '☀️'
   return '🌤️'
-})
-
-const next3Hours = computed(() => {
-  if (!dashboard.value) return []
-  return dashboard.value.threeHour.items.filter((it) => it.inNext3Hours)
 })
 
 async function refresh(): Promise<void> {
@@ -277,57 +273,46 @@ onMounted(() => {
                     : '—'
                 }}</span>
               </div>
-              <!-- <div class="meta-row">
+              <div class="meta-row">
                 <span class="meta-k">更新</span>
                 <span class="meta-v">{{ dashboard.now.lastUpdateText ?? '—' }}</span>
-              </div> -->
-            </div>
-          </div>
-
-          <div class="block">
-            <div class="block-title">近7日天气</div>
-            <div v-if="dashboard.days.length > 0" class="days">
-              <div v-for="d in dashboard.days" :key="`${d.weekText}-${d.dateText}`" class="day-row">
-                <div class="day-left">
-                  <div class="day-week">{{ d.weekText }}</div>
-                  <div class="day-date">{{ d.dateText }}</div>
-                </div>
-                <div class="day-mid">
-                  <div class="day-text">
-                    {{ d.dayText }}<span v-if="d.nightText"> / {{ d.nightText }}</span>
-                  </div>
-                  <div v-if="d.windDirectionText && d.windScaleText" class="day-wind">
-                    {{ d.windDirectionText }} {{ d.windScaleText }}
-                  </div>
-                </div>
-                <div class="day-right">
-                  <span class="day-high">{{ d.highC === null ? '—' : `${d.highC}℃` }}</span>
-                  <span class="day-low">{{ d.lowC === null ? '—' : `${d.lowC}℃` }}</span>
-                </div>
               </div>
             </div>
-            <div v-else class="empty">暂无数据</div>
           </div>
         </div>
 
         <div class="right-col">
           <div class="block">
-            <div class="block-title">3小时降雨预警</div>
-            <div class="warning-line">
-              <span class="badge" :class="{ danger: dashboard.threeHour.willRain }">
-                {{ dashboard.threeHour.willRain ? '可能降雨' : '无降雨' }}
-              </span>
-              <span v-if="dashboard.threeHour.willRain" class="warning-hint">
-                最大 {{ dashboard.threeHour.maxPrecipitationMm }}mm
-              </span>
+            <div class="block-title">
+              <span>3小时降雨预警</span>
+              <div class="warning-line">
+                <span class="badge" :class="{ danger: dashboard.threeHour.willRain }">
+                  {{ dashboard.threeHour.willRain ? '可能降雨' : '无降雨' }}
+                </span>
+                <span v-if="dashboard.threeHour.willRain" class="warning-hint">
+                  最大 {{ dashboard.threeHour.maxPrecipitationMm }}mm
+                </span>
+              </div>
             </div>
-            <div v-if="next3Hours.length > 0" class="hour-list">
+
+            <!-- <div v-if="next3Hours.length > 0" class="hour-list">
               <div v-for="it in next3Hours" :key="it.atText" class="hour-item">
                 <span class="hour-at">{{ it.atText }}</span>
                 <span class="hour-p">{{ it.precipitationText }}</span>
               </div>
             </div>
-            <div v-else class="empty">未解析到未来3小时数据</div>
+            <div v-else class="empty">未解析到未来3小时数据</div> -->
+          </div>
+          <div class="block">
+            <div class="block-title">
+              <span>近7日天气</span>
+              <span class="legend">
+                <span class="lg lg-high"></span>
+                <span class="lg lg-low"></span>
+              </span>
+            </div>
+            <SevenDayTempChart v-if="dashboard.days.length > 0" :days="dashboard.days" />
+            <div v-else class="empty">暂无数据</div>
           </div>
         </div>
       </div>
@@ -521,6 +506,10 @@ onMounted(() => {
   font-size: 12px;
   font-weight: 700;
   color: rgba(235, 235, 245, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
 }
 
 .now-main {
@@ -577,6 +566,8 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex: auto;
+  justify-content: flex-end;
 }
 
 .badge {
@@ -585,7 +576,7 @@ onMounted(() => {
   justify-content: center;
   height: 22px;
   padding: 0 10px;
-  border-radius: 999px;
+  border-radius: 5px;
   font-size: 12px;
   font-weight: 700;
   background: rgba(144, 238, 144, 0.15);
@@ -625,77 +616,29 @@ onMounted(() => {
   color: var(--ev-c-text-1);
 }
 
-.days {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  max-height: 300px;
-  overflow-y: auto;
-  /** 隐藏滑动条 */
-  scrollbar-width: none;
+.legend {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
 }
 
-.day-row {
-  display: grid;
-  grid-template-columns: 90px 1fr 90px;
-  gap: 12px;
-  padding: 6px 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+.lg {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(235, 235, 245, 0.72);
 }
 
-.day-row:first-child {
-  border-top: 0;
-  padding-top: 0;
+.lg-high {
+  background-color: rgba(0, 220, 255, 0.95);
+  border-color: rgba(0, 220, 255, 0.25);
 }
 
-.day-left {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.day-week {
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.day-date {
-  font-size: 12px;
-  color: rgba(235, 235, 245, 0.62);
-}
-
-.day-mid {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.day-text {
-  font-size: 13px;
-  color: var(--ev-c-text-1);
-}
-
-.day-wind {
-  font-size: 12px;
-  color: rgba(235, 235, 245, 0.62);
-}
-
-.day-right {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  justify-content: center;
-  gap: 4px;
-}
-
-.day-high {
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.day-low {
-  font-size: 12px;
-  color: rgba(235, 235, 245, 0.62);
+.lg-low {
+  background-color: rgba(180, 140, 255, 0.95);
+  border-color: rgba(180, 140, 255, 0.25);
 }
 
 .empty {
