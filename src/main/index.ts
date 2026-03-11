@@ -99,6 +99,7 @@ function normalizeSettings(input: unknown): AppSettings {
   }
 
   if (obj.snip) {
+    base.snip.enabled = typeof obj.snip.enabled === 'boolean' ? obj.snip.enabled : base.snip.enabled
     base.snip.provider = 'app'
     base.snip.saveDir = typeof obj.snip.saveDir === 'string' ? obj.snip.saveDir : base.snip.saveDir
   }
@@ -208,6 +209,7 @@ function applySettingsPatch(patch: unknown): AppSettings {
   }
 
   if (p.snip) {
+    if (typeof p.snip.enabled === 'boolean') next.snip.enabled = p.snip.enabled
     if (p.snip.provider === 'app') next.snip.provider = p.snip.provider
     if (typeof p.snip.saveDir === 'string') next.snip.saveDir = p.snip.saveDir
   }
@@ -754,7 +756,12 @@ async function saveSnipBufferToDisk(buffer: Buffer): Promise<string | null> {
 
 function startAppSnip(): void {
   if (!screenshots) {
-    screenshots = new Screenshots()
+    // 是否复用截图窗口，加快截图窗口显示，默认值为 false
+    // 如果设置为 true 则会在第一次调用截图窗口时创建，后续调用时直接使用
+    // 且由于窗口不会 close，所以不会触发 app 的 `window-all-closed` 事件
+    screenshots = new Screenshots({
+      singleWindow: true
+    })
     isScreenshotsHooked = false
   }
 
@@ -1549,35 +1556,37 @@ function ensureShortcuts(): void {
     }
   }
 
-  if ((settings.shortcuts as Record<string, unknown>).snipStart) {
-    const acc = (settings.shortcuts as Record<string, string>).snipStart
-    if (acc) {
-      try {
-        globalShortcut.register(acc, () => startSnip())
-      } catch (e) {
-        console.error('Failed to register shortcut:', acc, e)
+  if (settings.snip.enabled) {
+    if ((settings.shortcuts as Record<string, unknown>).snipStart) {
+      const acc = (settings.shortcuts as Record<string, string>).snipStart
+      if (acc) {
+        try {
+          globalShortcut.register(acc, () => startSnip())
+        } catch (e) {
+          console.error('Failed to register shortcut:', acc, e)
+        }
       }
     }
-  }
 
-  if ((settings.shortcuts as Record<string, unknown>).stickerPaste) {
-    const acc = (settings.shortcuts as Record<string, string>).stickerPaste
-    if (acc) {
-      try {
-        globalShortcut.register(acc, () => pasteStickerFromClipboard())
-      } catch (e) {
-        console.error('Failed to register shortcut:', acc, e)
+    if ((settings.shortcuts as Record<string, unknown>).stickerPaste) {
+      const acc = (settings.shortcuts as Record<string, string>).stickerPaste
+      if (acc) {
+        try {
+          globalShortcut.register(acc, () => pasteStickerFromClipboard())
+        } catch (e) {
+          console.error('Failed to register shortcut:', acc, e)
+        }
       }
     }
-  }
 
-  if ((settings.shortcuts as Record<string, unknown>).stickersToggleHidden) {
-    const acc = (settings.shortcuts as Record<string, string>).stickersToggleHidden
-    if (acc) {
-      try {
-        globalShortcut.register(acc, () => toggleStickersHidden())
-      } catch (e) {
-        console.error('Failed to register shortcut:', acc, e)
+    if ((settings.shortcuts as Record<string, unknown>).stickersToggleHidden) {
+      const acc = (settings.shortcuts as Record<string, string>).stickersToggleHidden
+      if (acc) {
+        try {
+          globalShortcut.register(acc, () => toggleStickersHidden())
+        } catch (e) {
+          console.error('Failed to register shortcut:', acc, e)
+        }
       }
     }
   }

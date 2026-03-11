@@ -217,6 +217,22 @@ onMounted(() => {
       </div>
 
       <div class="row">
+        <div class="label">启用截屏贴图</div>
+        <label class="switch">
+          <input
+            type="checkbox"
+            :checked="settings.snip.enabled"
+            @change="
+              update({
+                snip: { enabled: ($event.target as HTMLInputElement).checked }
+              })
+            "
+          />
+          <span class="slider" />
+        </label>
+      </div>
+
+      <div class="row">
         <div class="label">开始截图</div>
         <ShortcutInput
           :model-value="settings.shortcuts.snipStart"

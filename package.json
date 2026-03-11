@@ -38,6 +38,7 @@
     "lowlight": "^3.1.0",
     "lucide-vue-next": "^0.577.0",
     "tesseract.js": "^5.1.1",
+    "tyme4ts": "^1.4.4",
     "vue-router": "^4.6.4"
   },
   "devDependencies": {

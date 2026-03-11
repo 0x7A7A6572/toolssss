@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { WeatherTool } from '../../utils/weather'
 import type { WeatherDashboard } from '@shared/weather'
-import { RefreshCw } from 'lucide-vue-next'
+import { RefreshCw, Settings } from 'lucide-vue-next'
 import LazyCascader from '../../components/LazyCascader.vue'
 import SevenDayTempChart from '../../components/SevenDayTempChart.vue'
+import { LegalHoliday, SolarDay } from 'tyme4ts'
+import answerBookData from '../../../../libs/book-of-answers.json'
 
 const PROVINCES: Array<{ name: string; code: string }> = [
   { name: '北京', code: 'BJ' },
@@ -59,6 +61,32 @@ const lastRefreshKey = ref<string>('')
 const MIN_INTERVAL_MS = 60 * 1000
 const cascValue = ref<Array<string | number>>([])
 const cityPickerOpen = ref(false)
+const paydayDialogOpen = ref(false)
+
+const PAYDAY_KEY = 'workCalendar.paydayDay'
+const paydayDay = ref<number>(normalizePaydayDay(localStorage.getItem(PAYDAY_KEY)))
+const paydayInput = ref<string>(String(paydayDay.value))
+
+const nowTickMs = ref<number>(Date.now())
+let tickTimer: number | null = null
+
+type AnswerBookItem = { zh: string; en: string }
+const answerBookList: AnswerBookItem[] = Array.isArray(answerBookData)
+  ? (answerBookData as AnswerBookItem[])
+  : []
+const answerQuestion = ref<string>(localStorage.getItem('answerBook.question') ?? '')
+const answerCurrent = ref<AnswerBookItem | null>(null)
+const answerLastIndex = ref<number>(-1)
+const answerFlipped = ref(false)
+const answerAnimKey = ref(0)
+const answerSpotlightActive = ref(false)
+const answerSpotlightX = ref(0)
+const answerSpotlightY = ref(0)
+
+const answerSpotlightStyle = computed<Record<string, string>>(() => ({
+  '--answer-spot-x': `${answerSpotlightX.value}px`,
+  '--answer-spot-y': `${answerSpotlightY.value}px`
+}))
 
 function openCityPicker(): void {
   cityPickerOpen.value = true
@@ -69,7 +97,9 @@ function closeCityPicker(): void {
 }
 
 function onKeydown(e: KeyboardEvent): void {
-  if (e.key === 'Escape') closeCityPicker()
+  if (e.key !== 'Escape') return
+  closeCityPicker()
+  closePaydayDialog()
 }
 
 const provinceOptions = computed(() =>
@@ -151,6 +181,158 @@ const todayWeatherEmoji = computed(() => {
   return '🌤️'
 })
 
+function normalizePaydayDay(raw: unknown): number {
+  const n = Number.parseInt(String(raw ?? ''), 10)
+  if (!Number.isFinite(n)) return 10
+  if (n < 1) return 1
+  if (n > 31) return 31
+  return n
+}
+
+function openPaydayDialog(): void {
+  paydayInput.value = String(paydayDay.value)
+  paydayDialogOpen.value = true
+}
+
+function closePaydayDialog(): void {
+  paydayDialogOpen.value = false
+}
+
+function savePaydayDay(): void {
+  const n = normalizePaydayDay(paydayInput.value)
+  paydayDay.value = n
+  localStorage.setItem(PAYDAY_KEY, String(n))
+  paydayDialogOpen.value = false
+}
+
+function resetAnswerCard(): void {
+  answerFlipped.value = false
+  answerCurrent.value = null
+  answerAnimKey.value += 1
+}
+
+async function drawAnswer(): Promise<void> {
+  if (answerBookList.length === 0) return
+
+  const q = answerQuestion.value.trim()
+  try {
+    if (q) localStorage.setItem('answerBook.question', q)
+  } catch {
+    // ignore
+  }
+
+  let idx = Math.floor(Math.random() * answerBookList.length)
+  if (answerBookList.length > 1 && idx === answerLastIndex.value) {
+    idx =
+      (idx + 1 + Math.floor(Math.random() * (answerBookList.length - 1))) % answerBookList.length
+  }
+
+  answerLastIndex.value = idx
+  answerCurrent.value = answerBookList[idx] ?? null
+
+  answerFlipped.value = false
+  await nextTick()
+  answerFlipped.value = true
+}
+
+function setAnswerSpotlightFromEvent(e: MouseEvent): void {
+  const el = e.currentTarget as HTMLElement | null
+  if (!el) return
+  const rect = el.getBoundingClientRect()
+  const x = Math.min(Math.max(0, e.clientX - rect.left), rect.width)
+  const y = Math.min(Math.max(0, e.clientY - rect.top), rect.height)
+  answerSpotlightX.value = x
+  answerSpotlightY.value = y
+}
+
+function onAnswerMouseEnter(e: MouseEvent): void {
+  answerSpotlightActive.value = true
+  setAnswerSpotlightFromEvent(e)
+  drawAnswer().catch(() => null)
+}
+
+function onAnswerMouseMove(e: MouseEvent): void {
+  if (!answerSpotlightActive.value) return
+  setAnswerSpotlightFromEvent(e)
+}
+
+function onAnswerMouseLeave(): void {
+  answerSpotlightActive.value = false
+  resetAnswerCard()
+}
+
+function startOfDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate())
+}
+
+function diffDays(from: Date, to: Date): number {
+  const a = startOfDay(from).getTime()
+  const b = startOfDay(to).getTime()
+  if (b <= a) return 0
+  return Math.floor((b - a) / 86400000)
+}
+
+function getNextPaydayDate(now: Date, dayOfMonth: number): Date {
+  const y = now.getFullYear()
+  const m = now.getMonth()
+  const lastThisMonth = new Date(y, m + 1, 0).getDate()
+  const thisMonthDay = Math.min(dayOfMonth, lastThisMonth)
+  const candidate = new Date(y, m, thisMonthDay)
+  if (candidate.getTime() >= startOfDay(now).getTime()) return candidate
+  const y2 = m === 11 ? y + 1 : y
+  const m2 = m === 11 ? 0 : m + 1
+  const lastNextMonth = new Date(y2, m2 + 1, 0).getDate()
+  const nextMonthDay = Math.min(dayOfMonth, lastNextMonth)
+  return new Date(y2, m2, nextMonthDay)
+}
+
+type NextHolidayInfo = { name: string; days: number; ymdText: string }
+
+function getNextHolidayInfo(now: Date): NextHolidayInfo | null {
+  const y = now.getFullYear()
+  const today = SolarDay.fromYmd(y, now.getMonth() + 1, now.getDate())
+
+  const findInYear = (year: number): NextHolidayInfo | null => {
+    let holiday = LegalHoliday.fromYmd(year, 1, 1)
+    while (holiday) {
+      const isHoliday = !holiday.isWork()
+      const day = holiday.getDay()
+      if (isHoliday && day.isAfter(today)) {
+        const raw = day.subtract(today) - 1
+        const days = Number.isFinite(raw) ? Math.max(0, raw) : 0
+        return {
+          name: holiday.getName(),
+          days,
+          ymdText: day.toString()
+        }
+      }
+      holiday = holiday.next(1)
+    }
+    return null
+  }
+
+  return findInYear(y) ?? findInYear(y + 1)
+}
+
+const daysUntilRest = computed(() => {
+  const now = new Date(nowTickMs.value)
+  const dow = now.getDay()
+  if (dow === 0 || dow === 6) return 0
+  return 6 - dow
+})
+
+const nextPaydayDate = computed(() => getNextPaydayDate(new Date(nowTickMs.value), paydayDay.value))
+
+const daysUntilPayday = computed(() => diffDays(new Date(nowTickMs.value), nextPaydayDate.value))
+
+const nextHoliday = computed(() => {
+  try {
+    return getNextHolidayInfo(new Date(nowTickMs.value))
+  } catch {
+    return null
+  }
+})
+
 async function refresh(): Promise<void> {
   if (
     lastRefreshKey.value === stationId.value &&
@@ -181,6 +363,9 @@ async function refresh(): Promise<void> {
 
 onMounted(() => {
   window.addEventListener('keydown', onKeydown)
+  tickTimer = window.setInterval(() => {
+    nowTickMs.value = Date.now()
+  }, 60 * 1000)
   loadCities()
     .then(() => {
       if (chosenCityId.value) {
@@ -196,6 +381,10 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
+  if (tickTimer !== null) {
+    window.clearInterval(tickTimer)
+    tickTimer = null
+  }
 })
 </script>
 
@@ -335,6 +524,94 @@ onUnmounted(() => {
       </div>
     </section>
 
+    <div class="mini-tools-row">
+      <section class="card work-calendar-card">
+        <div class="work-calendar-head">
+          <div class="work-calendar-title">打工人日历</div>
+          <div class="work-calendar-btn" type="button" @click="openPaydayDialog">
+            <!-- 每月{{ paydayDay }}日 -->
+            <Settings :size="18" />
+          </div>
+        </div>
+
+        <div class="work-calendar-list">
+          <div class="work-calendar-row">
+            <div class="work-calendar-label">
+              <div class="work-calendar-k">距离休息日</div>
+              <div class="work-calendar-sub">周末</div>
+            </div>
+            <div class="work-calendar-value">
+              <span class="work-calendar-num">{{ daysUntilRest }}</span>
+              <span class="work-calendar-unit">天</span>
+            </div>
+          </div>
+
+          <div class="work-calendar-row">
+            <div class="work-calendar-label">
+              <div class="work-calendar-k">距离发工资</div>
+              <div class="work-calendar-sub">{{ nextPaydayDate.toLocaleDateString() }}</div>
+            </div>
+            <div class="work-calendar-value">
+              <span class="work-calendar-num">{{ daysUntilPayday }}</span>
+              <span class="work-calendar-unit">天</span>
+            </div>
+          </div>
+
+          <div class="work-calendar-row">
+            <div class="work-calendar-label">
+              <div class="work-calendar-k">距离{{ nextHoliday?.name ?? '节假日' }}</div>
+              <div class="work-calendar-sub">{{ nextHoliday?.ymdText ?? '—' }}</div>
+            </div>
+            <div class="work-calendar-value">
+              <span class="work-calendar-num">{{ nextHoliday ? nextHoliday.days : '—' }}</span>
+              <span class="work-calendar-unit">天</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card answer-book-card">
+        <div class="answer-book-head">
+          <div class="answer-book-title">答案之书</div>
+        </div>
+
+        <div class="answer-book-body">
+          <div
+            :key="answerAnimKey"
+            class="answer-flip"
+            :class="{
+              flipped: answerFlipped,
+              spotlight: answerSpotlightActive
+            }"
+            :style="answerSpotlightStyle"
+            role="button"
+            tabindex="0"
+            @mouseenter="onAnswerMouseEnter"
+            @mousemove="onAnswerMouseMove"
+            @mouseleave="onAnswerMouseLeave"
+            @click="drawAnswer"
+            @keydown.enter.prevent="drawAnswer"
+          >
+            <div class="answer-flip-inner">
+              <div class="answer-face answer-front">
+                <div class="answer-front-title">把鼠标移进来，命运马上发牌</div>
+                <div class="answer-front-sub">移动鼠标，用探照灯看清答案</div>
+              </div>
+              <div class="answer-face answer-back">
+                <div v-if="answerCurrent" class="answer-text">
+                  <div class="answer-zh">{{ answerCurrent.zh }}</div>
+                  <div class="answer-en">{{ answerCurrent.en }}</div>
+                </div>
+                <div v-else class="answer-text">
+                  <div class="answer-zh">—</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
     <Teleport to="body">
       <div v-if="cityPickerOpen" class="picker-overlay" @click.self="closeCityPicker">
         <div class="picker-card">
@@ -358,6 +635,29 @@ onUnmounted(() => {
         </div>
       </div>
       <div v-if="cityPickerOpen" class="picker-backdrop" />
+
+      <div v-if="paydayDialogOpen" class="picker-overlay" @click.self="closePaydayDialog">
+        <div class="picker-card">
+          <div class="picker-title">设置发薪日</div>
+          <div class="payday-form">
+            <span class="payday-label">每月</span>
+            <input
+              v-model="paydayInput"
+              class="input payday-input"
+              type="number"
+              min="1"
+              max="31"
+            />
+            <span class="payday-label">日</span>
+          </div>
+          <div class="hint">范围 1-31，超过当月天数会按当月最后一天算</div>
+          <div class="picker-actions">
+            <button class="btn" type="button" @click="closePaydayDialog">取消</button>
+            <button class="btn" type="button" @click="savePaydayDay">保存</button>
+          </div>
+        </div>
+      </div>
+      <div v-if="paydayDialogOpen" class="picker-backdrop" />
     </Teleport>
   </div>
 </template>
@@ -561,6 +861,296 @@ onUnmounted(() => {
 .picker-actions {
   display: flex;
   justify-content: flex-end;
+  gap: 10px;
+}
+
+.payday-form {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.payday-input {
+  width: 120px;
+}
+
+.payday-label {
+  font-size: 13px;
+  color: rgba(235, 235, 245, 0.72);
+}
+
+.mini-tools-row {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.work-calendar-card {
+  width: min(360px, 100%);
+  height: 240px;
+  align-self: flex-start;
+  padding: 14px;
+  gap: 12px;
+}
+
+.answer-book-card {
+  height: 180px;
+  padding: 14px;
+  gap: 12px;
+  flex: auto;
+}
+
+.work-calendar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.answer-book-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.work-calendar-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: rgba(235, 235, 245, 0.92);
+}
+
+.answer-book-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: rgba(235, 235, 245, 0.92);
+}
+
+.work-calendar-btn {
+  padding: 6px 10px;
+  font-size: 12px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.answer-book-btn {
+  padding: 6px 10px;
+  font-size: 12px;
+  border-radius: 999px;
+  white-space: nowrap;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ev-c-text-1);
+  cursor: pointer;
+}
+
+.answer-book-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.answer-book-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+
+.tips {
+  font-size: 12px;
+  color: rgba(235, 235, 245, 0.62);
+}
+
+.answer-book-input {
+  width: 100%;
+}
+
+.answer-flip {
+  flex: 1;
+  min-height: 0;
+  border-radius: 12px;
+  position: relative;
+  perspective: 900px;
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+  --answer-spot-x: 50%;
+  --answer-spot-y: 50%;
+  --answer-spot-radius: 110px;
+}
+
+.answer-flip-inner {
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  transform-style: preserve-3d;
+  transition: transform 600ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.answer-flip.flipped .answer-flip-inner {
+  transform: rotateY(180deg);
+}
+
+.answer-face {
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  backface-visibility: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 12px;
+}
+
+.answer-front {
+  background:
+    radial-gradient(600px 220px at 40% 0%, rgba(90, 210, 255, 0.22), transparent),
+    rgba(255, 255, 255, 0.03);
+}
+
+.answer-back {
+  transform: rotateY(180deg);
+  background:
+    radial-gradient(600px 220px at 40% 0%, rgba(190, 120, 255, 0.22), transparent),
+    rgba(255, 255, 255, 0.03);
+  overflow: hidden;
+}
+
+.answer-back::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 180ms ease;
+  z-index: 2;
+  background: rgba(0, 0, 0, 0.967);
+  -webkit-mask-image: radial-gradient(
+    circle var(--answer-spot-radius) at var(--answer-spot-x) var(--answer-spot-y),
+    transparent 0%,
+    transparent 45%,
+    rgba(0, 0, 0, 1) 70%,
+    rgba(0, 0, 0, 1) 100%
+  );
+  mask-image: radial-gradient(
+    circle var(--answer-spot-radius) at var(--answer-spot-x) var(--answer-spot-y),
+    transparent 0%,
+    transparent 45%,
+    rgba(0, 0, 0, 1) 70%,
+    rgba(0, 0, 0, 1) 100%
+  );
+}
+
+.answer-flip.spotlight.flipped .answer-back::before {
+  opacity: 1;
+}
+
+.answer-front-title {
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  color: rgba(235, 235, 245, 0.96);
+}
+
+.answer-front-sub {
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(235, 235, 245, 0.62);
+}
+
+.answer-text {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: relative;
+  z-index: 1;
+}
+
+.answer-zh {
+  font-size: 16px;
+  font-weight: 900;
+  color: rgba(235, 235, 245, 0.96);
+  line-height: 1.25;
+}
+
+.answer-en {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(235, 235, 245, 0.62);
+  line-height: 1.3;
+}
+
+.work-calendar-list {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.work-calendar-row {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.work-calendar-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.work-calendar-k {
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(235, 235, 245, 0.72);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.work-calendar-sub {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(235, 235, 245, 0.52);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.work-calendar-value {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 6px;
+  flex: none;
+}
+
+.work-calendar-num {
+  font-size: 26px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  color: rgba(235, 235, 245, 0.95);
+  line-height: 1;
+}
+
+.work-calendar-unit {
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(235, 235, 245, 0.62);
 }
 
 .picker-card :deep(.lazy-cascader) {
