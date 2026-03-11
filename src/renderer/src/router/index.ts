@@ -9,7 +9,7 @@ import TranslatorView from '../views/Translator/TranslatorView.vue'
 const routes = [
   {
     path: '/',
-    redirect: '/eye-protection'
+    redirect: '/other-tools'
   },
   {
     path: '/sticky-notes',

@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { WeatherTool } from '../../utils/weather'
 import type { WeatherDashboard } from '@shared/weather'
 import { RefreshCw } from 'lucide-vue-next'
+import LazyCascader from '../../components/LazyCascader.vue'
 
 const PROVINCES: Array<{ name: string; code: string }> = [
   { name: '北京', code: 'BJ' },
@@ -55,6 +56,43 @@ const citiesErrorText = ref<string | null>(null)
 const lastRefreshMs = ref<number>(0)
 const lastRefreshKey = ref<string>('')
 const MIN_INTERVAL_MS = 60 * 1000
+const cascValue = ref<Array<string | number>>([])
+
+const provinceOptions = computed(() =>
+  PROVINCES.map((p) => ({
+    label: p.name,
+    value: p.code
+  }))
+)
+
+async function lazyLoadCities(
+  children: { value?: unknown; label?: unknown },
+  resolve: (children: Array<{ label: string; value: string }>) => void
+): Promise<void> {
+  const code = String(children.value || '')
+    .trim()
+    .toUpperCase()
+  const list = await WeatherTool.getProvinceCities(code)
+  resolve(list.map((c) => ({ label: c.name, value: c.id })))
+}
+
+const onCascChange = (payload: {
+  value: unknown[]
+  labels: string[]
+  selectedNodes: unknown[]
+}): void => {
+  const arr: unknown[] = Array.isArray(payload?.value) ? payload.value : []
+  const pv = typeof arr[0] === 'string' ? (arr[0] as string) : provCode.value
+  const city = typeof arr[1] === 'string' ? (arr[1] as string) : null
+  provCode.value = pv
+  localStorage.setItem('weather.provCode', pv)
+  if (city) {
+    chosenCityId.value = city
+    stationId.value = city
+    localStorage.setItem('weather.stationId', stationId.value)
+    refresh().catch(() => null)
+  }
+}
 
 async function loadCities(): Promise<void> {
   const code = provCode.value
@@ -83,23 +121,6 @@ async function loadCities(): Promise<void> {
   } finally {
     citiesLoading.value = false
   }
-}
-
-function onProvinceChange(): void {
-  cities.value = []
-  chosenCityId.value = null
-  loadCities()
-    .then(() => {
-      if (chosenCityId.value) onCityChange()
-    })
-    .catch(() => null)
-}
-
-function onCityChange(): void {
-  if (!chosenCityId.value) return
-  stationId.value = chosenCityId.value
-  localStorage.setItem('weather.stationId', stationId.value)
-  refresh().catch(() => null)
 }
 
 const todayWeatherEmoji = computed(() => {
@@ -173,23 +194,19 @@ onMounted(() => {
     <section class="card">
       <div class="card-head">
         <div class="controls">
-          <select v-model="provCode" class="select" @change="onProvinceChange">
-            <option v-for="p in PROVINCES" :key="p.code" :value="p.code">
-              {{ p.name }} ({{ p.code }})
-            </option>
-          </select>
-          <select
-            v-model="chosenCityId"
-            class="select"
-            :disabled="citiesLoading || cities.length === 0"
-            @change="onCityChange"
-          >
-            <option v-if="citiesLoading" :value="null" disabled>加载中…</option>
-            <option v-else-if="cities.length === 0" :value="null" disabled>请选择省份</option>
-            <option v-for="c in cities" v-else :key="c.id" :value="c.id">
-              {{ c.name }} ({{ c.id }})
-            </option>
-          </select>
+          <LazyCascader
+            v-model="cascValue"
+            :options="provinceOptions"
+            :lazy-load="lazyLoadCities"
+            :lazy-load-level="0"
+            :props-config="{
+              label: 'label',
+              value: 'value',
+              children: 'children',
+              disabled: 'disabled'
+            }"
+            @change="onCascChange"
+          />
         </div>
         <div class="actions">
           <button class="btn" :disabled="loading" title="刷新" @click="refresh">
@@ -402,7 +419,7 @@ onMounted(() => {
 .card-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
   flex-wrap: wrap;
 }
@@ -493,7 +510,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  min-height: 170px;
+  /* min-height: 170px; */
 }
 
 .has-emoji {
