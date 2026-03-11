@@ -10,6 +10,7 @@ const loading = ref(false)
 const errorText = ref('')
 const source = ref('auto')
 const target = ref('zh')
+const selectionPending = ref(false)
 
 async function close(): Promise<void> {
   await window.electron.ipcRenderer.invoke('translator-popup:close')
@@ -70,13 +71,19 @@ function onKeyDown(e: KeyboardEvent): void {
 function onOpen(_: unknown, payload: unknown): void {
   const p =
     payload && typeof payload === 'object'
-      ? (payload as { text?: unknown; source?: unknown; target?: unknown })
+      ? (payload as {
+          text?: unknown
+          source?: unknown
+          target?: unknown
+          pendingSelection?: unknown
+        })
       : {}
   inputText.value = typeof p.text === 'string' ? p.text : ''
   outputText.value = ''
   errorText.value = ''
   source.value = typeof p.source === 'string' && p.source ? p.source : 'auto'
   target.value = typeof p.target === 'string' && p.target ? p.target : 'zh'
+  selectionPending.value = Boolean(p.pendingSelection)
   if (inputText.value.trim()) translate().catch(() => null)
 }
 
@@ -111,7 +118,9 @@ onBeforeUnmount(() => {
         <textarea
           v-model="inputText"
           class="textarea"
-          placeholder="选中文本后按快捷键，或手动粘贴..."
+          :placeholder="
+            selectionPending ? '正在获取选中文本…' : '选中文本后按快捷键，或手动粘贴...'
+          "
         />
         <div class="panel-foot">
           <select v-model="source" class="select">

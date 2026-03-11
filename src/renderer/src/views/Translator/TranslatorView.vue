@@ -52,14 +52,6 @@ function formatTime(ts: number): string {
   }
 }
 
-function applyHistoryItem(item: TranslationHistoryItem): void {
-  inputText.value = item.input
-  outputText.value = item.output
-  errorText.value = ''
-  source.value = item.source || 'auto'
-  target.value = item.target || 'zh'
-}
-
 async function copyText(text: string): Promise<void> {
   const t = text.trim()
   if (!t) return
@@ -231,7 +223,6 @@ onMounted(() => {
             <div class="history-time">{{ formatTime(item.createdAt) }}</div>
             <div class="history-lang">{{ item.source || 'auto' }} → {{ item.target }}</div>
             <div class="spacer" />
-            <button class="mini-btn" type="button" @click="applyHistoryItem(item)">应用</button>
             <button class="mini-btn" type="button" @click="copyText(item.output)">复制</button>
             <button class="mini-btn danger" type="button" @click="deleteHistoryItem(item.id)">
               删除

@@ -28,7 +28,11 @@ import {
   type AppSettings,
   type SettingsPatch
 } from '@shared/settings'
-import { registerStickyNotesHandlers } from './sticky-notes'
+import {
+  openQuickStickyNoteEditor,
+  registerStickyNotesHandlers,
+  setStickyNotesSaveDir
+} from './sticky-notes'
 import { TRANSLATOR_EVENTS, type TranslatePayload, type TranslateResult } from '@shared/translator'
 import Screenshots from 'electron-screenshots'
 
@@ -96,15 +100,24 @@ function normalizeSettings(input: unknown): AppSettings {
     base.snip.saveDir = typeof obj.snip.saveDir === 'string' ? obj.snip.saveDir : base.snip.saveDir
   }
 
+  if (
+    (obj as { stickyNotes?: unknown }).stickyNotes &&
+    typeof (obj as { stickyNotes?: unknown }).stickyNotes === 'object'
+  ) {
+    const sn = (obj as { stickyNotes: Record<string, unknown> }).stickyNotes
+    base.stickyNotes.saveDir =
+      typeof sn['saveDir'] === 'string' ? (sn['saveDir'] as string) : base.stickyNotes.saveDir
+  }
+
   if (obj.shortcuts) {
     if (typeof obj.shortcuts.toggleEye === 'string')
       base.shortcuts.toggleEye = obj.shortcuts.toggleEye
-    if (typeof obj.shortcuts.toggleAlarm === 'string')
-      base.shortcuts.toggleAlarm = obj.shortcuts.toggleAlarm
     if (typeof (obj.shortcuts as Record<string, unknown>).translateSelection === 'string')
       base.shortcuts.translateSelection = (
         obj.shortcuts as Record<string, string>
       ).translateSelection
+    if (typeof (obj.shortcuts as Record<string, unknown>).stickyNotesPopup === 'string')
+      base.shortcuts.stickyNotesPopup = (obj.shortcuts as Record<string, string>).stickyNotesPopup
     if (typeof (obj.shortcuts as Record<string, unknown>).snipStart === 'string')
       base.shortcuts.snipStart = (obj.shortcuts as Record<string, string>).snipStart
     if (typeof (obj.shortcuts as Record<string, unknown>).stickerPaste === 'string')
@@ -196,12 +209,20 @@ function applySettingsPatch(patch: unknown): AppSettings {
     if (typeof p.snip.saveDir === 'string') next.snip.saveDir = p.snip.saveDir
   }
 
+  if (
+    (p as { stickyNotes?: unknown }).stickyNotes &&
+    typeof (p as { stickyNotes?: unknown }).stickyNotes === 'object'
+  ) {
+    const sn = (p as { stickyNotes: Record<string, unknown> }).stickyNotes
+    if (typeof sn['saveDir'] === 'string') next.stickyNotes.saveDir = sn['saveDir'] as string
+  }
+
   if (p.shortcuts) {
     if (typeof p.shortcuts.toggleEye === 'string') next.shortcuts.toggleEye = p.shortcuts.toggleEye
-    if (typeof p.shortcuts.toggleAlarm === 'string')
-      next.shortcuts.toggleAlarm = p.shortcuts.toggleAlarm
     if (typeof (p.shortcuts as Record<string, unknown>).translateSelection === 'string')
       next.shortcuts.translateSelection = (p.shortcuts as Record<string, string>).translateSelection
+    if (typeof (p.shortcuts as Record<string, unknown>).stickyNotesPopup === 'string')
+      next.shortcuts.stickyNotesPopup = (p.shortcuts as Record<string, string>).stickyNotesPopup
     if (typeof (p.shortcuts as Record<string, unknown>).snipStart === 'string')
       next.shortcuts.snipStart = (p.shortcuts as Record<string, string>).snipStart
     if (typeof (p.shortcuts as Record<string, unknown>).stickerPaste === 'string')
@@ -954,36 +975,61 @@ function ensureTranslatorPopupWindow(): BrowserWindow {
   return win
 }
 
-function focusTranslatorPopupWindow(win: BrowserWindow): void {
+function showTranslatorPopupWindow(win: BrowserWindow, activate: boolean): void {
   win.setAlwaysOnTop(true, 'pop-up-menu')
-  // win.minimize()
-  win.show()
+  if (activate) {
+    win.show()
+  } else {
+    win.showInactive()
+  }
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  try {
-    app.focus()
-  } catch {
-    // ignore
+  if (activate) {
+    try {
+      app.focus()
+    } catch {
+      // ignore
+    }
   }
   win.moveTop()
-  win.focus()
-  try {
-    win.webContents.focus()
-  } catch {
-    // ignore
+  if (activate) {
+    win.focus()
+    try {
+      win.webContents.focus()
+    } catch {
+      // ignore
+    }
   }
 }
 
-function openTranslatorPopup(payload: { text: string; source?: string; target?: string }): void {
-  const win = ensureTranslatorPopupWindow()
+type TranslatorPopupOpenPayload = {
+  text: string
+  source?: string
+  target?: string
+  pendingSelection?: boolean
+}
+
+function sendTranslatorPopupOpen(win: BrowserWindow, payload: TranslatorPopupOpenPayload): void {
   if (win.webContents.isLoading()) {
     win.webContents.once('did-finish-load', () => {
       win.webContents.send('translator-popup:open', payload)
-      focusTranslatorPopupWindow(win)
     })
   } else {
     win.webContents.send('translator-popup:open', payload)
-    focusTranslatorPopupWindow(win)
   }
+}
+
+async function openTranslatorPopupFromSelection(): Promise<void> {
+  const win = ensureTranslatorPopupWindow()
+  const base = {
+    source: settings.translate.defaultSource,
+    target: settings.translate.defaultTarget
+  }
+  showTranslatorPopupWindow(win, false)
+  sendTranslatorPopupOpen(win, { text: '', ...base, pendingSelection: true })
+  const text = await captureSelectionText()
+  if (win.isDestroyed()) return
+  sendTranslatorPopupOpen(win, { text, ...base, pendingSelection: false })
+  showTranslatorPopupWindow(win, true)
 }
 
 async function sendCtrlCWindows(): Promise<void> {
@@ -1249,33 +1295,24 @@ function ensureShortcuts(): void {
     }
   }
 
-  if (settings.shortcuts.toggleAlarm) {
-    try {
-      globalShortcut.register(settings.shortcuts.toggleAlarm, () => {
-        settings.alarm.enabled = !settings.alarm.enabled
-        saveSettingsToDisk(settings)
-        ensureDailyAlarmTimer()
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('settings:changed', settings)
-        }
-      })
-    } catch (e) {
-      console.error('Failed to register shortcut:', settings.shortcuts.toggleAlarm, e)
-    }
-  }
-
   if ((settings.shortcuts as Record<string, unknown>).translateSelection) {
     const acc = (settings.shortcuts as Record<string, string>).translateSelection
     if (acc) {
       try {
         globalShortcut.register(acc, async () => {
-          const text = await captureSelectionText()
-          openTranslatorPopup({
-            text,
-            source: settings.translate.defaultSource,
-            target: settings.translate.defaultTarget
-          })
+          await openTranslatorPopupFromSelection()
         })
+      } catch (e) {
+        console.error('Failed to register shortcut:', acc, e)
+      }
+    }
+  }
+
+  if ((settings.shortcuts as Record<string, unknown>).stickyNotesPopup) {
+    const acc = (settings.shortcuts as Record<string, string>).stickyNotesPopup
+    if (acc) {
+      try {
+        globalShortcut.register(acc, () => openQuickStickyNoteEditor())
       } catch (e) {
         console.error('Failed to register shortcut:', acc, e)
       }
@@ -1317,6 +1354,7 @@ function ensureShortcuts(): void {
 }
 
 function applySettingsToRuntime(): void {
+  setStickyNotesSaveDir(settings.stickyNotes?.saveDir ?? '')
   ensureOverlayWindows()
   ensureDailyAlarmTimer()
   ensureBreakTimer()
@@ -1375,8 +1413,24 @@ app.whenReady().then(() => {
   applySettingsToRuntime()
   registerStickyNotesHandlers()
 
+  ipcMain.handle('app:paths', () => {
+    return {
+      userData: app.getPath('userData'),
+      pictures: app.getPath('pictures')
+    }
+  })
   ipcMain.handle('settings:get', () => settings)
   ipcMain.handle('snip:saveDir:choose', async () => {
+    const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
+    const options: OpenDialogOptions = { properties: ['openDirectory', 'createDirectory'] }
+    const result = parent
+      ? await dialog.showOpenDialog(parent, options)
+      : await dialog.showOpenDialog(options)
+    if (result.canceled) return null
+    const p = result.filePaths?.[0]
+    return typeof p === 'string' && p.trim() ? p : null
+  })
+  ipcMain.handle('sticky-notes:saveDir:choose', async () => {
     const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
     const options: OpenDialogOptions = { properties: ['openDirectory', 'createDirectory'] }
     const result = parent
@@ -1473,12 +1527,7 @@ app.whenReady().then(() => {
     return translate(payload)
   })
   ipcMain.handle(TRANSLATOR_EVENTS.OPEN_POPUP, async () => {
-    const text = await captureSelectionText()
-    openTranslatorPopup({
-      text,
-      source: settings.translate.defaultSource,
-      target: settings.translate.defaultTarget
-    })
+    await openTranslatorPopupFromSelection()
     return true
   })
   ipcMain.handle('translator-popup:close', (event) => {

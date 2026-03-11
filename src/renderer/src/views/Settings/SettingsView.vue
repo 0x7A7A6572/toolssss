@@ -1,10 +1,34 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { DEFAULT_SETTINGS, type AppSettings, type SettingsPatch } from '@shared/settings'
 import ShortcutInput from '../../components/ShortcutInput.vue'
 
 const settings = ref<AppSettings>(structuredClone(DEFAULT_SETTINGS))
 const saving = ref(false)
+const appPaths = ref<{ userData: string; pictures: string } | null>(null)
+
+function joinPath(base: string, tail: string): string {
+  const b = base.trim().replace(/[\\/]+$/, '')
+  const t = tail.trim().replace(/^[\\/]+/, '')
+  const sep = b.includes('\\') ? '\\' : '/'
+  return `${b}${sep}${t}`
+}
+
+const snipPlaceholder = computed(() => {
+  const pictures = appPaths.value?.pictures
+  if (typeof pictures === 'string' && pictures.trim()) {
+    return `默认：${joinPath(joinPath(pictures, 'freamx'), 'screenshots')}`
+  }
+  return '默认：系统图片目录/freamx/screenshots'
+})
+
+const stickyNotesPlaceholder = computed(() => {
+  const userData = appPaths.value?.userData
+  if (typeof userData === 'string' && userData.trim()) {
+    return `默认：${joinPath(userData, 'sticky-notes.json')}`
+  }
+  return '默认：应用数据目录/sticky-notes.json'
+})
 
 async function refresh(): Promise<void> {
   const result = await window.electron.ipcRenderer.invoke('settings:get')
@@ -27,8 +51,23 @@ async function chooseSnipSaveDir(): Promise<void> {
   update({ snip: { saveDir: p } }).catch(() => null)
 }
 
+async function chooseStickyNotesSaveDir(): Promise<void> {
+  const p = await window.electron.ipcRenderer.invoke('sticky-notes:saveDir:choose')
+  if (typeof p !== 'string' || !p.trim()) return
+  update({ stickyNotes: { saveDir: p } }).catch(() => null)
+}
+
 onMounted(() => {
   refresh().catch(() => null)
+  window.electron.ipcRenderer
+    .invoke('app:paths')
+    .then((v: unknown) => {
+      if (!v || typeof v !== 'object') return
+      const p = v as { userData?: unknown; pictures?: unknown }
+      if (typeof p.userData !== 'string' || typeof p.pictures !== 'string') return
+      appPaths.value = { userData: p.userData, pictures: p.pictures }
+    })
+    .catch(() => null)
   window.electron.ipcRenderer.on('settings:changed', (_: unknown, s: unknown) => {
     settings.value = s as AppSettings
   })
@@ -86,7 +125,7 @@ onMounted(() => {
             class="text path"
             type="text"
             :value="settings.snip.saveDir"
-            placeholder="默认：系统图片目录/freamx/screenshots"
+            :placeholder="snipPlaceholder"
             @change="
               update({
                 snip: { saveDir: ($event.target as HTMLInputElement).value }
@@ -94,6 +133,24 @@ onMounted(() => {
             "
           />
           <button class="btn" type="button" @click="chooseSnipSaveDir">选择…</button>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="label">便签保存目录</div>
+        <div class="path-row">
+          <input
+            class="text path"
+            type="text"
+            :value="settings.stickyNotes.saveDir"
+            :placeholder="stickyNotesPlaceholder"
+            @change="
+              update({
+                stickyNotes: { saveDir: ($event.target as HTMLInputElement).value }
+              })
+            "
+          />
+          <button class="btn" type="button" @click="chooseStickyNotesSaveDir">选择…</button>
         </div>
       </div>
     </section>
@@ -117,19 +174,6 @@ onMounted(() => {
       </div>
 
       <div class="row">
-        <div class="label">开启/关闭闹钟提醒</div>
-        <ShortcutInput
-          :model-value="settings.shortcuts.toggleAlarm"
-          placeholder="未设置"
-          @update:model-value="
-            update({
-              shortcuts: { toggleAlarm: $event }
-            })
-          "
-        />
-      </div>
-
-      <div class="row">
         <div class="label">划词翻译弹窗</div>
         <ShortcutInput
           :model-value="settings.shortcuts.translateSelection"
@@ -137,6 +181,19 @@ onMounted(() => {
           @update:model-value="
             update({
               shortcuts: { translateSelection: $event }
+            })
+          "
+        />
+      </div>
+
+      <div class="row">
+        <div class="label">弹出快捷便签</div>
+        <ShortcutInput
+          :model-value="settings.shortcuts.stickyNotesPopup"
+          placeholder="未设置"
+          @update:model-value="
+            update({
+              shortcuts: { stickyNotesPopup: $event }
             })
           "
         />

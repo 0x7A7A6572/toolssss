@@ -9,6 +9,9 @@ export interface AppSettings {
     provider: 'app'
     saveDir: string
   }
+  stickyNotes: {
+    saveDir: string
+  }
   shortcuts: Record<string, string>
   translate: {
     provider: 'baidu' | 'bing'
@@ -46,6 +49,7 @@ export interface AppSettings {
 export type SettingsPatch = Partial<{
   general: Partial<AppSettings['general']>
   snip: Partial<AppSettings['snip']>
+  stickyNotes: Partial<AppSettings['stickyNotes']>
   shortcuts: Partial<AppSettings['shortcuts']>
   translate: Partial<Omit<AppSettings['translate'], 'baidu' | 'bing'>> & {
     baidu?: Partial<AppSettings['translate']['baidu']>
@@ -66,13 +70,16 @@ export const DEFAULT_SETTINGS: AppSettings = {
     provider: 'app',
     saveDir: ''
   },
+  stickyNotes: {
+    saveDir: ''
+  },
   shortcuts: {
     toggleEye: 'Ctrl+Shift+E',
-    toggleAlarm: 'Ctrl+Shift+A',
     translateSelection: 'Ctrl+Shift+T',
     snipStart: 'F1',
     stickerPaste: 'F3',
-    stickersToggleHidden: 'Shift+F3'
+    stickersToggleHidden: 'Shift+F3',
+    stickyNotesPopup: 'Ctrl+Shift+N'
   },
   translate: {
     provider: 'baidu',

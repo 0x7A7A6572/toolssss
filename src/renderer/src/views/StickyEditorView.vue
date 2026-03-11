@@ -184,7 +184,7 @@ onBeforeUnmount(() => {
 .body {
   flex: 1;
   min-height: 0;
-  padding: 18px 20px 24px;
+  padding: 0 0 24px 0;
   overflow: auto;
 }
 </style>

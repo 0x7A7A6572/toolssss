@@ -1,10 +1,12 @@
 import { app, ipcMain, BrowserWindow, screen } from 'electron'
-import { readFileSync, writeFileSync, existsSync } from 'fs'
+import { randomUUID } from 'crypto'
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { STICKY_NOTES_EVENTS, type StickyNote } from '../shared/sticky-notes'
 
 const NOTES_FILE = 'sticky-notes.json'
+let notesDirOverride: string | null = null
 
 function broadcastNotes(notes: StickyNote[]): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -16,8 +18,45 @@ function broadcastNotes(notes: StickyNote[]): void {
   }
 }
 
+function defaultNotesDir(): string {
+  return app.getPath('userData')
+}
+
+function resolveNotesDir(): string {
+  const raw = typeof notesDirOverride === 'string' ? notesDirOverride.trim() : ''
+  if (!raw) return defaultNotesDir()
+  try {
+    mkdirSync(raw, { recursive: true })
+    return raw
+  } catch {
+    return defaultNotesDir()
+  }
+}
+
 function getNotesFilePath(): string {
-  return join(app.getPath('userData'), NOTES_FILE)
+  return join(resolveNotesDir(), NOTES_FILE)
+}
+
+export function setStickyNotesSaveDir(saveDir: string | null): void {
+  const prevDir =
+    typeof notesDirOverride === 'string' && notesDirOverride.trim()
+      ? notesDirOverride.trim()
+      : defaultNotesDir()
+  const prevPath = join(prevDir, NOTES_FILE)
+
+  notesDirOverride = typeof saveDir === 'string' && saveDir.trim() ? saveDir.trim() : null
+
+  const nextPath = getNotesFilePath()
+  if (prevPath !== nextPath && existsSync(prevPath) && !existsSync(nextPath)) {
+    try {
+      const raw = readFileSync(prevPath, 'utf-8')
+      writeFileSync(nextPath, raw, 'utf-8')
+    } catch {
+      // ignore
+    }
+  }
+
+  broadcastNotes(loadNotes())
 }
 
 function loadNotes(): StickyNote[] {
@@ -27,7 +66,8 @@ function loadNotes(): StickyNote[] {
       return []
     }
     const raw = readFileSync(filePath, 'utf-8')
-    return JSON.parse(raw)
+    const parsed = JSON.parse(raw) as unknown
+    return Array.isArray(parsed) ? (parsed as StickyNote[]) : []
   } catch (error) {
     console.error('Failed to load sticky notes:', error)
     return []
@@ -88,6 +128,23 @@ function createStickyEditorWindow(noteId: string): void {
       win.focus()
     })
     .catch(() => null)
+}
+
+export function openQuickStickyNoteEditor(): void {
+  const colors = ['#FFF8B8', '#E2F0CB', '#F0E6EF', '#E0F7FA', '#FFCCBC', '#FFCDD2', '#F5F5F5']
+  const now = Date.now()
+  const note: StickyNote = {
+    id: randomUUID(),
+    content: '',
+    color: colors[Math.floor(Math.random() * colors.length)],
+    createdAt: now,
+    updatedAt: now
+  }
+  const notes = loadNotes()
+  notes.push(note)
+  saveNotes(notes)
+  broadcastNotes(notes)
+  createStickyEditorWindow(note.id)
 }
 
 export function registerStickyNotesHandlers(): void {
