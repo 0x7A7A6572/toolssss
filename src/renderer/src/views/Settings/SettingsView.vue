@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { DEFAULT_SETTINGS, type AppSettings, type SettingsPatch } from '@shared/settings'
 import ShortcutInput from '../../components/ShortcutInput.vue'
+import { FolderOpen } from 'lucide-vue-next'
 
 const settings = ref<AppSettings>(structuredClone(DEFAULT_SETTINGS))
 const saving = ref(false)
@@ -17,9 +18,9 @@ function joinPath(base: string, tail: string): string {
 const snipPlaceholder = computed(() => {
   const pictures = appPaths.value?.pictures
   if (typeof pictures === 'string' && pictures.trim()) {
-    return `默认：${joinPath(joinPath(pictures, 'freamx'), 'screenshots')}`
+    return `默认：${joinPath(joinPath(pictures, 'toolssss'), 'screenshots')}`
   }
-  return '默认：系统图片目录/freamx/screenshots'
+  return '默认：系统图片目录/toolssss/screenshots'
 })
 
 const stickyNotesPlaceholder = computed(() => {
@@ -132,7 +133,15 @@ onMounted(() => {
               })
             "
           />
-          <button class="btn" type="button" @click="chooseSnipSaveDir">选择…</button>
+          <button
+            class="btn icon-btn"
+            type="button"
+            title="选择目录"
+            aria-label="选择目录"
+            @click="chooseSnipSaveDir"
+          >
+            <FolderOpen :size="16" />
+          </button>
         </div>
       </div>
 
@@ -150,7 +159,15 @@ onMounted(() => {
               })
             "
           />
-          <button class="btn" type="button" @click="chooseStickyNotesSaveDir">选择…</button>
+          <button
+            class="btn icon-btn"
+            type="button"
+            title="选择目录"
+            aria-label="选择目录"
+            @click="chooseStickyNotesSaveDir"
+          >
+            <FolderOpen :size="16" />
+          </button>
         </div>
       </div>
     </section>
@@ -558,6 +575,14 @@ onMounted(() => {
 
 .btn:hover {
   background: rgba(255, 255, 255, 0.1);
+}
+
+.icon-btn {
+  padding: 7px;
+  display: inline-grid;
+  place-items: center;
+  min-width: 34px;
+  line-height: 1;
 }
 
 .select {

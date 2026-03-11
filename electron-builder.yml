@@ -1,5 +1,5 @@
-appId: com.electron.app
-productName: freamx
+appId: com.toolssss.app
+productName: toolssss
 directories:
   buildResources: build
 files:
@@ -12,7 +12,7 @@ files:
 asarUnpack:
   - resources/**
 win:
-  executableName: freamx
+  executableName: toolssss
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}

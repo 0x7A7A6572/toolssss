@@ -13,6 +13,7 @@ import {
   globalShortcut,
   clipboard,
   nativeImage,
+  type MenuItemConstructorOptions,
   type OpenDialogOptions
 } from 'electron'
 
@@ -33,6 +34,7 @@ import {
   registerStickyNotesHandlers,
   setStickyNotesSaveDir
 } from './sticky-notes'
+import { registerWeatherHandlers } from './weather'
 import { TRANSLATOR_EVENTS, type TranslatePayload, type TranslateResult } from '@shared/translator'
 import Screenshots from 'electron-screenshots'
 
@@ -48,6 +50,7 @@ const overlayWindows = new Map<number, BrowserWindow>()
 const alarmWindows = new Map<number, BrowserWindow>()
 const stickerWindows = new Map<number, BrowserWindow>()
 let stickersHidden = false
+let overlaySuspended = false
 
 let dailyAlarmTimer: NodeJS.Timeout | undefined
 let breakTimer: NodeJS.Timeout | undefined
@@ -290,6 +293,9 @@ function applySettingsPatch(patch: unknown): AppSettings {
 }
 
 type StickerPayload = { kind: 'image' | 'text' | 'color'; data: string }
+type StickerOcrBBox = { x0: number; y0: number; x1: number; y1: number }
+type StickerOcrLine = { text: string; bbox: StickerOcrBBox; confidence: number }
+type StickerOcrResult = { width: number; height: number; text: string; lines: StickerOcrLine[] }
 
 function normalizeClipboardColorText(text: string): string | null {
   const raw = text.trim()
@@ -346,6 +352,137 @@ function readClipboardAsStickerPayload(): StickerPayload | null {
   return null
 }
 
+let stickerOcrWorkerLoading: Promise<{
+  recognize: (image: Buffer) => Promise<unknown>
+  terminate: () => Promise<void>
+}> | null = null
+let stickerOcrWorker: {
+  recognize: (image: Buffer) => Promise<unknown>
+  terminate: () => Promise<void>
+} | null = null
+let stickerOcrProgressSink: ((payload: unknown) => void) | null = null
+const stickerOcrCache = new Map<string, StickerOcrResult>()
+const stickerOcrInFlight = new Map<string, Promise<StickerOcrResult | null>>()
+
+async function getStickerOcrWorker(): Promise<{
+  recognize: (image: Buffer) => Promise<unknown>
+  terminate: () => Promise<void>
+}> {
+  if (stickerOcrWorker) return stickerOcrWorker
+  if (!stickerOcrWorkerLoading) {
+    stickerOcrWorkerLoading = (async () => {
+      const mod = await import('tesseract.js')
+      const createWorker = (
+        mod as unknown as {
+          createWorker?: (
+            lang: string,
+            oem?: number,
+            options?: { logger?: (m: unknown) => void }
+          ) => Promise<unknown>
+        }
+      ).createWorker
+      if (!createWorker) throw new Error('tesseract.js createWorker unavailable')
+      const worker = (await createWorker('chi_sim+eng', 1, {
+        logger: (m: unknown) => {
+          try {
+            stickerOcrProgressSink?.(m)
+          } catch {
+            // ignore
+          }
+        }
+      })) as unknown as {
+        recognize: (image: Buffer) => Promise<unknown>
+        terminate: () => Promise<void>
+      }
+      return worker
+    })()
+  }
+  stickerOcrWorker = await stickerOcrWorkerLoading
+  return stickerOcrWorker
+}
+
+function normalizeStickerOcrResult(raw: unknown, width: number, height: number): StickerOcrResult {
+  const data = raw && typeof raw === 'object' ? (raw as { data?: unknown }).data : null
+  const text =
+    data && typeof data === 'object' ? String((data as { text?: unknown }).text ?? '') : ''
+  const linesRaw =
+    data && typeof data === 'object' && Array.isArray((data as { lines?: unknown }).lines)
+      ? ((data as { lines: unknown[] }).lines as unknown[])
+      : []
+
+  const lines: StickerOcrLine[] = []
+  for (const it of linesRaw) {
+    if (!it || typeof it !== 'object') continue
+    const line = it as { text?: unknown; confidence?: unknown; bbox?: unknown }
+    const lineText = typeof line.text === 'string' ? line.text.trim() : ''
+    if (!lineText) continue
+    const bbox =
+      line.bbox && typeof line.bbox === 'object' ? (line.bbox as Partial<StickerOcrBBox>) : null
+    const x0 = Number(bbox?.x0)
+    const y0 = Number(bbox?.y0)
+    const x1 = Number(bbox?.x1)
+    const y1 = Number(bbox?.y1)
+    if (
+      !Number.isFinite(x0) ||
+      !Number.isFinite(y0) ||
+      !Number.isFinite(x1) ||
+      !Number.isFinite(y1)
+    )
+      continue
+    const confidence = Number(line.confidence)
+    lines.push({
+      text: lineText,
+      confidence: Number.isFinite(confidence) ? confidence : 0,
+      bbox: {
+        x0: clampNumber(x0, 0, width),
+        y0: clampNumber(y0, 0, height),
+        x1: clampNumber(x1, 0, width),
+        y1: clampNumber(y1, 0, height)
+      }
+    })
+  }
+
+  return { width, height, text, lines }
+}
+
+async function recognizeStickerImageText(dataUrl: string): Promise<StickerOcrResult | null> {
+  if (!dataUrl.startsWith('data:image/')) return null
+
+  const cacheKey = createHash('sha1').update(dataUrl).digest('hex')
+  const cached = stickerOcrCache.get(cacheKey)
+  if (cached) return cached
+
+  const inflight = stickerOcrInFlight.get(cacheKey)
+  if (inflight) return inflight
+
+  const job = (async () => {
+    try {
+      const img = nativeImage.createFromDataURL(dataUrl)
+      if (img.isEmpty()) return null
+      const size = img.getSize()
+      const width = Math.max(1, Math.round(size.width))
+      const height = Math.max(1, Math.round(size.height))
+      const png = img.toPNG()
+      const worker = await getStickerOcrWorker()
+      const ret = await worker.recognize(png)
+      const result = normalizeStickerOcrResult(ret, width, height)
+      stickerOcrCache.set(cacheKey, result)
+      if (stickerOcrCache.size > 20) {
+        const oldest = stickerOcrCache.keys().next().value as string | undefined
+        if (oldest) stickerOcrCache.delete(oldest)
+      }
+      return result
+    } catch {
+      return null
+    } finally {
+      stickerOcrInFlight.delete(cacheKey)
+    }
+  })()
+
+  stickerOcrInFlight.set(cacheKey, job)
+  return job
+}
+
 function createStickerWindow(payload: StickerPayload): BrowserWindow {
   const display = screen.getPrimaryDisplay()
   const work = display.workArea
@@ -384,7 +521,11 @@ function createStickerWindow(payload: StickerPayload): BrowserWindow {
     hasShadow: false,
     transparent: true,
     backgroundColor: '#00000000',
-    ...(process.platform === 'linux' ? { icon } : {}),
+    ...(process.platform === 'linux'
+      ? {
+          icon
+        }
+      : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false
@@ -452,7 +593,7 @@ function showStickerContextMenu(win: BrowserWindow, payload: StickerPayload | nu
     const ts = formatSnipFileName(Date.now()).replace(/\.png$/i, '')
     const ext = kind === 'image' ? 'png' : 'txt'
     const result = await dialog.showSaveDialog(win, {
-      defaultPath: join(app.getPath('pictures'), `freamx-sticker-${ts}.${ext}`),
+      defaultPath: join(app.getPath('pictures'), `toolssss-sticker-${ts}.${ext}`),
       filters:
         kind === 'image'
           ? [{ name: 'PNG Image', extensions: ['png'] }]
@@ -473,22 +614,75 @@ function showStickerContextMenu(win: BrowserWindow, payload: StickerPayload | nu
     }
   }
 
-  const menu = Menu.buildFromTemplate([
-    { label: '复制', enabled: hasData, click: () => doCopy() },
-    { label: '另存为', enabled: hasData, click: () => void doSaveAs() },
-    { type: 'separator' },
-    {
-      label: '关闭',
-      click: () => {
-        try {
-          win.hide()
-          win.close()
-        } catch {
-          // ignore
+  const labelCopy =
+    kind === 'image'
+      ? '复制图片'
+      : kind === 'text'
+        ? '复制文本'
+        : kind === 'color'
+          ? '复制颜色'
+          : '复制'
+
+  const template: MenuItemConstructorOptions[] = [
+    { label: labelCopy, enabled: hasData, click: () => doCopy() },
+    { label: '另存为', enabled: hasData, click: () => void doSaveAs() }
+  ]
+
+  if (kind === 'image') {
+    const ocrSubmenu: MenuItemConstructorOptions[] = [
+      {
+        label: '开始识别',
+        enabled: hasData,
+        click: () => {
+          try {
+            win.webContents.send('sticker:ocr:run')
+          } catch {
+            // ignore
+          }
+        }
+      },
+      {
+        label: '复制选中文本',
+        enabled: hasData,
+        click: () => {
+          try {
+            win.webContents.send('sticker:ocr:copy-selection')
+          } catch {
+            // ignore
+          }
+        }
+      },
+      {
+        label: '清除识别结果',
+        enabled: hasData,
+        click: () => {
+          try {
+            win.webContents.send('sticker:ocr:clear')
+          } catch {
+            // ignore
+          }
         }
       }
+    ]
+
+    template.push({ type: 'separator' })
+    template.push({ label: '文字识别', submenu: ocrSubmenu })
+  }
+
+  template.push({ type: 'separator' })
+  template.push({
+    label: '关闭',
+    click: () => {
+      try {
+        win.hide()
+        win.close()
+      } catch {
+        // ignore
+      }
     }
-  ])
+  })
+
+  const menu = Menu.buildFromTemplate(template)
 
   menu.popup({ window: win })
 }
@@ -516,7 +710,11 @@ function broadcastSnipSavedChanged(): void {
 }
 
 function defaultSnipSaveDir(): string {
-  return join(app.getPath('pictures'), 'freamx', 'screenshots')
+  const pictures = app.getPath('pictures')
+  const legacy = join(pictures, 'freamx', 'screenshots')
+  const next = join(pictures, 'toolssss', 'screenshots')
+  if (existsSync(legacy) && !existsSync(next)) return legacy
+  return next
 }
 
 function resolveSnipSaveDir(): string {
@@ -563,6 +761,11 @@ function startAppSnip(): void {
   if (!isScreenshotsHooked) {
     isScreenshotsHooked = true
     const wc = screenshots.$view.webContents
+    screenshots.on('windowClosed', () => resumeOverlayAfterSnip())
+    screenshots.on('windowCreated', (win: BrowserWindow) => {
+      win.on('hide', () => resumeOverlayAfterSnip())
+      win.on('closed', () => resumeOverlayAfterSnip())
+    })
     wc.on('before-input-event', (event, input) => {
       if (input.type !== 'keyDown') return
       if (input.control || input.meta || input.alt) return
@@ -616,9 +819,15 @@ function startAppSnip(): void {
         return
       }
     })
+
+    screenshots.on('cancel', () => resumeOverlayAfterSnip())
   }
 
-  screenshots.startCapture().catch(() => null)
+  suspendOverlayForSnip()
+  screenshots.startCapture().catch(() => {
+    resumeOverlayAfterSnip()
+    return null
+  })
 }
 
 function startSnip(): void {
@@ -728,10 +937,31 @@ function createOverlayWindow(display: Electron.Display): BrowserWindow {
 
   win.webContents.once('did-finish-load', () => {
     win.webContents.send('overlay:settings', settings.eye)
-    win.showInactive()
+    if (!overlaySuspended) win.showInactive()
   })
 
   return win
+}
+
+function suspendOverlayForSnip(): void {
+  if (!settings.eye.enabled) return
+  if (overlaySuspended) return
+  overlaySuspended = true
+  for (const win of overlayWindows.values()) {
+    if (win.isDestroyed()) continue
+    win.hide()
+  }
+}
+
+function resumeOverlayAfterSnip(): void {
+  if (!overlaySuspended) return
+  overlaySuspended = false
+  ensureOverlayWindows()
+  if (!settings.eye.enabled) return
+  for (const win of overlayWindows.values()) {
+    if (win.isDestroyed()) continue
+    win.showInactive()
+  }
 }
 
 function nextDailyAlarmDelayMs(time: string, now = new Date()): number | null {
@@ -1256,7 +1486,7 @@ function ensureTray(): void {
         }
       }
     ])
-    tray.setToolTip('FreamX')
+    tray.setToolTip('toolssss')
     tray.setContextMenu(contextMenu)
     tray.on('click', showApp)
     tray.on('double-click', showApp)
@@ -1412,6 +1642,7 @@ app.whenReady().then(() => {
   settings = loadSettingsFromDisk()
   applySettingsToRuntime()
   registerStickyNotesHandlers()
+  registerWeatherHandlers()
 
   ipcMain.handle('app:paths', () => {
     return {
@@ -1501,6 +1732,50 @@ app.whenReady().then(() => {
 
     return items
   })
+  ipcMain.handle('snip:saved:clear', async () => {
+    const dir = resolveSnipSaveDir()
+    try {
+      await fsp.mkdir(dir, { recursive: true })
+    } catch {
+      return 0
+    }
+    if (!existsSync(dir)) return 0
+
+    let files: string[] = []
+    try {
+      files = await fsp.readdir(dir)
+    } catch {
+      return 0
+    }
+
+    const targets = files.filter((name) => {
+      const lower = name.toLowerCase()
+      if (!lower.endsWith('.png') && !lower.endsWith('.jpg') && !lower.endsWith('.jpeg'))
+        return false
+      return /^\d{17}\.(png|jpe?g)$/i.test(name)
+    })
+
+    let deleted = 0
+    for (const name of targets) {
+      const filePath = join(dir, name)
+      try {
+        await shell.trashItem(filePath)
+        deleted += 1
+        continue
+      } catch {
+        // ignore
+      }
+      try {
+        await fsp.unlink(filePath)
+        deleted += 1
+      } catch {
+        // ignore
+      }
+    }
+
+    if (deleted > 0) broadcastSnipSavedChanged()
+    return deleted
+  })
   ipcMain.handle('snip:saved:reveal', async (_event, payload: unknown) => {
     if (typeof payload !== 'string' || !payload.trim()) return false
     try {
@@ -1569,6 +1844,40 @@ app.whenReady().then(() => {
 
     showStickerContextMenu(win, safePayload)
     return true
+  })
+  ipcMain.handle('sticker:ocr:recognize', async (_event, payload: unknown) => {
+    const dataUrl = typeof payload === 'string' ? payload : ''
+    stickerOcrProgressSink = (msg: unknown) => {
+      const m =
+        msg && typeof msg === 'object' ? (msg as { status?: unknown; progress?: unknown }) : {}
+      const status = typeof m.status === 'string' ? m.status : ''
+      const progress = Number(m.progress)
+      try {
+        _event.sender.send('sticker:ocr:progress', {
+          status,
+          progress: Number.isFinite(progress) ? progress : null
+        })
+      } catch {
+        // ignore
+      }
+    }
+    try {
+      return await recognizeStickerImageText(dataUrl)
+    } finally {
+      stickerOcrProgressSink = null
+    }
+  })
+  ipcMain.handle('sticker:clipboard:write-text', (event, payload: unknown) => {
+    const text = typeof payload === 'string' ? payload : ''
+    if (!text) return false
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed()) return false
+    try {
+      clipboard.writeText(text)
+      return true
+    } catch {
+      return false
+    }
   })
   ipcMain.on('sticker:set-position', (event, payload: unknown) => {
     const win = BrowserWindow.fromWebContents(event.sender)

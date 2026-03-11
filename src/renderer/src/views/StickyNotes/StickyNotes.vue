@@ -128,7 +128,10 @@ onMounted(() => {
 <template>
   <div class="sticky-notes-page">
     <header class="header">
-      <h1 class="title">我的便签</h1>
+      <div>
+        <h1 class="title">我的便签</h1>
+        <span class="sub-title">{{ notes.length }} 条便签</span>
+      </div>
       <button class="add-btn" @click="addNote"><Plus :size="18" /> 新建便签</button>
     </header>
 
@@ -177,6 +180,12 @@ onMounted(() => {
   font-size: 28px;
   font-weight: 700;
   letter-spacing: -0.5px;
+}
+
+.sub-title {
+  font-size: 14px;
+  font-weight: 400;
+  opacity: 0.7;
 }
 
 .add-btn {

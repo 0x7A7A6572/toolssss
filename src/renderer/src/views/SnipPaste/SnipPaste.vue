@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { MasonryWall } from '@yeger/vue-masonry-wall'
-import { RefreshCw, X } from 'lucide-vue-next'
+import { RefreshCw, Trash2, X } from 'lucide-vue-next'
+import confirm from '../../utils/confirm'
 
 type SnipSavedItem = {
   name: string
@@ -18,6 +19,24 @@ const helpOpen = ref(false)
 async function refreshSaved(): Promise<void> {
   loadingSaved.value = true
   try {
+    const result = await window.electron.ipcRenderer.invoke('snip:saved:list')
+    saved.value = Array.isArray(result) ? (result as SnipSavedItem[]) : []
+  } finally {
+    loadingSaved.value = false
+  }
+}
+
+async function clearSaved(): Promise<void> {
+  const ok = await confirm(
+    '将清理截图保存目录中由应用自动保存的截图文件（仅限时间戳命名的图片）。',
+    {
+      title: '一键清理'
+    }
+  )
+  if (!ok) return
+  loadingSaved.value = true
+  try {
+    await window.electron.ipcRenderer.invoke('snip:saved:clear')
     const result = await window.electron.ipcRenderer.invoke('snip:saved:list')
     saved.value = Array.isArray(result) ? (result as SnipSavedItem[]) : []
   } finally {
@@ -62,16 +81,28 @@ onBeforeUnmount(() => {
     <section class="card">
       <div class="card-head">
         <div class="card-title">截图库</div>
-        <button
-          class="btn icon-btn"
-          type="button"
-          title="刷新"
-          aria-label="刷新"
-          :disabled="loadingSaved"
-          @click="refreshSaved"
-        >
-          <RefreshCw :size="16" />
-        </button>
+        <div class="card-actions">
+          <button
+            class="btn icon-btn"
+            type="button"
+            title="一键清理"
+            aria-label="一键清理"
+            :disabled="loadingSaved || saved.length === 0"
+            @click="clearSaved"
+          >
+            <Trash2 :size="16" />
+          </button>
+          <button
+            class="btn icon-btn"
+            type="button"
+            title="刷新"
+            aria-label="刷新"
+            :disabled="loadingSaved"
+            @click="refreshSaved"
+          >
+            <RefreshCw :size="16" />
+          </button>
+        </div>
       </div>
 
       <div v-if="loadingSaved" class="hint">加载中…</div>
@@ -196,6 +227,12 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .btn {
