@@ -161,5 +161,8 @@ function selectTab(path: string): void {
   display: flex;
   flex-direction: column;
   overflow-y: scroll;
+  /* 隐藏滚动条 */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
 }
 </style>

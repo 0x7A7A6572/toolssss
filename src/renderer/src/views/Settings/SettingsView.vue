@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { DEFAULT_SETTINGS, type AppSettings, type SettingsPatch } from '@shared/settings'
 import ShortcutInput from '../../components/ShortcutInput.vue'
-import { FolderOpen } from 'lucide-vue-next'
+import { Delete, FolderOpen } from 'lucide-vue-next'
 
 const settings = ref<AppSettings>(structuredClone(DEFAULT_SETTINGS))
 const saving = ref(false)
@@ -530,14 +530,9 @@ onMounted(() => {
             :placeholder="settings.ai.apiKeySet ? '已保存（输入新 Key 覆盖）' : '未设置'"
             @change="setAiApiKey"
           />
-          <button
-            class="btn"
-            type="button"
-            :disabled="!settings.ai.apiKeySet"
-            @click="clearAiApiKey"
-          >
-            清除
-          </button>
+          <div class="btn" :disabled="!settings.ai.apiKeySet" @click="clearAiApiKey">
+            <Delete :size="20" />
+          </div>
         </div>
       </div>
 
@@ -705,6 +700,9 @@ onMounted(() => {
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .btn:hover {

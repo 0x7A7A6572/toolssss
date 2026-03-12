@@ -1544,6 +1544,7 @@ async function translateWithBing(args: {
     const data = JSON.parse(raw) as Array<{
       translations?: Array<{ text?: unknown }>
     }>
+    console.log('translateWithBing data', data)
     const t = data?.[0]?.translations?.[0]?.text
     return typeof t === 'string' ? t : ''
   } finally {
@@ -1583,6 +1584,10 @@ type AiDailyFunFactResult = {
 }
 
 let aiDailyFunFactCache: AiDailyFunFactResult | null = null
+const aiDailyFunFactStreamBySender = new Map<
+  number,
+  { id: string; controller: AbortController; timeout: ReturnType<typeof setTimeout> }
+>()
 
 function ymdLocal(d: Date): string {
   const y = d.getFullYear()
@@ -1619,6 +1624,118 @@ function buildAiChatCompletionsUrl(baseUrl: string): URL {
   return new URL(`${normalized}/v1/chat/completions`)
 }
 
+function createAiStreamId(): string {
+  const a = Date.now()
+  const b = Math.random().toString(16).slice(2)
+  return `${a}-${b}`
+}
+
+function tryParseAiSseDelta(jsonText: string): string {
+  try {
+    const obj = JSON.parse(jsonText) as unknown
+    const root = obj && typeof obj === 'object' ? (obj as Record<string, unknown>) : null
+    const choices = Array.isArray(root?.['choices']) ? (root?.['choices'] as unknown[]) : []
+    const first =
+      choices[0] && typeof choices[0] === 'object' ? (choices[0] as Record<string, unknown>) : null
+    const delta =
+      first?.['delta'] && typeof first['delta'] === 'object'
+        ? (first['delta'] as Record<string, unknown>)
+        : null
+    const content = delta?.['content']
+    return typeof content === 'string' ? content : ''
+  } catch {
+    return ''
+  }
+}
+
+async function requestDailyFunFactFromAiStreamed(
+  ymd: string,
+  signal: AbortSignal,
+  onDelta: (delta: string) => void
+): Promise<string> {
+  if (!settings.ai.enabled) throw new Error('AI 未启用，请到「全局设置」开启。')
+  const base = settings.ai.baseUrl.trim()
+  if (!base) throw new Error('未配置 AI Base URL，请到「全局设置」完善。')
+  const model = settings.ai.model.trim()
+  if (!model) throw new Error('未配置 AI Model，请到「全局设置」完善。')
+  const apiKey = getAiApiKeyFromSecrets()
+  if (!apiKey) throw new Error('未配置 AI API Key，请到「全局设置」完善。')
+
+  const url = buildAiChatCompletionsUrl(base)
+  const res = await fetch(url.toString(), {
+    method: 'POST',
+    headers: {
+      Accept: 'text/event-stream',
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model,
+      temperature: 0.7,
+      max_tokens: 220,
+      stream: true,
+      messages: [
+        {
+          role: 'system',
+          content:
+            '你是一个严谨的科普编辑。只输出一条冷知识，中文，尽量准确，不要编造具体数字或来源。'
+        },
+        {
+          role: 'user',
+          content: `给我一条“每日冷知识”，日期：${ymd}。\n要求：1) 1-3 句；2) 不要列表；3) 不要标题符号；4) 不要输出多余解释。`
+        }
+      ]
+    }),
+    signal
+  })
+
+  if (!res.ok) {
+    const raw = await res.text()
+    const msg = extractAiErrorMessage(raw)
+    throw new Error(msg ? `AI 请求失败：${msg}` : raw || `AI 请求失败：HTTP ${res.status}`)
+  }
+
+  const ct = res.headers.get('content-type') ?? ''
+  if (!/text\/event-stream/i.test(ct) || !res.body) {
+    const raw = await res.text()
+    const data = JSON.parse(raw) as {
+      choices?: Array<{ message?: { content?: unknown } }>
+    }
+    const content = data?.choices?.[0]?.message?.content
+    if (typeof content !== 'string' || !content.trim()) throw new Error('AI 未返回有效内容')
+    const out = trimAiText(content)
+    if (out) onDelta(out)
+    return out
+  }
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let full = ''
+  while (true) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    while (true) {
+      const idx = buffer.indexOf('\n')
+      if (idx < 0) break
+      const line = buffer.slice(0, idx)
+      buffer = buffer.slice(idx + 1)
+      const trimmed = line.trim()
+      if (!trimmed) continue
+      if (!trimmed.startsWith('data:')) continue
+      const data = trimmed.slice('data:'.length).trim()
+      if (!data) continue
+      if (data === '[DONE]') return trimAiText(full)
+      const delta = tryParseAiSseDelta(data)
+      if (!delta) continue
+      full += delta
+      onDelta(delta)
+    }
+  }
+  return trimAiText(full)
+}
+
 async function requestDailyFunFactFromAi(ymd: string): Promise<string> {
   if (!settings.ai.enabled) throw new Error('AI 未启用，请到「全局设置」开启。')
   const base = settings.ai.baseUrl.trim()
@@ -1645,6 +1762,7 @@ async function requestDailyFunFactFromAi(ymd: string): Promise<string> {
           model,
           temperature: 0.7,
           max_tokens: 220,
+          stream: true,
           messages: [
             {
               role: 'system',
@@ -1937,6 +2055,113 @@ app.whenReady().then(() => {
     const p = payload && typeof payload === 'object' ? (payload as { force?: unknown }) : {}
     const force = Boolean(p.force)
     return await getAiDailyFunFact(force)
+  })
+  ipcMain.handle('ai:funfact:daily:stream', async (event, payload: unknown) => {
+    const p = payload && typeof payload === 'object' ? (payload as { force?: unknown }) : {}
+    const force = Boolean(p.force)
+    const ymd = ymdLocal(new Date())
+    const id = createAiStreamId()
+
+    const senderId = event.sender.id
+    const prev = aiDailyFunFactStreamBySender.get(senderId)
+    if (prev) {
+      try {
+        prev.controller.abort()
+      } catch (_e) {
+        void _e
+      }
+      clearTimeout(prev.timeout)
+      aiDailyFunFactStreamBySender.delete(senderId)
+    }
+
+    if (!force && aiDailyFunFactCache?.ymd === ymd && aiDailyFunFactCache.text.trim()) {
+      return { id, ymd, text: aiDailyFunFactCache.text }
+    }
+
+    const controller = new AbortController()
+    const timeoutMs = 60000
+    const timeout = setTimeout(() => controller.abort(), timeoutMs)
+    aiDailyFunFactStreamBySender.set(senderId, { id, controller, timeout })
+    setImmediate(() => {
+      ;(async () => {
+        try {
+          let acc = ''
+          const text = await requestDailyFunFactFromAiStreamed(ymd, controller.signal, (delta) => {
+            if (aiDailyFunFactStreamBySender.get(senderId)?.id !== id) return
+            acc += delta
+            try {
+              event.sender.send('ai:funfact:daily:chunk', { id, delta })
+            } catch (_e) {
+              void _e
+            }
+          })
+
+          if (aiDailyFunFactStreamBySender.get(senderId)?.id !== id) return
+          const out: AiDailyFunFactResult = { ymd, text: text || trimAiText(acc) }
+          aiDailyFunFactCache = out
+          try {
+            event.sender.send('ai:funfact:daily:done', { id, ymd: out.ymd, text: out.text })
+          } catch (_e) {
+            void _e
+          }
+        } catch (e) {
+          if (aiDailyFunFactStreamBySender.get(senderId)?.id !== id) return
+          const name =
+            e &&
+            typeof e === 'object' &&
+            'name' in e &&
+            typeof (e as { name?: unknown }).name === 'string'
+              ? ((e as { name: string }).name as string)
+              : ''
+          if (name === 'AbortError') {
+            try {
+              event.sender.send('ai:funfact:daily:error', {
+                id,
+                message: `AI 请求超时（${Math.round(timeoutMs / 1000)}秒），请稍后重试`
+              })
+            } catch (_e) {
+              void _e
+            }
+            return
+          }
+          const msg = e instanceof Error ? e.message : 'AI 请求失败'
+          try {
+            event.sender.send('ai:funfact:daily:error', { id, message: msg })
+          } catch (_e) {
+            void _e
+          }
+        } finally {
+          const cur = aiDailyFunFactStreamBySender.get(senderId)
+          if (cur?.id === id) {
+            clearTimeout(cur.timeout)
+            aiDailyFunFactStreamBySender.delete(senderId)
+          }
+        }
+      })()
+    })
+
+    return { id, ymd }
+  })
+  ipcMain.handle('ai:funfact:daily:cancel', (event, payload: unknown) => {
+    const p = payload && typeof payload === 'object' ? (payload as { id?: unknown }) : {}
+    const id = typeof p.id === 'string' ? p.id : ''
+    const senderId = event.sender.id
+    const cur = aiDailyFunFactStreamBySender.get(senderId)
+    if (!cur) return false
+    if (id && cur.id !== id) return false
+    try {
+      event.sender.send('ai:funfact:daily:cancelled', { id: cur.id })
+    } catch (_e) {
+      void _e
+    }
+    try {
+      cur.controller.abort()
+    } catch (_e) {
+      void _e
+    }
+    clearTimeout(cur.timeout)
+    aiDailyFunFactStreamBySender.delete(senderId)
+    return true
   })
   ipcMain.handle('snip:saveDir:choose', async () => {
     const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null

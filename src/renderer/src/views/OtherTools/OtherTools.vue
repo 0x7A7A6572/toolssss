@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { WeatherTool } from '../../utils/weather'
 import type { WeatherDashboard } from '@shared/weather'
 import { DEFAULT_SETTINGS, type AppSettings } from '@shared/settings'
-import { RefreshCw, Settings } from 'lucide-vue-next'
+import { RefreshCw, Settings, Sparkles } from 'lucide-vue-next'
 import LazyCascader from '../../components/LazyCascader.vue'
 import SevenDayTempChart from '../../components/SevenDayTempChart.vue'
 import { LegalHoliday, SolarDay } from 'tyme4ts'
@@ -48,7 +48,10 @@ const PROVINCES: Array<{ name: string; code: string }> = [
 
 const DEFAULT_STATION_ID = '59431'
 const stationId = ref<string>(localStorage.getItem('weather.stationId') ?? DEFAULT_STATION_ID)
-const loading = ref(false)
+const loadingSate = reactive({
+  weather: false,
+  daily: false
+})
 const errorText = ref<string | null>(null)
 const dashboard = ref<WeatherDashboard | null>(null)
 
@@ -97,6 +100,24 @@ const funFactYmd = ref<string>(localStorage.getItem(FUN_FACT_YMD_KEY) ?? '')
 const funFactText = ref<string>(localStorage.getItem(FUN_FACT_TEXT_KEY) ?? '')
 const funFactLoading = ref(false)
 const funFactErrorText = ref('')
+const funFactStreamId = ref<string>('')
+
+type StackCardId = 'answer' | 'funFact'
+const STACK_ACTIVE_KEY = 'miniTools.stack.active'
+const stackActive = ref<StackCardId>(
+  localStorage.getItem(STACK_ACTIVE_KEY) === 'funFact' ? 'funFact' : 'answer'
+)
+
+const stackColors = ['#1A1A1A', 'linear-gradient(45deg, #835abf, #5a5a5ac7)']
+
+function setStackActive(id: StackCardId): void {
+  stackActive.value = id
+  try {
+    localStorage.setItem(STACK_ACTIVE_KEY, id)
+  } catch {
+    return
+  }
+}
 
 function ymdLocal(d: Date): string {
   const y = d.getFullYear()
@@ -130,32 +151,94 @@ async function refreshSettings(): Promise<void> {
   settings.value = result as AppSettings
 }
 
+function endFunFactLoading(): void {
+  funFactLoading.value = false
+  loadingSate.daily = false
+}
+
+function onFunFactChunk(_event: unknown, payload: unknown): void {
+  if (!payload || typeof payload !== 'object') return
+  const p = payload as { id?: unknown; delta?: unknown }
+  if (typeof p.id !== 'string' || !p.id) return
+  if (p.id !== funFactStreamId.value) return
+  const delta = typeof p.delta === 'string' ? p.delta : ''
+  if (!delta) return
+  const next = `${funFactText.value}${delta}`
+  funFactText.value = next.length > 900 ? next.slice(0, 900) : next
+}
+
+function onFunFactDone(_event: unknown, payload: unknown): void {
+  if (!payload || typeof payload !== 'object') return
+  const p = payload as { id?: unknown; ymd?: unknown; text?: unknown }
+  if (typeof p.id !== 'string' || !p.id) return
+  if (p.id !== funFactStreamId.value) return
+  const ymd = typeof p.ymd === 'string' ? p.ymd : ''
+  const text = typeof p.text === 'string' ? p.text : ''
+  funFactYmd.value = ymd
+  funFactText.value = text
+  if (ymd) localStorage.setItem(FUN_FACT_YMD_KEY, ymd)
+  if (text) localStorage.setItem(FUN_FACT_TEXT_KEY, text)
+  funFactStreamId.value = ''
+  endFunFactLoading()
+}
+
+function onFunFactError(_event: unknown, payload: unknown): void {
+  if (!payload || typeof payload !== 'object') return
+  const p = payload as { id?: unknown; message?: unknown }
+  if (typeof p.id !== 'string' || !p.id) return
+  if (p.id !== funFactStreamId.value) return
+  const msg = typeof p.message === 'string' && p.message ? p.message : '获取冷知识失败'
+  funFactErrorText.value = msg
+  funFactStreamId.value = ''
+  endFunFactLoading()
+}
+
+function onFunFactCancelled(_event: unknown, payload: unknown): void {
+  if (!payload || typeof payload !== 'object') return
+  const p = payload as { id?: unknown }
+  if (typeof p.id !== 'string' || !p.id) return
+  if (p.id !== funFactStreamId.value) return
+  funFactStreamId.value = ''
+  endFunFactLoading()
+}
+
 async function refreshDailyFunFact(force: boolean): Promise<void> {
+  loadingSate.daily = true
   normalizeCachedFunFact()
   if (!aiReady.value) {
     funFactErrorText.value = '请到「全局设置」启用 AI 并配置 Base URL / Key / Model'
+    endFunFactLoading()
     return
   }
   if (!force && funFactYmd.value === funFactTodayYmd.value && funFactText.value.trim()) {
     funFactErrorText.value = ''
+    endFunFactLoading()
     return
   }
   funFactLoading.value = true
   funFactErrorText.value = ''
+  funFactText.value = ''
   try {
-    const ret = (await window.electron.ipcRenderer.invoke('ai:funfact:daily', {
+    const ret = (await window.electron.ipcRenderer.invoke('ai:funfact:daily:stream', {
       force
-    })) as { ymd?: unknown; text?: unknown }
-    const ymd = typeof ret?.ymd === 'string' ? ret.ymd : ''
+    })) as { id?: unknown; ymd?: unknown; text?: unknown }
+    const id = typeof ret?.id === 'string' ? ret.id : ''
+    const ymd = typeof ret?.ymd === 'string' ? ret.ymd : funFactTodayYmd.value
     const text = typeof ret?.text === 'string' ? ret.text : ''
+    if (!id) throw new Error('AI 流式请求启动失败')
+    funFactStreamId.value = id
     funFactYmd.value = ymd
-    funFactText.value = text
-    if (ymd) localStorage.setItem(FUN_FACT_YMD_KEY, ymd)
-    if (text) localStorage.setItem(FUN_FACT_TEXT_KEY, text)
+    if (text) {
+      funFactText.value = text
+      if (ymd) localStorage.setItem(FUN_FACT_YMD_KEY, ymd)
+      localStorage.setItem(FUN_FACT_TEXT_KEY, text)
+      funFactStreamId.value = ''
+      endFunFactLoading()
+    }
   } catch (e) {
     funFactErrorText.value = e instanceof Error ? e.message : '获取冷知识失败'
-  } finally {
-    funFactLoading.value = false
+    funFactStreamId.value = ''
+    endFunFactLoading()
   }
 }
 
@@ -412,7 +495,7 @@ async function refresh(): Promise<void> {
     errorText.value = '刷新过于频繁，请稍后再试'
     return
   }
-  loading.value = true
+  loadingSate.weather = true
   errorText.value = null
   try {
     const ret = await WeatherTool.getDashboard(stationId.value)
@@ -428,13 +511,17 @@ async function refresh(): Promise<void> {
     dashboard.value = null
     errorText.value = '天气数据获取失败'
   } finally {
-    loading.value = false
+    loadingSate.weather = false
   }
 }
 
 onMounted(() => {
   window.addEventListener('keydown', onKeydown)
   window.electron.ipcRenderer.on('settings:changed', onSettingsChanged)
+  window.electron.ipcRenderer.on('ai:funfact:daily:chunk', onFunFactChunk)
+  window.electron.ipcRenderer.on('ai:funfact:daily:done', onFunFactDone)
+  window.electron.ipcRenderer.on('ai:funfact:daily:error', onFunFactError)
+  window.electron.ipcRenderer.on('ai:funfact:daily:cancelled', onFunFactCancelled)
   tickTimer = window.setInterval(() => {
     nowTickMs.value = Date.now()
     normalizeCachedFunFact()
@@ -465,6 +552,15 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
   window.electron.ipcRenderer.removeListener('settings:changed', onSettingsChanged)
+  window.electron.ipcRenderer.removeListener('ai:funfact:daily:chunk', onFunFactChunk)
+  window.electron.ipcRenderer.removeListener('ai:funfact:daily:done', onFunFactDone)
+  window.electron.ipcRenderer.removeListener('ai:funfact:daily:error', onFunFactError)
+  window.electron.ipcRenderer.removeListener('ai:funfact:daily:cancelled', onFunFactCancelled)
+  if (funFactStreamId.value) {
+    window.electron.ipcRenderer
+      .invoke('ai:funfact:daily:cancel', { id: funFactStreamId.value })
+      .catch(() => null)
+  }
   if (tickTimer !== null) {
     window.clearInterval(tickTimer)
     tickTimer = null
@@ -486,14 +582,14 @@ onUnmounted(() => {
             v-if="!dashboard"
             class="btn"
             type="button"
-            :disabled="citiesLoading || loading"
+            :disabled="citiesLoading || loadingSate.weather"
             title="选择城市"
             @click="openCityPicker"
           >
             城市
           </button>
-          <button class="btn" :disabled="loading" title="刷新" @click="refresh">
-            <RefreshCw v-if="!loading" :size="16" />
+          <button class="btn" :disabled="loadingSate.weather" title="刷新" @click="refresh">
+            <RefreshCw v-if="!loadingSate.weather" :size="16" />
             <div v-else class="loading-spinner"></div>
           </button>
         </div>
@@ -654,69 +750,96 @@ onUnmounted(() => {
         </div>
       </section>
 
-      <section class="card answer-book-card">
-        <div class="answer-book-head">
-          <div class="answer-book-title">答案之书</div>
-        </div>
-
-        <div class="answer-book-body">
-          <div
-            :key="answerAnimKey"
-            class="answer-flip"
-            :class="{
-              flipped: answerFlipped,
-              spotlight: answerSpotlightActive
-            }"
-            :style="answerSpotlightStyle"
-            role="button"
-            tabindex="0"
-            @mouseenter="onAnswerMouseEnter"
-            @mousemove="onAnswerMouseMove"
-            @mouseleave="onAnswerMouseLeave"
-            @click="drawAnswer"
-            @keydown.enter.prevent="drawAnswer"
+      <div class="stack-tool-wrap">
+        <section
+          class="card stack-card"
+          :class="{ active: stackActive === 'answer', inactive: stackActive !== 'answer' }"
+          :style="{
+            background: stackColors[0]
+          }"
+        >
+          <button
+            class="stack-head answer-book-head"
+            type="button"
+            :disabled="stackActive === 'answer'"
+            @click="setStackActive('answer')"
           >
-            <div class="answer-flip-inner">
-              <div class="answer-face answer-front">
-                <div class="answer-front-title">把鼠标移进来，命运马上发牌</div>
-                <div class="answer-front-sub">移动鼠标，用探照灯看清答案</div>
-              </div>
-              <div class="answer-face answer-back">
-                <div v-if="answerCurrent" class="answer-text">
-                  <div class="answer-zh">{{ answerCurrent.zh }}</div>
-                  <div class="answer-en">{{ answerCurrent.en }}</div>
+            <div class="answer-book-title">答案之书</div>
+          </button>
+
+          <div v-show="stackActive === 'answer'" class="answer-book-body stack-body">
+            <div
+              :key="answerAnimKey"
+              class="answer-flip"
+              :class="{
+                flipped: answerFlipped,
+                spotlight: answerSpotlightActive
+              }"
+              :style="answerSpotlightStyle"
+              role="button"
+              tabindex="0"
+              @mouseenter="onAnswerMouseEnter"
+              @mousemove="onAnswerMouseMove"
+              @mouseleave="onAnswerMouseLeave"
+              @click="drawAnswer"
+              @keydown.enter.prevent="drawAnswer"
+            >
+              <div class="answer-flip-inner">
+                <div class="answer-face answer-front">
+                  <div class="answer-front-title">把鼠标移进来，命运马上发牌</div>
+                  <div class="answer-front-sub">移动鼠标，用探照灯看清答案</div>
                 </div>
-                <div v-else class="answer-text">
-                  <div class="answer-zh">—</div>
+                <div class="answer-face answer-back">
+                  <div v-if="answerCurrent" class="answer-text">
+                    <div class="answer-zh">{{ answerCurrent.zh }}</div>
+                    <div class="answer-en">{{ answerCurrent.en }}</div>
+                  </div>
+                  <div v-else class="answer-text">
+                    <div class="answer-zh">—</div>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      </section>
-    </div>
+        </section>
 
-    <section class="card fun-fact-card">
-      <div class="fun-fact-head">
-        <div class="fun-fact-title">每日冷知识</div>
-        <div class="actions">
+        <section
+          class="card stack-card"
+          :class="{ active: stackActive === 'funFact', inactive: stackActive !== 'funFact' }"
+          :style="{
+            background: stackColors[1]
+          }"
+        >
           <button
-            class="btn"
+            class="stack-head fun-fact-head"
             type="button"
-            :disabled="funFactLoading || !aiReady"
-            @click="refreshDailyFunFact(true)"
+            :disabled="stackActive === 'funFact'"
+            @click="setStackActive('funFact')"
           >
-            换一条
+            <div class="fun-fact-title">每日冷知识</div>
+            <div v-if="stackActive === 'funFact'" class="actions">
+              <button
+                class="btn no-bg"
+                type="button"
+                :disabled="funFactLoading || !aiReady"
+                @click.stop="refreshDailyFunFact(true)"
+              >
+                <Sparkles v-if="!loadingSate.daily" :size="16" />
+                <div v-else class="loading-spinner"></div>
+              </button>
+            </div>
           </button>
-        </div>
-      </div>
 
-      <div v-if="funFactErrorText" class="error">{{ funFactErrorText }}</div>
-      <div v-else class="fun-fact-body">
-        <div class="fun-fact-meta">{{ funFactYmd || funFactTodayYmd }}</div>
-        <div class="fun-fact-text">{{ funFactText || '—' }}</div>
+          <div v-show="stackActive === 'funFact'" class="stack-body">
+            <div v-if="funFactErrorText" class="error">{{ funFactErrorText }}</div>
+            <div v-else class="fun-fact-body">
+              <div class="fun-fact-meta">{{ funFactYmd || funFactTodayYmd }}</div>
+              <div class="fun-fact-text">{{ funFactText || '—' }}</div>
+            </div>
+          </div>
+        </section>
       </div>
-    </section>
+    </div>
 
     <Teleport to="body">
       <div v-if="cityPickerOpen" class="picker-overlay" @click.self="closeCityPicker">
@@ -774,6 +897,10 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 16px;
   height: 100%;
+  overflow-y: auto;
+  /* 隐藏滚动条 */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
 }
 
 .header {
@@ -900,6 +1027,14 @@ onUnmounted(() => {
   border-radius: 8px;
   font-size: 12px;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn.no-bg {
+  background: transparent;
+  border: none;
 }
 
 .btn:disabled {
@@ -995,10 +1130,62 @@ onUnmounted(() => {
 
 .work-calendar-card {
   width: min(360px, 100%);
-  height: 240px;
+  /* height: 240px; */
   align-self: flex-start;
   padding: 14px;
   gap: 12px;
+}
+
+.stack-tool-wrap {
+  height: 240px;
+  flex: auto;
+  position: relative;
+  --stack-head-h: 20px;
+  --stack-offset: 48px;
+}
+
+.stack-card {
+  position: absolute;
+  inset: 0;
+  padding: 14px;
+  gap: 12px;
+  background: #0a0a0a;
+  height: 180px;
+  transition:
+    transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    clip-path 220ms ease,
+    filter 220ms ease;
+}
+
+.stack-card.active {
+  transform: translateY(var(--stack-offset));
+  z-index: 2;
+}
+
+.stack-card.inactive {
+  transform: /*translateY(0)*/ translateY(0) scale(0.95);
+  z-index: 1;
+  /* clip-path: inset(0 0 calc(100% - var(--stack-head-h)) 0 round 12px); */
+}
+
+.stack-head {
+  width: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  min-height: var(--stack-head-h);
+}
+
+.stack-head:disabled {
+  cursor: default;
+}
+
+.stack-body {
+  flex: 1;
+  min-height: 0;
 }
 
 .answer-book-card {
@@ -1138,8 +1325,8 @@ onUnmounted(() => {
   inset: 0;
   border-radius: 12px;
   backface-visibility: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
+  /* border: 1px solid rgba(255, 255, 255, 0.08); */
+  /* background: rgba(255, 255, 255, 0.03); */
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -1147,9 +1334,9 @@ onUnmounted(() => {
 }
 
 .answer-front {
-  background:
+  /* background:
     radial-gradient(600px 220px at 40% 0%, rgba(90, 210, 255, 0.22), transparent),
-    rgba(255, 255, 255, 0.03);
+    rgba(255, 255, 255, 0.03); */
 }
 
 .answer-back {
