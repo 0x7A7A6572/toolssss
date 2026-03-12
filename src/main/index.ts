@@ -36,6 +36,7 @@ import {
   setStickyNotesSaveDir
 } from './sticky-notes'
 import { registerWeatherHandlers } from './weather'
+import { registerScriptLibraryHandlers } from './script-library'
 import { TRANSLATOR_EVENTS, type TranslatePayload, type TranslateResult } from '@shared/translator'
 import Screenshots from 'electron-screenshots'
 
@@ -1229,6 +1230,14 @@ function showAlarmWindows(reason: AlarmReason, title: string, body: string): voi
         timeoutSec: settings.reminderSeconds
       })
     if (!win.isVisible()) win.show()
+    try {
+      win.setAlwaysOnTop(true, 'screen-saver')
+      win.moveTop()
+      win.setKiosk(true)
+      win.setFullScreen(true)
+    } catch {
+      void 0
+    }
   }
 }
 
@@ -1242,7 +1251,8 @@ function createAlarmWindow(display: Electron.Display): BrowserWindow {
     frame: false,
     resizable: false,
     movable: false,
-    fullscreen: true,
+    fullscreen: false,
+    kiosk: true,
     skipTaskbar: true,
     alwaysOnTop: true,
     backgroundColor: '#111827',
@@ -1264,10 +1274,27 @@ function createAlarmWindow(display: Electron.Display): BrowserWindow {
         ...lastAlarmPayload,
         timeoutSec: settings.reminderSeconds
       })
+    try {
+      win.setBounds(display.bounds, false)
+    } catch {
+      void 0
+    }
     win.show()
+    try {
+      app.focus()
+    } catch {
+      void 0
+    }
+    win.setAlwaysOnTop(true, 'screen-saver')
+    win.moveTop()
     win.focus()
-    win.setFullScreen(true)
     win.setKiosk(true)
+    win.setFullScreen(true)
+    try {
+      win.webContents.focus()
+    } catch {
+      void 0
+    }
   })
 
   win.on('closed', () => {
@@ -2007,6 +2034,7 @@ app.whenReady().then(() => {
   applySettingsToRuntime()
   registerStickyNotesHandlers()
   registerWeatherHandlers()
+  registerScriptLibraryHandlers()
 
   ipcMain.handle('app:paths', () => {
     return {
