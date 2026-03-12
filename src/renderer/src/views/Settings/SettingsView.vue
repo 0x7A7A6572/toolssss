@@ -199,6 +199,45 @@ onMounted(() => {
 
     <section class="card">
       <div class="card-head">
+        <div class="card-title">其他设置</div>
+      </div>
+
+      <div class="row">
+        <div class="label">启用截屏贴图</div>
+        <label class="switch">
+          <input
+            type="checkbox"
+            :checked="settings.snip.enabled"
+            @change="
+              update({
+                snip: { enabled: ($event.target as HTMLInputElement).checked }
+              })
+            "
+          />
+          <span class="slider" />
+        </label>
+      </div>
+
+      <div class="row">
+        <div class="label">截图时隐藏遮罩</div>
+        <label class="switch">
+          <input
+            type="checkbox"
+            :checked="settings.snip.suspendEyeOverlay"
+            :disabled="!settings.snip.enabled"
+            @change="
+              update({
+                snip: { suspendEyeOverlay: ($event.target as HTMLInputElement).checked }
+              })
+            "
+          />
+          <span class="slider" />
+        </label>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
         <div class="card-title">全局快捷键</div>
       </div>
 
@@ -239,39 +278,6 @@ onMounted(() => {
             })
           "
         />
-      </div>
-
-      <div class="row">
-        <div class="label">启用截屏贴图</div>
-        <label class="switch">
-          <input
-            type="checkbox"
-            :checked="settings.snip.enabled"
-            @change="
-              update({
-                snip: { enabled: ($event.target as HTMLInputElement).checked }
-              })
-            "
-          />
-          <span class="slider" />
-        </label>
-      </div>
-
-      <div class="row">
-        <div class="label">截屏时隐藏护眼遮罩</div>
-        <label class="switch">
-          <input
-            type="checkbox"
-            :checked="settings.snip.suspendEyeOverlay"
-            :disabled="!settings.snip.enabled"
-            @change="
-              update({
-                snip: { suspendEyeOverlay: ($event.target as HTMLInputElement).checked }
-              })
-            "
-          />
-          <span class="slider" />
-        </label>
       </div>
 
       <div class="row">
