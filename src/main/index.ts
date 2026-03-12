@@ -59,6 +59,7 @@ let breakTimer: NodeJS.Timeout | undefined
 let snoozeTimer: NodeJS.Timeout | undefined
 let lastAlarmPayload: { reason: AlarmReason; title: string; body: string } | null = null
 let breakNextAt: number | null = null
+let restTipsCache: string[] | null = null
 
 function getBreakStatus(): { enabled: boolean; intervalMinutes: number; nextAt: number | null } {
   return {
@@ -1132,6 +1133,50 @@ function ensureBreakTimer(): void {
   }, intervalMs)
 }
 
+function resolveRestTipsFilePath(): string | null {
+  const candidates: string[] = []
+  if (is.dev) {
+    candidates.push(join(process.cwd(), 'src', 'libs', 'rest-tips.json'))
+    candidates.push(join(app.getAppPath(), 'src', 'libs', 'rest-tips.json'))
+  } else {
+    candidates.push(join(process.resourcesPath, 'rest-tips.json'))
+    candidates.push(join(app.getAppPath(), 'rest-tips.json'))
+  }
+
+  for (const p of candidates) {
+    try {
+      if (existsSync(p)) return p
+    } catch {
+      void 0
+    }
+  }
+  return null
+}
+
+function loadRestTips(): string[] {
+  if (restTipsCache) return restTipsCache
+  const p = resolveRestTipsFilePath()
+  if (!p) return []
+  try {
+    const raw = readFileSync(p, 'utf-8')
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return []
+    const out = parsed.filter((v) => typeof v === 'string' && v.trim()) as string[]
+    restTipsCache = out
+    return out
+  } catch {
+    return []
+  }
+}
+
+function pickRestTip(): string {
+  const tips = loadRestTips()
+  if (!tips.length) return '休息一下，看看远处 20 秒，眨眨眼。'
+  const idx = Math.floor(Math.random() * tips.length)
+  const v = tips[idx]?.trim() ?? ''
+  return v || '休息一下，看看远处 20 秒，眨眨眼。'
+}
+
 function triggerAlarm(reason: AlarmReason): void {
   if (snoozeTimer) {
     clearTimeout(snoozeTimer)
@@ -1139,8 +1184,7 @@ function triggerAlarm(reason: AlarmReason): void {
   }
 
   const title = reason === 'alarm' ? settings.alarm.label : '休息提醒'
-  const body =
-    reason === 'alarm' ? `现在时间：${settings.alarm.time}` : `休息一下，看看远处 20 秒，眨眨眼。`
+  const body = reason === 'alarm' ? `现在时间：${settings.alarm.time}` : pickRestTip()
 
   if (reason === 'break' && settings.break.disableInFullscreen) {
     // Simple check: if the last active window is fullscreen.
@@ -1829,9 +1873,8 @@ async function getAiDailyFunFact(force: boolean): Promise<AiDailyFunFactResult> 
 }
 
 function previewAlarm(reason: AlarmReason): void {
-  const title = reason === 'alarm' ? `预览：${settings.alarm.label}` : '预览：休息提醒'
-  const body =
-    reason === 'alarm' ? `现在时间：${settings.alarm.time}` : `休息一下，看看远处 20 秒，眨眨眼。`
+  const title = reason === 'alarm' ? settings.alarm.label : '休息提醒'
+  const body = reason === 'alarm' ? `现在时间：${settings.alarm.time}` : pickRestTip()
   showAlarmWindows(reason, title, body)
 }
 

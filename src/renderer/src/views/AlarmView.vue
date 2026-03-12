@@ -95,9 +95,9 @@ onBeforeUnmount(() => {
       <div class="body">{{ body }}</div>
       <div class="actions">
         <button v-if="showSnooze" class="btn" type="button" @click="snooze">稍后 5 分钟</button>
-        <button class="btn" type="button" @click="close">关闭</button>
+        <!-- <button class="btn" type="button" @click="close">关闭</button> -->
       </div>
-      <div class="hint">按 Esc 也可以关闭</div>
+      <div class="hint">按 Esc 关闭</div>
     </div>
   </div>
 </template>
@@ -297,7 +297,7 @@ $shooting-time: 3000ms;
   cursor: pointer;
   border-radius: 6px;
   border: 1px solid rgba(255, 255, 255, 0.14);
-  padding: 12px 16px;
+  padding: 8px 10px;
   background: rgba(255, 255, 255, 0.06);
   color: rgba(255, 255, 245, 0.92);
   font-size: 14px;
