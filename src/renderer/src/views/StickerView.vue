@@ -22,11 +22,10 @@ const ocrProgress = ref<number | null>(null)
 const ocrProgressStatus = ref<string>('')
 
 const stageStyle = computed(() => {
-  const s = Math.max(0.1, Math.min(8, scale.value))
   const o = Math.max(0.15, Math.min(1, opacity.value))
   const rx = Math.max(-1000000, Math.min(1000000, rotate.value))
   return {
-    transform: `scale(${s}) rotate(${rx}deg) scaleX(${flipX.value}) scaleY(${flipY.value})`,
+    transform: `rotate(${rx}deg) scaleX(${flipX.value}) scaleY(${flipY.value})`,
     opacity: String(o)
   }
 })
@@ -114,12 +113,24 @@ function scheduleBounds(bounds: { x: number; y: number; width: number; height: n
   boundsRaf = window.requestAnimationFrame(() => flushBounds())
 }
 
+function constrainScaleByWindowBounds(base: { w: number; h: number }, nextScale: number): number {
+  const minW = 120
+  const minH = 90
+  const maxW = 6000
+  const maxH = 6000
+
+  const minScale = Math.max(minW / base.w, minH / base.h)
+  const maxScale = Math.min(maxW / base.w, maxH / base.h)
+  return clamp(nextScale, minScale, maxScale)
+}
+
 function applyWindowScale(nextScale: number): void {
   const base = baseOuter.value
   if (!base) return
 
-  const w = Math.round(clamp(base.w * nextScale, 120, 6000))
-  const h = Math.round(clamp(base.h * nextScale, 90, 6000))
+  const s = constrainScaleByWindowBounds(base, nextScale)
+  const w = Math.round(base.w * s)
+  const h = Math.round(base.h * s)
 
   const cx = window.screenX + window.outerWidth / 2
   const cy = window.screenY + window.outerHeight / 2
@@ -132,7 +143,9 @@ function applyWindowScale(nextScale: number): void {
 }
 
 function setScale(next: number): void {
-  const v = clamp(next, 0.1, 8)
+  const base = baseOuter.value
+  const v0 = clamp(next, 0.1, 8)
+  const v = base ? constrainScaleByWindowBounds(base, v0) : v0
   scale.value = v
   applyWindowScale(v)
 }
