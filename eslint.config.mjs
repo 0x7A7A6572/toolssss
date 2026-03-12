@@ -5,7 +5,16 @@ import eslintPluginVue from 'eslint-plugin-vue'
 import vueParser from 'vue-eslint-parser'
 
 export default defineConfig(
-  { ignores: ['**/node_modules', '**/dist', '**/out', '**/.docs/**', '**/src/.tips/**'] },
+  {
+    ignores: [
+      '**/node_modules',
+      '**/dist',
+      '**/out',
+      '**/vendor/**',
+      '**/.docs/**',
+      '**/src/.tips/**'
+    ]
+  },
   tseslint.configs.recommended,
   eslintPluginVue.configs['flat/recommended'],
   {

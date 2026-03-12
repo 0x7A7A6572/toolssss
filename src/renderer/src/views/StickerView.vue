@@ -296,12 +296,6 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  window.electron.ipcRenderer.removeListener('sticker:init', onInit)
-  window.electron.ipcRenderer.removeListener('sticker:ocr:run', onOcrRun)
-  window.electron.ipcRenderer.removeListener('sticker:ocr:clear', clearOcr)
-  window.electron.ipcRenderer.removeListener('sticker:ocr:progress', onOcrProgress)
-  window.electron.ipcRenderer.removeListener('sticker:ocr:copy-selection', onOcrCopySelection)
-  window.removeEventListener('keydown', onKeyDown)
   if (raf !== null) {
     window.cancelAnimationFrame(raf)
     raf = null

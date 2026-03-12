@@ -33,7 +33,7 @@
     "@yeger/vue-masonry-wall": "^6.1.0",
     "dayjs": "^1.11.19",
     "echarts": "^6.0.0",
-    "electron-screenshots": "^0.6.1",
+    "electron-screenshots": "file:vendor/screenshots/electron-screenshots",
     "electron-updater": "^6.3.9",
     "lowlight": "^3.1.0",
     "lucide-vue-next": "^0.577.0",
@@ -59,7 +59,13 @@
     "vue-eslint-parser": "^10.2.0",
     "vue-tsc": "^3.1.6"
   },
+  "overrides": {
+    "react-screenshots": "file:vendor/screenshots/react-screenshots"
+  },
   "pnpm": {
+    "overrides": {
+      "react-screenshots": "link:vendor/screenshots/react-screenshots"
+    },
     "onlyBuiltDependencies": [
       "electron",
       "esbuild"

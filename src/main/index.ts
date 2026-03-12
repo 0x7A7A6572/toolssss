@@ -788,42 +788,12 @@ function startAppSnip(): void {
 
   if (!isScreenshotsHooked) {
     isScreenshotsHooked = true
-    const wc = screenshots.$view.webContents
     screenshots.on('windowClosed', () => resumeOverlayAfterSnip())
     screenshots.on('windowCreated', (win: BrowserWindow) => {
       win.on('hide', () => resumeOverlayAfterSnip())
       win.on('closed', () => resumeOverlayAfterSnip())
     })
-    wc.on('before-input-event', (event, input) => {
-      if (input.type !== 'keyDown') return
-      if (input.control || input.meta || input.alt) return
-      if (String(input.key).toLowerCase() !== 'c') return
-      event.preventDefault()
-
-      wc.executeJavaScript(
-        `(() => {
-          const items = Array.from(document.querySelectorAll('.screenshots-magnifier-footer-item'));
-          const line = items.map((n) => n.textContent || '').find((s) => /RGB:/i.test(s));
-          if (!line) return null;
-          const m = line.match(/RGB:\\s*#?([0-9A-Fa-f]{6})/);
-          if (!m) return null;
-          return m[1].toUpperCase();
-        })()`,
-        true
-      )
-        .then((hex: unknown) => {
-          if (typeof hex !== 'string' || !/^[0-9A-F]{6}$/.test(hex)) return
-          if (input.shift) {
-            const r = parseInt(hex.slice(0, 2), 16)
-            const g = parseInt(hex.slice(2, 4), 16)
-            const b = parseInt(hex.slice(4, 6), 16)
-            clipboard.writeText(`rgb(${r}, ${g}, ${b})`)
-            return
-          }
-          clipboard.writeText(`#${hex}`)
-        })
-        .catch(() => null)
-    })
+    // 让键盘事件在渲染端处理（例如 react-screenshots 的 C 键复制逻辑）
 
     screenshots.on('save', (event, buffer) => {
       event.preventDefault()
