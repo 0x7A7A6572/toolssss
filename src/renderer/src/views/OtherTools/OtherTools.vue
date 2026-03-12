@@ -786,7 +786,7 @@ onUnmounted(() => {
             >
               <div class="answer-flip-inner">
                 <div class="answer-face answer-front">
-                  <div class="answer-front-title">把鼠标移进来，命运马上发牌</div>
+                  <div class="answer-front-title">心中默念你的问题，命运会给你答案</div>
                   <div class="answer-front-sub">移动鼠标，用探照灯看清答案</div>
                 </div>
                 <div class="answer-face answer-back">
