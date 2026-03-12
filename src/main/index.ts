@@ -103,6 +103,16 @@ function normalizeSettings(input: unknown): AppSettings {
     base.snip.enabled = typeof obj.snip.enabled === 'boolean' ? obj.snip.enabled : base.snip.enabled
     base.snip.provider = 'app'
     base.snip.saveDir = typeof obj.snip.saveDir === 'string' ? obj.snip.saveDir : base.snip.saveDir
+    const sn = obj.snip as Record<string, unknown>
+    const suspendEyeOverlay = sn['suspendEyeOverlay']
+    if (typeof suspendEyeOverlay === 'boolean') {
+      base.snip.suspendEyeOverlay = suspendEyeOverlay
+    } else {
+      const eye = obj.eye as Record<string, unknown> | undefined
+      const legacySuspendOnSnip = eye?.['suspendOnSnip']
+      if (typeof legacySuspendOnSnip === 'boolean')
+        base.snip.suspendEyeOverlay = legacySuspendOnSnip
+    }
   }
 
   if (
@@ -223,6 +233,8 @@ function applySettingsPatch(patch: unknown): AppSettings {
     if (typeof p.snip.enabled === 'boolean') next.snip.enabled = p.snip.enabled
     if (p.snip.provider === 'app') next.snip.provider = p.snip.provider
     if (typeof p.snip.saveDir === 'string') next.snip.saveDir = p.snip.saveDir
+    if (typeof (p.snip as Record<string, unknown>).suspendEyeOverlay === 'boolean')
+      next.snip.suspendEyeOverlay = (p.snip as Record<string, boolean>).suspendEyeOverlay
   }
 
   if (
@@ -1052,6 +1064,7 @@ function createOverlayWindow(display: Electron.Display): BrowserWindow {
 
 function suspendOverlayForSnip(): void {
   if (!settings.eye.enabled) return
+  if (!settings.snip.suspendEyeOverlay) return
   if (overlaySuspended) return
   overlaySuspended = true
   for (const win of overlayWindows.values()) {

@@ -9,6 +9,7 @@ export interface AppSettings {
     enabled: boolean
     provider: 'app'
     saveDir: string
+    suspendEyeOverlay: boolean
   }
   stickyNotes: {
     saveDir: string
@@ -78,7 +79,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   snip: {
     enabled: true,
     provider: 'app',
-    saveDir: ''
+    saveDir: '',
+    suspendEyeOverlay: false
   },
   stickyNotes: {
     saveDir: ''

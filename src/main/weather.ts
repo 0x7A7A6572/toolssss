@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron'
+import { app, ipcMain } from 'electron'
 import {
   WEATHER_EVENTS,
   type WeatherDashboard,
@@ -7,6 +7,8 @@ import {
   type WeatherProvinceCity
 } from '@shared/weather'
 import dayjs from 'dayjs'
+import { readFileSync, writeFileSync } from 'fs'
+import { join } from 'path'
 
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36'
@@ -208,7 +210,65 @@ function mapNowPayload(stationId: string, payload: unknown): WeatherNow {
 
 type CacheEntry = { atMs: number; data: WeatherDashboard }
 const cache = new Map<string, CacheEntry>()
-const CACHE_TTL_MS = 2 * 60 * 1000
+const CACHE_TTL_MS = 10 * 60 * 1000
+
+type DiskCacheEntry = { atMs: number; atLocal: string; data: WeatherDashboard }
+type DiskCache = { v: 1; entries: Record<string, DiskCacheEntry> }
+let diskCache: DiskCache | null = null
+
+function weatherCacheFilePath(): string {
+  return join(app.getPath('userData'), 'weather-cache.json')
+}
+
+function loadDiskCache(): DiskCache {
+  try {
+    const raw = readFileSync(weatherCacheFilePath(), 'utf-8')
+    const parsed = JSON.parse(raw) as unknown
+    if (!parsed || typeof parsed !== 'object') return { v: 1, entries: {} }
+    const obj = parsed as Partial<DiskCache>
+    if (obj.v !== 1) return { v: 1, entries: {} }
+    if (!obj.entries || typeof obj.entries !== 'object') return { v: 1, entries: {} }
+    return { v: 1, entries: obj.entries as Record<string, DiskCacheEntry> }
+  } catch {
+    return { v: 1, entries: {} }
+  }
+}
+
+function ensureDiskCacheLoaded(): DiskCache {
+  if (!diskCache) diskCache = loadDiskCache()
+  return diskCache
+}
+
+function saveDiskCache(): void {
+  if (!diskCache) return
+  try {
+    writeFileSync(weatherCacheFilePath(), JSON.stringify(diskCache), 'utf-8')
+  } catch {
+    return
+  }
+}
+
+function readDashboardFromDisk(stationId: string): WeatherDashboard | null {
+  const dc = ensureDiskCacheLoaded()
+  const entry = dc.entries[stationId]
+  if (!entry) return null
+  if (Date.now() - entry.atMs >= CACHE_TTL_MS) {
+    delete dc.entries[stationId]
+    saveDiskCache()
+    return null
+  }
+  return entry.data
+}
+
+function writeDashboardToDisk(stationId: string, data: WeatherDashboard): void {
+  const dc = ensureDiskCacheLoaded()
+  dc.entries[stationId] = {
+    atMs: Date.now(),
+    atLocal: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+    data
+  }
+  saveDiskCache()
+}
 
 type ProvinceCacheEntry = { atMs: number; data: WeatherProvinceCity[] }
 const provinceCache = new Map<string, ProvinceCacheEntry>()
@@ -217,6 +277,12 @@ const PROVINCE_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 async function getDashboard(stationId: string): Promise<WeatherDashboard> {
   const cached = cache.get(stationId)
   if (cached && Date.now() - cached.atMs < CACHE_TTL_MS) return cached.data
+
+  const diskCached = readDashboardFromDisk(stationId)
+  if (diskCached) {
+    cache.set(stationId, { atMs: Date.now(), data: diskCached })
+    return diskCached
+  }
 
   const nowUrl = `${NOW_BASE}/${stationId}`
   const forecastUrl = `${FORECAST_BASE}/${stationId}.html`
@@ -252,6 +318,7 @@ async function getDashboard(stationId: string): Promise<WeatherDashboard> {
   }
 
   cache.set(stationId, { atMs: Date.now(), data })
+  writeDashboardToDisk(stationId, data)
   return data
 }
 
