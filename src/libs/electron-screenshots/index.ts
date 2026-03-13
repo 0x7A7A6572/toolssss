@@ -85,8 +85,7 @@ export default class Screenshots extends Events {
       return
     }
 
-    // await this.$view.webContents.loadFile(join(__dirname, '../renderer/screenshots.html'))
-    // await this.$view.webContents.loadFile(join(__dirname, '../renderer/electron.html'))
+    await this.$view.webContents.loadFile(join(__dirname, '../renderer/screenshots.html'))
   }
 
   /**
@@ -326,13 +325,23 @@ export default class Screenshots extends Events {
    * 绑定ipc时间处理
    */
   private listenIpc(): void {
+    const ack = (type: string, payload?: unknown): void => {
+      try {
+        this.$view.webContents.send('SCREENSHOTS:ipcAck', { type, at: Date.now(), payload })
+      } catch {
+        return
+      }
+    }
+
     ipcMain.on('SCREENSHOTS:copyText', (_event, text: string) => {
+      ack('copyText')
       clipboard.writeText(text)
     })
     /**
      * OK事件
      */
     ipcMain.on('SCREENSHOTS:ok', (_event, buffer: Buffer, data: ScreenshotsData) => {
+      ack('ok', { bufferLength: buffer.length, data })
       this.logger('SCREENSHOTS:ok buffer.length %d, data: %o', buffer.length, data)
 
       const event = new Event()
@@ -347,6 +356,7 @@ export default class Screenshots extends Events {
      * CANCEL事件
      */
     ipcMain.on('SCREENSHOTS:cancel', () => {
+      ack('cancel')
       this.logger('SCREENSHOTS:cancel')
 
       const event = new Event()
@@ -361,6 +371,7 @@ export default class Screenshots extends Events {
      * SAVE事件
      */
     ipcMain.on('SCREENSHOTS:save', async (_event, buffer: Buffer, data: ScreenshotsData) => {
+      ack('save', { bufferLength: buffer.length, data })
       this.logger('SCREENSHOTS:save buffer.length %d, data: %o', buffer.length, data)
 
       const event = new Event()

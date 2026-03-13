@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRaw } from 'vue'
 import {
   clamp,
   computeDragBounds,
@@ -63,6 +63,7 @@ const viewportHeight = ref(window.innerHeight)
 
 const bounds = ref<Bounds | null>(null)
 const imageReady = ref(false)
+const submitting = ref(false)
 let overlayCtx: CanvasRenderingContext2D | null = null
 let overlayCanvasW = 0
 let overlayCanvasH = 0
@@ -101,6 +102,14 @@ let perfFrameCount = 0
 let perfLastReportAt = 0
 let perfOverlayMs = 0
 let perfMagnifierMs = 0
+
+const debugEnabled =
+  window.location.search.includes('snipDebug=1') || window.localStorage.getItem('snipDebug') === '1'
+
+function dbg(...args: unknown[]): void {
+  if (!debugEnabled) return
+  console.log('[snip]', ...args)
+}
 
 function setCursorByMode(mode: DragMode, inside: boolean): void {
   const canvas = canvasRef.value
@@ -252,13 +261,14 @@ async function cropToBlob(b: Bounds): Promise<Blob | null> {
 
   const width = viewportWidth.value
   const height = viewportHeight.value
+  if (width < 1 || height < 1) return null
   const rx = img.naturalWidth / width
   const ry = img.naturalHeight / height
 
   const dpr = window.devicePixelRatio || 1
   const canvas = document.createElement('canvas')
-  canvas.width = Math.floor(b.width * dpr)
-  canvas.height = Math.floor(b.height * dpr)
+  canvas.width = Math.max(1, Math.floor(b.width * dpr))
+  canvas.height = Math.max(1, Math.floor(b.height * dpr))
   const ctx = canvas.getContext('2d')
   if (!ctx) return null
 
@@ -268,27 +278,67 @@ async function cropToBlob(b: Bounds): Promise<Blob | null> {
   ctx.clearRect(0, 0, b.width, b.height)
   ctx.drawImage(img, b.x * rx, b.y * ry, b.width * rx, b.height * ry, 0, 0, b.width, b.height)
 
-  return await new Promise<Blob | null>((resolve) => {
+  let blob = await new Promise<Blob | null>((resolve) => {
     canvas.toBlob((blob) => resolve(blob), 'image/png')
   })
+  if (blob) return blob
+
+  try {
+    const dataUrl = canvas.toDataURL('image/png')
+    const res = await fetch(dataUrl)
+    blob = await res.blob()
+    return blob.size > 0 ? blob : null
+  } catch {
+    return null
+  }
 }
 
 async function onOk(): Promise<void> {
+  if (submitting.value) return
+  dbg('click ok', {
+    bounds: bounds.value,
+    display: display.value,
+    imageReady: imageReady.value,
+    url: url.value
+  })
   const b = bounds.value
   const d = display.value
   if (!b || !d) return
-  const blob = await cropToBlob(b)
-  if (!blob) return
-  window.screenshots.ok(await blob.arrayBuffer(), { bounds: b, display: d })
+  submitting.value = true
+  try {
+    const blob = await cropToBlob(b)
+    dbg('ok cropToBlob', { ok: Boolean(blob), size: blob?.size ?? 0 })
+    if (!blob) return
+    const data = { bounds: { ...toRaw(b) }, display: { ...toRaw(d) } }
+    window.screenshots.ok(await blob.arrayBuffer(), data)
+    dbg('ok ipc sent')
+  } finally {
+    submitting.value = false
+  }
 }
 
 async function onSave(): Promise<void> {
+  if (submitting.value) return
+  dbg('click save', {
+    bounds: bounds.value,
+    display: display.value,
+    imageReady: imageReady.value,
+    url: url.value
+  })
   const b = bounds.value
   const d = display.value
   if (!b || !d) return
-  const blob = await cropToBlob(b)
-  if (!blob) return
-  window.screenshots.save(await blob.arrayBuffer(), { bounds: b, display: d })
+  submitting.value = true
+  try {
+    const blob = await cropToBlob(b)
+    dbg('save cropToBlob', { ok: Boolean(blob), size: blob?.size ?? 0 })
+    if (!blob) return
+    const data = { bounds: { ...toRaw(b) }, display: { ...toRaw(d) } }
+    window.screenshots.save(await blob.arrayBuffer(), data)
+    dbg('save ipc sent')
+  } finally {
+    submitting.value = false
+  }
 }
 
 function onCancel(): void {
@@ -640,11 +690,33 @@ const captureListener: ScreenshotsListener = (...args: unknown[]): void => {
 const setLangListener: ScreenshotsListener = (...args: unknown[]): void => {
   onSetLang(args[0] as Partial<Lang>)
 }
+const ipcAckListener: ScreenshotsListener = (...args: unknown[]): void => {
+  dbg('ipc ack', args[0])
+}
+
+const docClickCapture = (e: MouseEvent): void => {
+  const t = e.target
+  if (!(t instanceof Element)) {
+    dbg('doc click capture', { target: typeof t })
+    return
+  }
+  dbg('doc click capture', {
+    target: t.tagName,
+    className: t.getAttribute('class') ?? '',
+    toolbar: Boolean(t.closest('.toolbar')),
+    overlay: Boolean(t.closest('.overlay')),
+    pathLen: (e.composedPath?.() ?? []).length
+  })
+}
 
 onMounted(() => {
   window.screenshots.on('capture', captureListener)
   window.screenshots.on('reset', onReset)
   window.screenshots.on('setLang', setLangListener)
+  if (debugEnabled) {
+    window.screenshots.on('ipcAck', ipcAckListener)
+    document.addEventListener('click', docClickCapture, true)
+  }
 
   window.addEventListener('resize', updateViewport)
   window.addEventListener('keydown', onKeyDown)
@@ -666,6 +738,10 @@ onBeforeUnmount(() => {
   window.screenshots.off('capture', captureListener)
   window.screenshots.off('reset', onReset)
   window.screenshots.off('setLang', setLangListener)
+  if (debugEnabled) {
+    window.screenshots.off('ipcAck', ipcAckListener)
+    document.removeEventListener('click', docClickCapture, true)
+  }
 
   window.removeEventListener('resize', updateViewport)
   window.removeEventListener('keydown', onKeyDown)
@@ -735,9 +811,13 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="toolbar" :style="toolbarStyle">
-      <button class="btn" type="button" @click="onOk">{{ lang.operation_ok_title }}</button>
-      <button class="btn" type="button" @click="onSave">{{ lang.operation_save_title }}</button>
-      <button class="btn danger" type="button" @click="onCancel">
+      <button class="btn" type="button" :disabled="submitting" @click="onOk">
+        {{ lang.operation_ok_title }}
+      </button>
+      <button class="btn" type="button" :disabled="submitting" @click="onSave">
+        {{ lang.operation_save_title }}
+      </button>
+      <button class="btn danger" type="button" :disabled="submitting" @click="onCancel">
         {{ lang.operation_cancel_title }}
       </button>
     </div>
@@ -801,6 +881,7 @@ onBeforeUnmount(() => {
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   z-index: 3;
+  pointer-events: auto;
 }
 
 .magnifier {
@@ -868,6 +949,11 @@ onBeforeUnmount(() => {
 
 .btn:active {
   transform: translateY(1px);
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .btn.danger {

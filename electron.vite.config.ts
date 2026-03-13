@@ -39,7 +39,6 @@ export default defineConfig({
         input: {
           index: resolve('src/renderer/index.html'),
           screenshots: resolve('src/renderer/screenshots.html'),
-          electron: resolve('src/renderer/electron.html')
         }
       }
     },
