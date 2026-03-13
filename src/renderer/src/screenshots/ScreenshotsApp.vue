@@ -1,6 +1,22 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRaw } from 'vue'
 import {
+  Brush,
+  Check,
+  Circle,
+  Grid3X3,
+  X,
+  MousePointer2,
+  PaintBucket,
+  Palette,
+  Slash,
+  Save,
+  Redo2,
+  Square,
+  Undo2,
+  Type as TypeIcon
+} from 'lucide-vue-next'
+import {
   clamp,
   computeDragBounds,
   getHandleAtPoint,
@@ -84,6 +100,445 @@ const dragStartBounds = ref<Bounds | null>(null)
 const lastPointer = ref<Point | null>(null)
 
 const handleRadius = 6
+
+type Tool = 'select' | 'line' | 'rect' | 'ellipse' | 'brush' | 'mosaic' | 'text'
+type ToolMode = 'stroke' | 'fill'
+
+const iconSize = 14
+
+type DrawLine = {
+  id: number
+  kind: 'line'
+  from: Point
+  to: Point
+  color: string
+  width: number
+}
+
+type DrawRect = {
+  id: number
+  kind: 'rect'
+  from: Point
+  to: Point
+  color: string
+  width: number
+  mode: ToolMode
+}
+
+type DrawEllipse = {
+  id: number
+  kind: 'ellipse'
+  from: Point
+  to: Point
+  color: string
+  width: number
+  mode: ToolMode
+}
+
+type DrawBrush = {
+  id: number
+  kind: 'brush'
+  points: Point[]
+  color: string
+  width: number
+}
+
+type DrawMosaic = {
+  id: number
+  kind: 'mosaic'
+  from: Point
+  to: Point
+  pixelSize: number
+}
+
+type DrawText = {
+  id: number
+  kind: 'text'
+  at: Point
+  text: string
+  color: string
+  fontSize: number
+}
+
+type DrawOp = DrawLine | DrawRect | DrawEllipse | DrawBrush | DrawMosaic | DrawText
+
+const tool = ref<Tool>('select')
+const toolMode = ref<ToolMode>('stroke')
+const toolColor = ref('#FF3B30')
+const toolWidth = ref(4)
+const toolPalette = ['#FF3B30', '#FF9500', '#FFCC00', '#34C759', '#0A84FF', '#AF52DE', '#FFFFFF']
+const showColorPicker = ref(false)
+const colorInputRef = ref<HTMLInputElement | null>(null)
+
+const strokeRangeStyle = computed(() => {
+  const min = 1
+  const max = 32
+  const v = clamp(toolWidth.value, min, max)
+  const p = ((v - min) / (max - min)) * 100
+  return { ['--p' as string]: `${p.toFixed(2)}%` }
+})
+
+const strokeDotStyle = computed(() => {
+  const size = Math.round(clamp(6 + toolWidth.value * 0.5, 6, 22))
+  return {
+    width: `${size}px`,
+    height: `${size}px`,
+    backgroundColor: toolColor.value
+  }
+})
+
+const ops = ref<DrawOp[]>([])
+const redoOps = ref<DrawOp[]>([])
+let nextOpId = 1
+
+let drawingPointerId: number | null = null
+const drawingOp = ref<DrawOp | null>(null)
+let mosaicSamplerCanvas: HTMLCanvasElement | null = null
+let mosaicSamplerCtx: CanvasRenderingContext2D | null = null
+
+const textEditorOpen = ref(false)
+const textEditorPos = ref<Point | null>(null)
+const textEditorValue = ref('')
+const textEditorColor = ref('#ffffff')
+const textEditorFontSize = ref(16)
+const textEditorRef = ref<HTMLTextAreaElement | null>(null)
+
+const textEditorStyle = computed(() => {
+  const p = textEditorPos.value
+  if (!p) return { display: 'none' }
+  return {
+    transform: `translate(${Math.round(p.x)}px, ${Math.round(p.y)}px)`,
+    color: textEditorColor.value,
+    fontSize: `${textEditorFontSize.value}px`
+  }
+})
+
+function fontSizeFromToolWidth(w: number): number {
+  return Math.round(clamp(10 + w * 1.2, 10, 52))
+}
+
+function openTextEditor(at: Point): void {
+  const b = bounds.value
+  if (!b) return
+  textEditorOpen.value = true
+  textEditorValue.value = ''
+  textEditorColor.value = toolColor.value
+  textEditorFontSize.value = fontSizeFromToolWidth(toolWidth.value)
+  const x = clamp(at.x, b.x, b.x + b.width - 10)
+  const y = clamp(at.y, b.y, b.y + b.height - 10)
+  textEditorPos.value = { x, y }
+  requestAnimationFrame(() => {
+    textEditorRef.value?.focus()
+  })
+}
+
+function closeTextEditor(): void {
+  textEditorOpen.value = false
+  textEditorPos.value = null
+  textEditorValue.value = ''
+}
+
+function commitTextEditor(): void {
+  if (!textEditorOpen.value) return
+  const p = textEditorPos.value
+  const raw = textEditorValue.value
+  const text = raw.replace(/\r\n/g, '\n').trim()
+  const color = textEditorColor.value
+  const fontSize = textEditorFontSize.value
+  closeTextEditor()
+  if (!p || !text) return
+  pushOp({
+    id: nextOpId++,
+    kind: 'text',
+    at: p,
+    text,
+    color,
+    fontSize
+  })
+}
+
+function onTextEditorKeyDown(e: KeyboardEvent): void {
+  e.stopPropagation()
+  if (e.key === 'Escape') {
+    e.preventDefault()
+    closeTextEditor()
+    return
+  }
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault()
+    commitTextEditor()
+  }
+}
+
+function normalizeRect(
+  a: Point,
+  b: Point
+): { x: number; y: number; width: number; height: number } {
+  const x1 = Math.min(a.x, b.x)
+  const y1 = Math.min(a.y, b.y)
+  const x2 = Math.max(a.x, b.x)
+  const y2 = Math.max(a.y, b.y)
+  return { x: x1, y: y1, width: x2 - x1, height: y2 - y1 }
+}
+
+function clampPointToBounds(p: Point, b: Bounds): Point {
+  return { x: clamp(p.x, b.x, b.x + b.width), y: clamp(p.y, b.y, b.y + b.height) }
+}
+
+function hexToRgba(hex: string, alpha: number): string {
+  const h = hex.replace('#', '').trim()
+  if (h.length !== 6) return `rgba(255, 255, 255, ${alpha})`
+  const r = Number.parseInt(h.slice(0, 2), 16)
+  const g = Number.parseInt(h.slice(2, 4), 16)
+  const b = Number.parseInt(h.slice(4, 6), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
+function canAnnotate(): boolean {
+  const b = bounds.value
+  return Boolean(b && imageReady.value && b.width >= 1 && b.height >= 1)
+}
+
+const canUndo = computed(() => ops.value.length > 0)
+const canRedo = computed(() => redoOps.value.length > 0)
+
+function pushOp(op: DrawOp): void {
+  ops.value = [...ops.value, op]
+  redoOps.value = []
+  overlayDirty = true
+  requestFrame()
+}
+
+function undo(): void {
+  const cur = ops.value
+  if (cur.length === 0) return
+  const last = cur[cur.length - 1]
+  ops.value = cur.slice(0, -1)
+  redoOps.value = [...redoOps.value, last]
+  overlayDirty = true
+  requestFrame()
+}
+
+function redo(): void {
+  const r = redoOps.value
+  if (r.length === 0) return
+  const last = r[r.length - 1]
+  redoOps.value = r.slice(0, -1)
+  ops.value = [...ops.value, last]
+  overlayDirty = true
+  requestFrame()
+}
+
+function pickColor(next: string): void {
+  toolColor.value = next
+  showColorPicker.value = false
+}
+
+function openColorPicker(): void {
+  showColorPicker.value = true
+  requestAnimationFrame(() => {
+    colorInputRef.value?.click()
+  })
+}
+
+function setTool(next: Tool): void {
+  tool.value = next
+  drawingOp.value = null
+  drawingPointerId = null
+  if (next !== 'text') closeTextEditor()
+  overlayDirty = true
+  requestFrame()
+}
+
+function drawEllipsePath(ctx: CanvasRenderingContext2D, a: Point, b: Point): void {
+  const r = normalizeRect(a, b)
+  const rx = r.width / 2
+  const ry = r.height / 2
+  const cx = r.x + rx
+  const cy = r.y + ry
+  if (rx <= 0 || ry <= 0) return
+  if (typeof ctx.ellipse === 'function') {
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2)
+    return
+  }
+  const kappa = 0.5522848
+  const ox = rx * kappa
+  const oy = ry * kappa
+  ctx.moveTo(cx + rx, cy)
+  ctx.bezierCurveTo(cx + rx, cy + oy, cx + ox, cy + ry, cx, cy + ry)
+  ctx.bezierCurveTo(cx - ox, cy + ry, cx - rx, cy + oy, cx - rx, cy)
+  ctx.bezierCurveTo(cx - rx, cy - oy, cx - ox, cy - ry, cx, cy - ry)
+  ctx.bezierCurveTo(cx + ox, cy - ry, cx + rx, cy - oy, cx + rx, cy)
+}
+
+function ensureMosaicSampler(): CanvasRenderingContext2D | null {
+  if (!mosaicSamplerCanvas) {
+    mosaicSamplerCanvas = document.createElement('canvas')
+  }
+  if (!mosaicSamplerCtx) {
+    mosaicSamplerCtx = mosaicSamplerCanvas.getContext('2d')
+  }
+  return mosaicSamplerCtx
+}
+
+function drawMosaic(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  rx: number,
+  ry: number,
+  from: Point,
+  to: Point,
+  offsetX: number,
+  offsetY: number,
+  pixelSize: number
+): void {
+  const r = normalizeRect(from, to)
+  if (r.width < 1 || r.height < 1) return
+  const sampler = ensureMosaicSampler()
+  if (!sampler || !mosaicSamplerCanvas) return
+
+  const sx = Math.floor(r.x * rx)
+  const sy = Math.floor(r.y * ry)
+  const sw = Math.max(1, Math.floor(r.width * rx))
+  const sh = Math.max(1, Math.floor(r.height * ry))
+
+  const px = Math.max(1, Math.round(pixelSize * Math.max(rx, ry)))
+  const dw = Math.max(1, Math.floor(sw / px))
+  const dh = Math.max(1, Math.floor(sh / px))
+
+  mosaicSamplerCanvas.width = dw
+  mosaicSamplerCanvas.height = dh
+  sampler.imageSmoothingEnabled = true
+  sampler.clearRect(0, 0, dw, dh)
+  sampler.drawImage(img, sx, sy, sw, sh, 0, 0, dw, dh)
+
+  ctx.save()
+  ctx.imageSmoothingEnabled = false
+  ctx.drawImage(mosaicSamplerCanvas, 0, 0, dw, dh, r.x - offsetX, r.y - offsetY, r.width, r.height)
+  ctx.restore()
+}
+
+function renderOp(
+  ctx: CanvasRenderingContext2D,
+  op: DrawOp,
+  img: HTMLImageElement | null,
+  rx: number,
+  ry: number,
+  offsetX: number,
+  offsetY: number
+): void {
+  if (op.kind === 'mosaic') {
+    if (!img) return
+    drawMosaic(ctx, img, rx, ry, op.from, op.to, offsetX, offsetY, op.pixelSize)
+    return
+  }
+
+  ctx.save()
+  ctx.translate(-offsetX, -offsetY)
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+
+  if (op.kind === 'line') {
+    ctx.strokeStyle = op.color
+    ctx.lineWidth = op.width
+    ctx.beginPath()
+    ctx.moveTo(op.from.x, op.from.y)
+    ctx.lineTo(op.to.x, op.to.y)
+    ctx.stroke()
+    ctx.restore()
+    return
+  }
+
+  if (op.kind === 'brush') {
+    if (op.points.length < 2) {
+      ctx.restore()
+      return
+    }
+    ctx.strokeStyle = op.color
+    ctx.lineWidth = op.width
+    ctx.beginPath()
+    ctx.moveTo(op.points[0].x, op.points[0].y)
+    for (let i = 1; i < op.points.length; i += 1) {
+      const p = op.points[i]
+      ctx.lineTo(p.x, p.y)
+    }
+    ctx.stroke()
+    ctx.restore()
+    return
+  }
+
+  if (op.kind === 'rect') {
+    const r = normalizeRect(op.from, op.to)
+    if (r.width < 1 || r.height < 1) {
+      ctx.restore()
+      return
+    }
+    ctx.beginPath()
+    ctx.rect(r.x, r.y, r.width, r.height)
+    if (op.mode === 'fill') {
+      ctx.fillStyle = hexToRgba(op.color, 0.22)
+      ctx.fill()
+    }
+    ctx.strokeStyle = op.color
+    ctx.lineWidth = op.width
+    ctx.stroke()
+    ctx.restore()
+    return
+  }
+
+  if (op.kind === 'ellipse') {
+    const r = normalizeRect(op.from, op.to)
+    if (r.width < 1 || r.height < 1) {
+      ctx.restore()
+      return
+    }
+    ctx.beginPath()
+    drawEllipsePath(ctx, op.from, op.to)
+    if (op.mode === 'fill') {
+      ctx.fillStyle = hexToRgba(op.color, 0.22)
+      ctx.fill()
+    }
+    ctx.strokeStyle = op.color
+    ctx.lineWidth = op.width
+    ctx.stroke()
+    ctx.restore()
+    return
+  }
+
+  if (op.kind === 'text') {
+    const lines = op.text.split('\n')
+    if (lines.length === 0) {
+      ctx.restore()
+      return
+    }
+    ctx.fillStyle = op.color
+    ctx.textBaseline = 'top'
+    ctx.font = `${op.fontSize}px system-ui, -apple-system, Segoe UI, sans-serif`
+    const lineHeight = op.fontSize * 1.25
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i]
+      if (!line) continue
+      ctx.fillText(line, op.at.x, op.at.y + i * lineHeight)
+    }
+    ctx.restore()
+    return
+  }
+
+  ctx.restore()
+}
+
+function renderAllOps(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement | null,
+  rx: number,
+  ry: number,
+  offsetX: number,
+  offsetY: number
+): void {
+  for (const op of ops.value) renderOp(ctx, op, img, rx, ry, offsetX, offsetY)
+  const draft = drawingOp.value
+  if (draft) renderOp(ctx, draft, img, rx, ry, offsetX, offsetY)
+}
 
 // magnifier
 const magnifierWidth = 150
@@ -180,6 +635,18 @@ function drawOverlay(): void {
   ctx.fillRect(0, 0, viewportWidth.value, viewportHeight.value)
   ctx.clearRect(b.x, b.y, b.width, b.height)
 
+  const img = imageRef.value
+  if (img && imageReady.value) {
+    const rx = img.naturalWidth / viewportWidth.value
+    const ry = img.naturalHeight / viewportHeight.value
+    ctx.save()
+    ctx.beginPath()
+    ctx.rect(b.x, b.y, b.width, b.height)
+    ctx.clip()
+    renderAllOps(ctx, img, rx, ry, 0, 0)
+    ctx.restore()
+  }
+
   ctx.strokeStyle = '#4f8cff'
   ctx.lineWidth = 2
   ctx.strokeRect(b.x + 0.5, b.y + 0.5, b.width - 1, b.height - 1)
@@ -251,6 +718,30 @@ function drawMagnifier(p: { x: number; y: number }, nowMs: number): void {
   if (hexColor.value !== hex) hexColor.value = hex
   const rgb = `rgb(${r}, ${g}, ${b})`
   if (rgbText.value !== rgb) rgbText.value = rgb
+
+  const cx = (magnifierWidth / 2) | 0
+  const cy = (magnifierHeight / 2) | 0
+  const size = 10
+  ctx.save()
+  ctx.globalAlpha = 0.95
+  ctx.lineCap = 'butt'
+  ctx.lineWidth = 3
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)'
+  ctx.beginPath()
+  ctx.moveTo(cx - size, cy + 0.5)
+  ctx.lineTo(cx + size, cy + 0.5)
+  ctx.moveTo(cx + 0.5, cy - size)
+  ctx.lineTo(cx + 0.5, cy + size)
+  ctx.stroke()
+  ctx.lineWidth = 1
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.92)'
+  ctx.beginPath()
+  ctx.moveTo(cx - size, cy + 0.5)
+  ctx.lineTo(cx + size, cy + 0.5)
+  ctx.moveTo(cx + 0.5, cy - size)
+  ctx.lineTo(cx + 0.5, cy + size)
+  ctx.stroke()
+  ctx.restore()
 }
 
 async function cropToBlob(b: Bounds): Promise<Blob | null> {
@@ -277,6 +768,7 @@ async function cropToBlob(b: Bounds): Promise<Blob | null> {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   ctx.clearRect(0, 0, b.width, b.height)
   ctx.drawImage(img, b.x * rx, b.y * ry, b.width * rx, b.height * ry, 0, 0, b.width, b.height)
+  renderAllOps(ctx, img, rx, ry, b.x, b.y)
 
   let blob = await new Promise<Blob | null>((resolve) => {
     canvas.toBlob((blob) => resolve(blob), 'image/png')
@@ -341,6 +833,26 @@ async function onSave(): Promise<void> {
   }
 }
 
+async function onSaveAndStick(): Promise<void> {
+  if (submitting.value) return
+  const b = bounds.value
+  const d = display.value
+  if (!b || !d) return
+  submitting.value = true
+  try {
+    const blob = await cropToBlob(b)
+    if (!blob) return
+    const data = {
+      bounds: { ...toRaw(b) },
+      display: { ...toRaw(d) },
+      stickAfterSave: true
+    } as unknown as { bounds: Bounds; display: Display }
+    window.screenshots.save(await blob.arrayBuffer(), data)
+  } finally {
+    submitting.value = false
+  }
+}
+
 function onCancel(): void {
   window.screenshots.cancel()
 }
@@ -352,7 +864,13 @@ function updateCursorFromPointer(p: { x: number; y: number }): void {
     return
   }
   const handle = getHandleAtPoint(p, b, handleRadius)
-  setCursorByMode(handle, isPointInBounds(p, b))
+  const inside = isPointInBounds(p, b)
+  if (!handle && inside && tool.value !== 'select') {
+    const canvas = canvasRef.value
+    if (canvas) canvas.style.cursor = 'crosshair'
+    return
+  }
+  setCursorByMode(handle, inside)
 }
 
 function setBounds(next: Bounds): void {
@@ -360,6 +878,10 @@ function setBounds(next: Bounds): void {
   if (next.width < 1 || next.height < 1) {
     if (bounds.value) {
       bounds.value = null
+      ops.value = []
+      redoOps.value = []
+      drawingOp.value = null
+      drawingPointerId = null
       overlayDirty = true
     }
     return
@@ -402,6 +924,13 @@ function applyPointer(p: Point): void {
 
 function onPointerDown(e: PointerEvent): void {
   if (!url.value) return
+  if (e.button === 2) {
+    if (!bounds.value) {
+      e.preventDefault()
+      onCancel()
+    }
+    return
+  }
   if (e.button !== 0) return
   const canvas = canvasRef.value
   if (canvas) {
@@ -440,9 +969,72 @@ function onPointerDown(e: PointerEvent): void {
   }
 
   if (isPointInBounds(p, b)) {
-    dragMode.value = 'move'
-    dragStart.value = p
-    dragStartBounds.value = { ...b }
+    if (tool.value === 'select') {
+      dragMode.value = 'move'
+      dragStart.value = p
+      dragStartBounds.value = { ...b }
+      return
+    }
+
+    const start = clampPointToBounds(p, b)
+    if (tool.value === 'text') {
+      openTextEditor(start)
+      overlayDirty = true
+      requestFrame()
+      return
+    }
+    drawingPointerId = e.pointerId
+    if (tool.value === 'line') {
+      drawingOp.value = {
+        id: nextOpId++,
+        kind: 'line',
+        from: start,
+        to: start,
+        color: toolColor.value,
+        width: toolWidth.value
+      }
+    } else if (tool.value === 'rect') {
+      drawingOp.value = {
+        id: nextOpId++,
+        kind: 'rect',
+        from: start,
+        to: start,
+        color: toolColor.value,
+        width: toolWidth.value,
+        mode: toolMode.value
+      }
+    } else if (tool.value === 'ellipse') {
+      drawingOp.value = {
+        id: nextOpId++,
+        kind: 'ellipse',
+        from: start,
+        to: start,
+        color: toolColor.value,
+        width: toolWidth.value,
+        mode: toolMode.value
+      }
+    } else if (tool.value === 'brush') {
+      drawingOp.value = {
+        id: nextOpId++,
+        kind: 'brush',
+        points: [start],
+        color: toolColor.value,
+        width: toolWidth.value
+      }
+    } else if (tool.value === 'mosaic') {
+      drawingOp.value = {
+        id: nextOpId++,
+        kind: 'mosaic',
+        from: start,
+        to: start,
+        pixelSize: clamp(toolWidth.value * 2, 4, 80)
+      }
+    } else {
+      drawingOp.value = null
+      drawingPointerId = null
+    }
+    overlayDirty = true
+    requestFrame()
     return
   }
 
@@ -452,12 +1044,34 @@ function onPointerDown(e: PointerEvent): void {
   setBounds({ x: p.x, y: p.y, width: 0, height: 0 })
 }
 
+function onContextMenu(e: MouseEvent): void {
+  e.preventDefault()
+  if (!bounds.value) onCancel()
+}
+
 function onPointerMove(e: PointerEvent): void {
   if (!url.value) return
   pendingPointerX = clamp(e.clientX, 0, viewportWidth.value)
   pendingPointerY = clamp(e.clientY, 0, viewportHeight.value)
   hasPendingPointer = true
   magnifierDirty = true
+  const b = bounds.value
+  const pid = drawingPointerId
+  const draft = drawingOp.value
+  if (b && pid !== null && draft && e.pointerId === pid) {
+    const p = clampPointToBounds({ x: pendingPointerX, y: pendingPointerY }, b)
+    if (draft.kind === 'brush') {
+      const last = draft.points[draft.points.length - 1]
+      const dx = p.x - last.x
+      const dy = p.y - last.y
+      if (dx * dx + dy * dy >= 1.5) {
+        draft.points.push(p)
+      }
+    } else {
+      ;(draft as DrawLine | DrawRect | DrawEllipse | DrawMosaic).to = p
+    }
+    overlayDirty = true
+  }
   requestFrame()
 }
 
@@ -469,6 +1083,27 @@ function onPointerUp(e?: PointerEvent): void {
     } catch (err) {
       console.error(err)
     }
+  }
+  if (e && drawingPointerId !== null && e.pointerId === drawingPointerId) {
+    drawingPointerId = null
+    const op = drawingOp.value
+    drawingOp.value = null
+    if (op) {
+      if (op.kind === 'brush') {
+        if (op.points.length >= 2) pushOp(op)
+      } else if (op.kind === 'mosaic') {
+        const r = normalizeRect(op.from, op.to)
+        if (r.width >= 2 && r.height >= 2) pushOp(op)
+      } else if (op.kind === 'text') {
+        if (op.text.trim()) pushOp(op)
+      } else {
+        const r = normalizeRect(op.from, op.to)
+        if (r.width >= 1 && r.height >= 1) pushOp(op)
+      }
+    }
+    overlayDirty = true
+    requestFrame()
+    return
   }
   dragMode.value = null
   dragStart.value = null
@@ -550,6 +1185,23 @@ async function copyColor(mode: 'hex' | 'rgb'): Promise<void> {
 }
 
 function onKeyDown(e: KeyboardEvent): void {
+  const t = e.target
+  if (t instanceof HTMLTextAreaElement && t.classList.contains('text-editor')) return
+  if (textEditorOpen.value) return
+  const key = e.key.toLowerCase()
+  const mod = e.ctrlKey || e.metaKey
+  if (mod && key === 'z') {
+    e.preventDefault()
+    if (e.shiftKey) redo()
+    else undo()
+    return
+  }
+  if (mod && key === 'y') {
+    e.preventDefault()
+    redo()
+    return
+  }
+
   if (e.key === 'Escape') {
     e.preventDefault()
     onCancel()
@@ -565,15 +1217,28 @@ function onKeyDown(e: KeyboardEvent): void {
     void onOk()
     return
   }
-  if (e.key.toLowerCase() === 'c') {
+  if (key === 'c') {
     e.preventDefault()
-    void copyColor(e.shiftKey ? 'rgb' : 'hex')
-    bounds.value = null
-    requestAnimationFrame(() => window.screenshots.reset())
-    requestFrame()
+    const shouldExit = !bounds.value
+    void (async () => {
+      await copyColor(e.shiftKey ? 'rgb' : 'hex')
+      if (shouldExit) {
+        onCancel()
+        return
+      }
+      bounds.value = null
+      requestAnimationFrame(() => window.screenshots.reset())
+      requestFrame()
+    })()
     return
   }
-  if (e.key.toLowerCase() === 's') {
+  if (e.key === 'F3' || e.code === 'F3') {
+    if (!bounds.value) return
+    e.preventDefault()
+    void onSaveAndStick()
+    return
+  }
+  if (key === 's') {
     e.preventDefault()
     void onSave()
   }
@@ -606,6 +1271,10 @@ const onCapture = (d: Display, dataURL: string): void => {
   imageReady.value = false
   magnifierPos.value = null
   lastPointer.value = null
+  ops.value = []
+  redoOps.value = []
+  drawingOp.value = null
+  drawingPointerId = null
   overlayDirty = true
   magnifierDirty = true
   requestFrame()
@@ -618,6 +1287,10 @@ const onReset = (): void => {
   imageReady.value = false
   magnifierPos.value = null
   lastPointer.value = null
+  ops.value = []
+  redoOps.value = []
+  drawingOp.value = null
+  drawingPointerId = null
   overlayDirty = true
   magnifierDirty = true
   requestAnimationFrame(() => window.screenshots.reset())
@@ -776,7 +1449,17 @@ onBeforeUnmount(() => {
       @error="onImageError"
     />
     <div v-else class="blank" />
-    <canvas ref="canvasRef" class="overlay" />
+    <canvas ref="canvasRef" class="overlay" @contextmenu="onContextMenu" />
+    <textarea
+      v-if="textEditorOpen"
+      ref="textEditorRef"
+      v-model="textEditorValue"
+      class="text-editor"
+      placeholder="输入文字…"
+      :style="textEditorStyle"
+      @keydown.stop="onTextEditorKeyDown"
+      @blur="commitTextEditor"
+    />
     <div v-if="perfEnabled && perfText" class="perf">{{ perfText }}</div>
 
     <div
@@ -805,21 +1488,201 @@ onBeforeUnmount(() => {
           <span>{{ colorMode === 'HEX' ? `#${hexColor}` : rgbText }}</span>
         </div>
         <div class="magnifier-tips">
-          <span class="tips-key">C</span> 复制 / <span class="tips-key">Shift</span> 切换
+          <span class="tips-key">C</span> 复制并退出 / <span class="tips-key">Shift</span> 切换
         </div>
       </div>
     </div>
 
     <div class="toolbar" :style="toolbarStyle">
-      <button class="btn" type="button" :disabled="submitting" @click="onOk">
-        {{ lang.operation_ok_title }}
-      </button>
-      <button class="btn" type="button" :disabled="submitting" @click="onSave">
-        {{ lang.operation_save_title }}
-      </button>
-      <button class="btn danger" type="button" :disabled="submitting" @click="onCancel">
-        {{ lang.operation_cancel_title }}
-      </button>
+      <div v-if="canAnnotate()" class="tools">
+        <div class="tools-row">
+          <button
+            class="icon-btn"
+            type="button"
+            :class="{ active: tool === 'select' }"
+            title="选择/移动"
+            aria-label="选择/移动"
+            @click="setTool('select')"
+          >
+            <MousePointer2 :size="iconSize" />
+          </button>
+          <button
+            class="icon-btn"
+            type="button"
+            :class="{ active: tool === 'line' }"
+            title="直线"
+            aria-label="直线"
+            @click="setTool('line')"
+          >
+            <Slash :size="iconSize" />
+          </button>
+          <button
+            class="icon-btn"
+            type="button"
+            :class="{ active: tool === 'rect' }"
+            title="矩形"
+            aria-label="矩形"
+            @click="setTool('rect')"
+          >
+            <Square :size="iconSize" />
+          </button>
+          <button
+            class="icon-btn"
+            type="button"
+            :class="{ active: tool === 'ellipse' }"
+            title="圆形"
+            aria-label="圆形"
+            @click="setTool('ellipse')"
+          >
+            <Circle :size="iconSize" />
+          </button>
+          <button
+            class="icon-btn"
+            type="button"
+            :class="{ active: tool === 'brush' }"
+            title="笔刷"
+            aria-label="笔刷"
+            @click="setTool('brush')"
+          >
+            <Brush :size="iconSize" />
+          </button>
+          <button
+            class="icon-btn"
+            type="button"
+            :class="{ active: tool === 'mosaic' }"
+            title="打码"
+            aria-label="打码"
+            @click="setTool('mosaic')"
+          >
+            <Grid3X3 :size="iconSize" />
+          </button>
+          <button
+            class="icon-btn"
+            type="button"
+            :class="{ active: tool === 'text' }"
+            title="文字"
+            aria-label="文字"
+            @click="setTool('text')"
+          >
+            <TypeIcon :size="iconSize" />
+          </button>
+          <div class="divider"></div>
+          <button
+            class="icon-btn action-btn"
+            type="button"
+            :disabled="submitting"
+            title="完成"
+            aria-label="完成"
+            @click="onOk"
+          >
+            <Check :size="iconSize" />
+          </button>
+          <button
+            class="icon-btn action-btn"
+            type="button"
+            :disabled="submitting"
+            title="保存"
+            aria-label="保存"
+            @click="onSave"
+          >
+            <Save :size="iconSize" />
+          </button>
+          <button
+            class="icon-btn action-btn danger"
+            type="button"
+            :disabled="submitting"
+            title="取消"
+            aria-label="取消"
+            @click="onCancel"
+          >
+            <X :size="iconSize" />
+          </button>
+        </div>
+
+        <div class="tools-row">
+          <button
+            class="icon-btn"
+            type="button"
+            :class="{ active: toolMode === 'fill' }"
+            title="填充"
+            aria-label="填充"
+            :disabled="tool !== 'rect' && tool !== 'ellipse'"
+            @click="toolMode = toolMode === 'fill' ? 'stroke' : 'fill'"
+          >
+            <PaintBucket :size="iconSize" />
+          </button>
+
+          <button
+            class="icon-btn color-btn"
+            type="button"
+            title="颜色"
+            aria-label="颜色"
+            @click="openColorPicker"
+          >
+            <span class="color-dot" :style="{ backgroundColor: toolColor }" />
+            <Palette :size="iconSize" />
+          </button>
+          <input
+            ref="colorInputRef"
+            class="color-input"
+            type="color"
+            :value="toolColor"
+            @input="pickColor(($event.target as HTMLInputElement).value)"
+          />
+
+          <div v-if="showColorPicker" class="palette">
+            <button
+              v-for="c in toolPalette"
+              :key="c"
+              class="swatch"
+              type="button"
+              :class="{ active: c.toLowerCase() === toolColor.toLowerCase() }"
+              :style="{ backgroundColor: c }"
+              @click="pickColor(c)"
+            />
+          </div>
+
+          <div class="stroke">
+            <input
+              class="stroke-range"
+              type="range"
+              min="1"
+              max="32"
+              step="1"
+              :value="toolWidth"
+              :style="strokeRangeStyle"
+              aria-label="大小"
+              @input="toolWidth = Number(($event.target as HTMLInputElement).value)"
+            />
+            <div class="stroke-dot-wrap" :title="`大小 ${toolWidth}`">
+              <span class="stroke-dot" :style="strokeDotStyle" />
+            </div>
+          </div>
+
+          <div class="divider"></div>
+
+          <button
+            class="icon-btn"
+            type="button"
+            title="撤销"
+            aria-label="撤销"
+            :disabled="!canUndo"
+            @click="undo"
+          >
+            <Undo2 :size="iconSize" />
+          </button>
+          <button
+            class="icon-btn"
+            type="button"
+            title="重做"
+            aria-label="重做"
+            :disabled="!canRedo"
+            @click="redo"
+          >
+            <Redo2 :size="iconSize" />
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -874,6 +1737,7 @@ onBeforeUnmount(() => {
 .toolbar {
   position: absolute;
   display: flex;
+  align-items: center;
   gap: 8px;
   padding: 10px;
   border-radius: 10px;
@@ -882,6 +1746,190 @@ onBeforeUnmount(() => {
   -webkit-backdrop-filter: blur(6px);
   z-index: 3;
   pointer-events: auto;
+}
+
+.tools {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-right: 6px;
+}
+
+.tools-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.divider {
+  width: 1px;
+  height: 22px;
+  background: rgba(255, 255, 255, 0.12);
+  margin: 0 4px;
+}
+
+.icon-btn {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 245, 0.92);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.action-btn {
+  border: none;
+}
+
+.icon-btn.danger {
+  border-color: rgba(239, 68, 68, 0.28);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.icon-btn.danger:hover:enabled {
+  background: rgba(239, 68, 68, 0.14);
+}
+
+.icon-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.icon-btn:hover:enabled {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.icon-btn.active {
+  border-color: #3b83f6db;
+  color: #3b83f6db;
+  background: rgba(59, 130, 246, 0.14);
+}
+
+.color-btn .color-dot {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.35);
+  z-index: -1;
+}
+
+.color-input {
+  position: fixed;
+  left: -9999px;
+  top: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.palette {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(17, 17, 17, 0.92);
+}
+
+.swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  padding: 0;
+  cursor: pointer;
+}
+
+.swatch.active {
+  outline: 2px solid rgba(255, 255, 255, 0.9);
+  outline-offset: 2px;
+}
+
+.stroke {
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 2px;
+}
+
+.stroke-range {
+  width: 92px;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    rgba(59, 130, 246, 0.9) var(--p),
+    rgba(255, 255, 255, 0.14) var(--p)
+  );
+  outline: none;
+}
+
+.stroke-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(0, 0, 0, 0.35);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
+  margin-top: -4px;
+}
+
+.stroke-range::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: transparent;
+}
+
+.stroke-range:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid rgba(255, 255, 255, 0.85);
+  outline-offset: 2px;
+}
+
+.stroke-dot-wrap {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+}
+
+.stroke-dot {
+  border-radius: 999px;
+  border: 1px solid rgba(0, 0, 0, 0.35);
+}
+
+.text-editor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 240px;
+  min-height: 34px;
+  max-width: 420px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(0, 0, 0, 0.35);
+  color: rgba(255, 255, 255, 0.95);
+  resize: both;
+  outline: none;
+  z-index: 5;
 }
 
 .magnifier {

@@ -126,10 +126,14 @@ beforeEach(() => {
       fillRect: vi.fn(),
       beginPath: vi.fn(),
       rect: vi.fn(),
+      clip: vi.fn(),
       fill: vi.fn(),
       stroke: vi.fn(),
       moveTo: vi.fn(),
       lineTo: vi.fn(),
+      fillText: vi.fn(),
+      bezierCurveTo: vi.fn(),
+      ellipse: vi.fn(),
       save: vi.fn(),
       restore: vi.fn(),
       translate: vi.fn(),
@@ -226,7 +230,7 @@ test('click OK triggers window.screenshots.ok and disables button while pending'
   flushRaf()
   await nextTick()
 
-  const okBtn = wrapper.get('.toolbar button.btn')
+  const okBtn = wrapper.get('.toolbar button[aria-label="完成"]')
   await okBtn.trigger('click')
   await nextTick()
   expect(okBtn.attributes('disabled')).toBeDefined()
@@ -276,13 +280,144 @@ test('click OK still works when canvas.toBlob returns null (fallback path)', asy
   flushRaf()
   await nextTick()
 
-  await wrapper.get('.toolbar button.btn').trigger('click')
+  await wrapper.get('.toolbar button[aria-label="完成"]').trigger('click')
   await vi.runAllTimersAsync()
   await nextTick()
 
   expect(mock.api.ok).toHaveBeenCalledTimes(1)
 
   HTMLCanvasElement.prototype.toBlob = prevToBlob
+})
+
+test('press C without selection cancels after copying color', async () => {
+  const mock = createScreenshotsMock()
+  ;(mock.api as unknown as Record<string, unknown>)['copyText'] = vi.fn()
+  ;(window as unknown as Record<string, unknown>)['screenshots'] = mock.api
+
+  const wrapper = mount(ScreenshotsApp, { attachTo: document.body })
+  await nextTick()
+
+  mock.emit('capture', display, 'data:image/png;base64,iVBORw0KGgo=')
+  await nextTick()
+
+  const img = wrapper.get('img.bg').element as HTMLImageElement
+  Object.defineProperty(img, 'naturalWidth', { value: 800, configurable: true })
+  Object.defineProperty(img, 'naturalHeight', { value: 600, configurable: true })
+  await wrapper.get('img.bg').trigger('load')
+  await nextTick()
+
+  const canvas = wrapper.get('canvas.overlay').element as HTMLCanvasElement
+  dispatchPointer(canvas, 'pointermove', { clientX: 20, clientY: 30, pointerId: 1, button: 0 })
+  flushRaf()
+  await nextTick()
+
+  window.dispatchEvent(new KeyboardEvent('keydown', { key: 'c' }))
+  await vi.runAllTimersAsync()
+  await nextTick()
+
+  expect(mock.api.cancel).toHaveBeenCalledTimes(1)
+})
+
+test('right click without selection cancels screenshot', async () => {
+  const mock = createScreenshotsMock()
+  ;(window as unknown as Record<string, unknown>)['screenshots'] = mock.api
+
+  const wrapper = mount(ScreenshotsApp, { attachTo: document.body })
+  await nextTick()
+
+  mock.emit('capture', display, 'data:image/png;base64,iVBORw0KGgo=')
+  await nextTick()
+
+  await wrapper.get('canvas.overlay').trigger('contextmenu')
+  await nextTick()
+
+  expect(mock.api.cancel).toHaveBeenCalledTimes(1)
+})
+
+test('press F3 with selection triggers save with stickAfterSave', async () => {
+  const mock = createScreenshotsMock()
+  ;(window as unknown as Record<string, unknown>)['screenshots'] = mock.api
+
+  const wrapper = mount(ScreenshotsApp, { attachTo: document.body })
+  await nextTick()
+
+  mock.emit('capture', display, 'data:image/png;base64,iVBORw0KGgo=')
+  await nextTick()
+
+  const img = wrapper.get('img.bg').element as HTMLImageElement
+  Object.defineProperty(img, 'naturalWidth', { value: 800, configurable: true })
+  Object.defineProperty(img, 'naturalHeight', { value: 600, configurable: true })
+  await wrapper.get('img.bg').trigger('load')
+  await nextTick()
+
+  const canvas = wrapper.get('canvas.overlay').element as HTMLCanvasElement & {
+    setPointerCapture?: (id: number) => void
+    releasePointerCapture?: (id: number) => void
+  }
+  canvas.setPointerCapture = vi.fn()
+  canvas.releasePointerCapture = vi.fn()
+
+  dispatchPointer(canvas, 'pointerdown', { clientX: 10, clientY: 10, pointerId: 1, button: 0 })
+  dispatchPointer(canvas, 'pointermove', { clientX: 110, clientY: 110, pointerId: 1, button: 0 })
+  flushRaf()
+  dispatchPointer(canvas, 'pointerup', { clientX: 110, clientY: 110, pointerId: 1, button: 0 })
+  flushRaf()
+  await nextTick()
+
+  window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F3' }))
+  await vi.runAllTimersAsync()
+  await nextTick()
+
+  expect(mock.api.save).toHaveBeenCalledTimes(1)
+  const payload = mock.api.save.mock.calls[0]?.[1] as ScreenshotsData & {
+    stickAfterSave?: boolean
+  }
+  expect(payload?.stickAfterSave).toBe(true)
+})
+
+test('text editor Enter does not trigger OK', async () => {
+  const mock = createScreenshotsMock()
+  ;(window as unknown as Record<string, unknown>)['screenshots'] = mock.api
+
+  const wrapper = mount(ScreenshotsApp, { attachTo: document.body })
+  await nextTick()
+
+  mock.emit('capture', display, 'data:image/png;base64,iVBORw0KGgo=')
+  await nextTick()
+
+  const img = wrapper.get('img.bg').element as HTMLImageElement
+  Object.defineProperty(img, 'naturalWidth', { value: 800, configurable: true })
+  Object.defineProperty(img, 'naturalHeight', { value: 600, configurable: true })
+  await wrapper.get('img.bg').trigger('load')
+  await nextTick()
+
+  const canvas = wrapper.get('canvas.overlay').element as HTMLCanvasElement & {
+    setPointerCapture?: (id: number) => void
+    releasePointerCapture?: (id: number) => void
+  }
+  canvas.setPointerCapture = vi.fn()
+  canvas.releasePointerCapture = vi.fn()
+
+  dispatchPointer(canvas, 'pointerdown', { clientX: 10, clientY: 10, pointerId: 1, button: 0 })
+  dispatchPointer(canvas, 'pointermove', { clientX: 110, clientY: 110, pointerId: 1, button: 0 })
+  flushRaf()
+  dispatchPointer(canvas, 'pointerup', { clientX: 110, clientY: 110, pointerId: 1, button: 0 })
+  flushRaf()
+  await nextTick()
+
+  await wrapper.get('.toolbar button[aria-label="文字"]').trigger('click')
+  await nextTick()
+
+  dispatchPointer(canvas, 'pointerdown', { clientX: 20, clientY: 20, pointerId: 2, button: 0 })
+  flushRaf()
+  await nextTick()
+
+  const textarea = wrapper.get('textarea.text-editor')
+  await textarea.setValue('hello')
+  await textarea.trigger('keydown', { key: 'Enter' })
+  await nextTick()
+
+  expect(mock.api.ok).toHaveBeenCalledTimes(0)
 })
 
 describe('e2e-ish viewport coverage', () => {
@@ -323,7 +458,7 @@ describe('e2e-ish viewport coverage', () => {
     flushRaf()
     await nextTick()
 
-    await wrapper.get('.toolbar button.btn').trigger('click')
+    await wrapper.get('.toolbar button[aria-label="完成"]').trigger('click')
     await vi.runAllTimersAsync()
     await nextTick()
 

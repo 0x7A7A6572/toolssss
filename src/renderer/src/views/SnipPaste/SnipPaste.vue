@@ -143,7 +143,16 @@ onBeforeUnmount(() => {
             <div class="modal-line">开始截图：快捷键（默认 F1）</div>
             <div class="modal-line">取消截图：任何时刻按 Esc；或点击工具条关闭</div>
             <div class="modal-line">使用应用截图完成选区。截图结果在系统剪贴板中。</div>
-            <div class="modal-line">应用截图中，按 C 复制 HEX；按 Shift + C 复制 RGB</div>
+            <div class="modal-line">未选区时，按 C 复制色值并退出（Shift 切换 HEX / RGB）</div>
+            <div class="modal-line">未选区时，右键可直接关闭截图</div>
+            <div class="modal-line">已选区时，按 F3 可一键保存并贴图</div>
+            <div class="modal-line">已选区后支持标记：直线 / 矩形 / 圆形 / 笔刷 / 打码 / 文字</div>
+            <div class="modal-line">
+              标记支持颜色、粗细、填充（矩形/圆形）、撤销重做（Ctrl+Z / Ctrl+Y）
+            </div>
+            <div class="modal-line">
+              文字标记：选择“文字”工具后点击输入，Enter 确认，Shift+Enter 换行
+            </div>
             <div class="modal-line">点击截图工具条“保存”会自动保存到「截图保存目录」</div>
           </div>
 

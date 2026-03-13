@@ -46,6 +46,7 @@ let isQuitting = false
 let translatorPopupWindow: BrowserWindow | null = null
 let screenshots: Screenshots | null = null
 let isScreenshotsHooked = false
+let snipCapturing = false
 
 let settings: AppSettings = DEFAULT_SETTINGS
 const overlayWindows = new Map<number, BrowserWindow>()
@@ -802,15 +803,28 @@ function startAppSnip(): void {
 
   if (!isScreenshotsHooked) {
     isScreenshotsHooked = true
-    screenshots.on('windowClosed', () => resumeOverlayAfterSnip())
+    screenshots.on('windowClosed', () => {
+      snipCapturing = false
+      resumeOverlayAfterSnip()
+    })
     screenshots.on('windowCreated', (win: BrowserWindow) => {
-      win.on('hide', () => resumeOverlayAfterSnip())
-      win.on('closed', () => resumeOverlayAfterSnip())
+      win.on('hide', () => {
+        snipCapturing = false
+        resumeOverlayAfterSnip()
+      })
+      win.on('closed', () => {
+        snipCapturing = false
+        resumeOverlayAfterSnip()
+      })
     })
     // 让键盘事件在渲染端处理（例如 react-screenshots 的 C 键复制逻辑）
 
-    screenshots.on('save', (event, buffer) => {
+    screenshots.on('save', (event, buffer, data) => {
       event.preventDefault()
+      const stickAfterSave =
+        Boolean(data) &&
+        typeof data === 'object' &&
+        (data as Record<string, unknown>)['stickAfterSave'] === true
       try {
         const img = nativeImage.createFromBuffer(buffer)
         if (!img.isEmpty()) clipboard.writeImage(img)
@@ -818,7 +832,12 @@ function startAppSnip(): void {
         // ignore
       }
       void saveSnipBufferToDisk(buffer).finally(() => {
-        screenshots?.endCapture().catch(() => null)
+        screenshots
+          ?.endCapture()
+          .catch(() => null)
+          .finally(() => {
+            if (stickAfterSave) pasteStickerFromClipboard()
+          })
       })
     })
 
@@ -832,11 +851,16 @@ function startAppSnip(): void {
       }
     })
 
-    screenshots.on('cancel', () => resumeOverlayAfterSnip())
+    screenshots.on('cancel', () => {
+      snipCapturing = false
+      resumeOverlayAfterSnip()
+    })
   }
 
   suspendOverlayForSnip()
+  snipCapturing = true
   screenshots.startCapture().catch(() => {
+    snipCapturing = false
     resumeOverlayAfterSnip()
     return null
   })
@@ -1996,7 +2020,10 @@ function ensureShortcuts(): void {
       const acc = (settings.shortcuts as Record<string, string>).stickerPaste
       if (acc) {
         try {
-          globalShortcut.register(acc, () => pasteStickerFromClipboard())
+          globalShortcut.register(acc, () => {
+            if (snipCapturing) return
+            pasteStickerFromClipboard()
+          })
         } catch (e) {
           console.error('Failed to register shortcut:', acc, e)
         }
