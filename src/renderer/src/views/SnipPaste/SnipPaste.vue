@@ -142,9 +142,7 @@ onBeforeUnmount(() => {
             <div class="modal-section-title">截屏</div>
             <div class="modal-line">开始截图：快捷键（默认 F1）</div>
             <div class="modal-line">取消截图：任何时刻按 Esc；或点击工具条关闭</div>
-            <div class="modal-line">
-              使用应用截图（electron-screenshots）完成选区。截图结果在系统剪贴板中。
-            </div>
+            <div class="modal-line">使用应用截图完成选区。截图结果在系统剪贴板中。</div>
             <div class="modal-line">应用截图中，按 C 复制 HEX；按 Shift + C 复制 RGB</div>
             <div class="modal-line">点击截图工具条“保存”会自动保存到「截图保存目录」</div>
           </div>
@@ -152,7 +150,7 @@ onBeforeUnmount(() => {
           <div class="modal-section">
             <div class="modal-section-title">贴图</div>
             <div class="modal-line">剪贴板贴图：快捷键（默认 F3）</div>
-            <div class="modal-line">截图后复制到剪贴板，再按贴图键</div>
+            <div class="modal-line">截图后完成/保存后会复制到剪贴板，此时可以再按贴图键贴图</div>
             <div class="modal-line">贴图操作：缩放（滚轮 / + -），透明度（Ctrl + 滚轮）</div>
             <div class="modal-line">贴图操作：旋转（1 2），翻转（3 4）</div>
             <div class="modal-line">关闭贴图：Esc / 左键双击</div>

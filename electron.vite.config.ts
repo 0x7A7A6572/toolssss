@@ -13,6 +13,14 @@ export default defineConfig({
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
+    build: {
+      rollupOptions: {
+        input: {
+          index: resolve('src/preload/index.ts'),
+          screenshots: resolve('src/preload/screenshots.ts')
+        }
+      }
+    },
     resolve: {
       alias: {
         '@shared': resolve('src/shared')
@@ -24,6 +32,15 @@ export default defineConfig({
       alias: {
         '@renderer': resolve('src/renderer/src'),
         '@shared': resolve('src/shared')
+      }
+    },
+    build: {
+      rollupOptions: {
+        input: {
+          index: resolve('src/renderer/index.html'),
+          screenshots: resolve('src/renderer/screenshots.html'),
+          electron: resolve('src/renderer/electron.html')
+        }
       }
     },
     plugins: [vue()]

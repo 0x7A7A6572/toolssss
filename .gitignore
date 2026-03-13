@@ -4,5 +4,3 @@ out
 .DS_Store
 .eslintcache
 *.log*
-electron\.vite.config\..*\.mjs
-!vendor\screenshots\react-screenshots\dist\*

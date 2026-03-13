@@ -8,6 +8,8 @@
   "scripts": {
     "format": "prettier --write .",
     "lint": "eslint --cache .",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "vue-tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
@@ -33,11 +35,11 @@
     "@yeger/vue-masonry-wall": "^6.1.0",
     "dayjs": "^1.11.19",
     "echarts": "^6.0.0",
-    "electron-screenshots": "file:vendor/screenshots/electron-screenshots",
     "electron-updater": "^6.3.9",
     "iconv-lite": "^0.6.3",
     "lowlight": "^3.1.0",
     "lucide-vue-next": "^0.577.0",
+    "node-screenshots": "^0.2.8",
     "tesseract.js": "^5.1.1",
     "tyme4ts": "^1.4.4",
     "vue-router": "^4.6.4"
@@ -57,17 +59,12 @@
     "sass-embedded": "^1.98.0",
     "typescript": "^5.9.3",
     "vite": "^7.2.6",
+    "vitest": "^3.2.0",
     "vue": "^3.5.25",
     "vue-eslint-parser": "^10.2.0",
     "vue-tsc": "^3.1.6"
   },
-  "overrides": {
-    "react-screenshots": "file:vendor/screenshots/react-screenshots"
-  },
   "pnpm": {
-    "overrides": {
-      "react-screenshots": "link:vendor/screenshots/react-screenshots"
-    },
     "onlyBuiltDependencies": [
       "electron",
       "esbuild"

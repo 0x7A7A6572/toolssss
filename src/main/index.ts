@@ -38,7 +38,7 @@ import {
 import { registerWeatherHandlers } from './weather'
 import { registerScriptLibraryHandlers } from './script-library'
 import { TRANSLATOR_EVENTS, type TranslatePayload, type TranslateResult } from '@shared/translator'
-import Screenshots from 'electron-screenshots'
+import Screenshots from '../libs/electron-screenshots/index'
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
