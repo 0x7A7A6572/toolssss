@@ -187,7 +187,14 @@ function normalizeSettings(input: unknown): AppSettings {
     const ai = (obj as { ai: Record<string, unknown> }).ai
     base.ai.enabled = Boolean(ai['enabled'])
     const provider = ai['provider']
-    if (provider === 'openai' || provider === 'custom') base.ai.provider = provider
+    if (
+      provider === 'openai' ||
+      provider === 'gmini' ||
+      provider === 'kimi' ||
+      provider === 'qwen' ||
+      provider === 'custom'
+    )
+      base.ai.provider = provider
     if (typeof ai['baseUrl'] === 'string') base.ai.baseUrl = ai['baseUrl'].trim()
     if (typeof ai['model'] === 'string') base.ai.model = ai['model'].trim()
     if (typeof ai['apiKeySet'] === 'boolean') base.ai.apiKeySet = ai['apiKeySet'] as boolean
@@ -295,7 +302,14 @@ function applySettingsPatch(patch: unknown): AppSettings {
     const ai = (p as { ai: Record<string, unknown> }).ai
     if (typeof ai['enabled'] === 'boolean') next.ai.enabled = ai['enabled'] as boolean
     const provider = ai['provider']
-    if (provider === 'openai' || provider === 'custom') next.ai.provider = provider
+    if (
+      provider === 'openai' ||
+      provider === 'gmini' ||
+      provider === 'kimi' ||
+      provider === 'qwen' ||
+      provider === 'custom'
+    )
+      next.ai.provider = provider
     if (typeof ai['baseUrl'] === 'string') next.ai.baseUrl = ai['baseUrl'] as string
     if (typeof ai['model'] === 'string') next.ai.model = ai['model'] as string
     if (typeof ai['apiKeySet'] === 'boolean') next.ai.apiKeySet = ai['apiKeySet'] as boolean
@@ -1698,6 +1712,7 @@ function buildAiChatCompletionsUrl(baseUrl: string): URL {
   if (!base) throw new Error('未配置 AI Base URL，请到「全局设置」完善。')
   const normalized = base.replace(/\/+$/, '')
   if (/\/chat\/completions$/i.test(normalized)) return new URL(normalized)
+  if (/\/openai$/i.test(normalized)) return new URL(`${normalized}/chat/completions`)
   if (/\/v1$/i.test(normalized)) return new URL(`${normalized}/chat/completions`)
   return new URL(`${normalized}/v1/chat/completions`)
 }

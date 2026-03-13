@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { DEFAULT_SETTINGS, type AppSettings, type SettingsPatch } from '@shared/settings'
 import ShortcutInput from '../../components/ShortcutInput.vue'
 import { Delete, FolderOpen } from 'lucide-vue-next'
+import { AI_PROVIDERS } from '../../constants/aiProviders'
 
 const settings = ref<AppSettings>(structuredClone(DEFAULT_SETTINGS))
 const saving = ref(false)
@@ -31,6 +32,34 @@ const stickyNotesPlaceholder = computed(() => {
   }
   return '默认：应用数据目录/sticky-notes.json'
 })
+
+const aiBaseUrlPlaceholder = computed(() => {
+  const p = settings.value.ai.provider
+  const preset = (AI_PROVIDERS as Record<string, { baseUrl: string }>)[p]
+  if (preset && preset.baseUrl) return `默认：${preset.baseUrl}`
+  return '默认：https://api.openai.com'
+})
+
+const aiModelsForProvider = computed(() => {
+  const p = settings.value.ai.provider
+  const preset = (AI_PROVIDERS as Record<string, { models?: string[] }>)[p]
+  return Array.isArray(preset?.models) ? preset!.models! : []
+})
+
+function onAiProviderChange(e: Event): void {
+  const value = (e.target as HTMLSelectElement).value as AppSettings['ai']['provider']
+  const preset = (AI_PROVIDERS as Record<string, { baseUrl: string; models?: string[] }>)[value]
+  if (preset) {
+    const models = Array.isArray(preset.models) ? preset.models : []
+    const next: SettingsPatch = { ai: { provider: value, baseUrl: preset.baseUrl } }
+    if (!models.includes(settings.value.ai.model) && models[0]) {
+      next.ai!.model = models[0]
+    }
+    update(next).catch(() => null)
+  } else {
+    update({ ai: { provider: value } }).catch(() => null)
+  }
+}
 
 async function refresh(): Promise<void> {
   const result = await window.electron.ipcRenderer.invoke('settings:get')
@@ -219,7 +248,7 @@ onMounted(() => {
       </div>
 
       <div class="row">
-        <div class="label">截图时隐藏遮罩</div>
+        <div class="label">截图时隐藏护眼遮罩</div>
         <label class="switch">
           <input
             type="checkbox"
@@ -512,18 +541,11 @@ onMounted(() => {
 
       <div class="row">
         <div class="label">Provider</div>
-        <select
-          class="select"
-          :value="settings.ai.provider"
-          @change="
-            update({
-              ai: {
-                provider: ($event.target as HTMLSelectElement).value as 'openai' | 'custom'
-              }
-            })
-          "
-        >
-          <option value="openai">OpenAI Compatible</option>
+        <select class="select" :value="settings.ai.provider" @change="onAiProviderChange">
+          <option value="openai">OpenAI</option>
+          <option value="gmini">Google Gemini</option>
+          <option value="kimi">Kimi (Moonshot)</option>
+          <option value="qwen">阿里通义（DashScope）</option>
           <option value="custom">Custom</option>
         </select>
       </div>
@@ -534,7 +556,7 @@ onMounted(() => {
           class="text"
           type="text"
           :value="settings.ai.baseUrl"
-          placeholder="默认：https://api.openai.com"
+          :placeholder="aiBaseUrlPlaceholder"
           @change="
             update({
               ai: { baseUrl: ($event.target as HTMLInputElement).value }
@@ -542,6 +564,24 @@ onMounted(() => {
           "
         />
       </div>
+
+      <template v-if="aiModelsForProvider.length">
+        <div class="row">
+          <div class="label">模型选择</div>
+          <select
+            class="select"
+            :value="aiModelsForProvider.includes(settings.ai.model) ? settings.ai.model : ''"
+            @change="
+              update({
+                ai: { model: ($event.target as HTMLSelectElement).value }
+              })
+            "
+          >
+            <option value="" disabled>选择模型</option>
+            <option v-for="m in aiModelsForProvider" :key="m" :value="m">{{ m }}</option>
+          </select>
+        </div>
+      </template>
 
       <div class="row">
         <div class="label">API Key</div>

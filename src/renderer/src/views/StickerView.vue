@@ -114,7 +114,7 @@ function scheduleBounds(bounds: { x: number; y: number; width: number; height: n
 }
 
 function constrainScaleByWindowBounds(base: { w: number; h: number }, nextScale: number): number {
-  const minW = 120
+  const minW = 90
   const minH = 90
   const maxW = 6000
   const maxH = 6000

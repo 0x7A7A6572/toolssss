@@ -32,7 +32,7 @@ export interface AppSettings {
   }
   ai: {
     enabled: boolean
-    provider: 'openai' | 'custom'
+    provider: 'openai' | 'gmini' | 'kimi' | 'qwen' | 'custom'
     baseUrl: string
     model: string
     apiKeySet: boolean
