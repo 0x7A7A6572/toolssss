@@ -16,7 +16,7 @@ export interface AppSettings {
   }
   shortcuts: Record<string, string>
   translate: {
-    provider: 'baidu' | 'bing'
+    provider: 'baidu' | 'bing' | 'ai'
     defaultSource: string
     defaultTarget: string
     baidu: {

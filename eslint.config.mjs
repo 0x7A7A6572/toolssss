@@ -13,7 +13,8 @@ export default defineConfig(
       '**/vendor/**',
       '**/experiment/**',
       '**/.docs/**',
-      '**/src/.tips/**'
+      '**/src/.tips/**',
+      '**/landing-web/**'
     ]
   },
   tseslint.configs.recommended,

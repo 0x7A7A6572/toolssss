@@ -28,6 +28,13 @@ const canTranslate = computed(() => inputText.value.trim().length > 0 && !loadin
 const missingConfigHint = computed(() => {
   const s = settings.value
   if (!s) return ''
+  if (s.translate.provider === 'ai') {
+    if (!s.ai.enabled) return 'AI 未启用，请到「全局设置」开启。'
+    if (!s.ai.baseUrl.trim()) return '未配置 AI Base URL，请到「全局设置」完善。'
+    if (!s.ai.model.trim()) return '未配置 AI Model，请到「全局设置」完善。'
+    if (!s.ai.apiKeySet) return '未配置 AI API Key，请到「全局设置」完善。'
+    return ''
+  }
   if (s.translate.provider === 'bing') {
     if (!s.translate.bing.baseUrl.trim()) return '未配置必应翻译 baseUrl，请到「全局设置」完善。'
     if (!s.translate.bing.key) return '未配置必应翻译 key，请到「全局设置」完善。'

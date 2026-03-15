@@ -152,7 +152,8 @@ function normalizeSettings(input: unknown): AppSettings {
   ) {
     const tr = (obj as { translate: Record<string, unknown> }).translate
     const provider = tr['provider']
-    if (provider === 'baidu' || provider === 'bing') base.translate.provider = provider
+    if (provider === 'baidu' || provider === 'bing' || provider === 'ai')
+      base.translate.provider = provider
     if (typeof tr['defaultSource'] === 'string')
       base.translate.defaultSource = tr['defaultSource'].trim()
     if (typeof tr['defaultTarget'] === 'string')
@@ -270,7 +271,8 @@ function applySettingsPatch(patch: unknown): AppSettings {
   ) {
     const tr = (p as { translate: Record<string, unknown> }).translate
     const provider = tr['provider']
-    if (provider === 'baidu' || provider === 'bing') next.translate.provider = provider
+    if (provider === 'baidu' || provider === 'bing' || provider === 'ai')
+      next.translate.provider = provider
     if (typeof tr['defaultSource'] === 'string') next.translate.defaultSource = tr['defaultSource']
     if (typeof tr['defaultTarget'] === 'string') next.translate.defaultTarget = tr['defaultTarget']
 
@@ -409,18 +411,33 @@ async function getStickerOcrWorker(): Promise<{
   if (stickerOcrWorker) return stickerOcrWorker
   if (!stickerOcrWorkerLoading) {
     stickerOcrWorkerLoading = (async () => {
+      const cachePath = join(app.getPath('userData'), 'tesseract-cache')
+      try {
+        await fsp.mkdir(cachePath, { recursive: true })
+      } catch {
+        void 0
+      }
+
+      const bundledLangPath = join(process.resourcesPath, 'tessdata')
+      const langPath = existsSync(join(bundledLangPath, 'chi_sim.traineddata.gz'))
+        ? bundledLangPath
+        : undefined
+
       const mod = await import('tesseract.js')
       const createWorker = (
         mod as unknown as {
           createWorker?: (
             lang: string,
             oem?: number,
-            options?: { logger?: (m: unknown) => void }
+            options?: Record<string, unknown>
           ) => Promise<unknown>
         }
       ).createWorker
       if (!createWorker) throw new Error('tesseract.js createWorker unavailable')
       const worker = (await createWorker('chi_sim+eng', 1, {
+        cachePath,
+        langPath,
+        gzip: true,
         logger: (m: unknown) => {
           try {
             stickerOcrProgressSink?.(m)
@@ -1139,7 +1156,7 @@ function ensureDailyAlarmTimer(): void {
 }
 
 function ensureBreakTimer(): void {
-  if (breakTimer) clearInterval(breakTimer)
+  if (breakTimer) clearTimeout(breakTimer)
   breakTimer = undefined
 
   if (!settings.break.enabled) {
@@ -1148,13 +1165,32 @@ function ensureBreakTimer(): void {
     return
   }
   const intervalMs = settings.break.intervalMinutes * 60 * 1000
-  breakNextAt = Date.now() + intervalMs
+  scheduleBreak(intervalMs, intervalMs)
+}
+
+function scheduleBreak(delayMs: number, intervalMs: number): void {
+  if (breakTimer) clearTimeout(breakTimer)
+  breakTimer = undefined
+  breakNextAt = Date.now() + delayMs
   broadcastBreakStatus()
-  breakTimer = setInterval(() => {
-    triggerAlarm('break')
-    breakNextAt = Date.now() + intervalMs
-    broadcastBreakStatus()
-  }, intervalMs)
+  breakTimer = setTimeout(() => {
+    void triggerBreakFromTimer(intervalMs)
+  }, delayMs)
+}
+
+async function triggerBreakFromTimer(intervalMs: number): Promise<void> {
+  if (!settings.break.enabled) return
+
+  if (settings.break.disableInFullscreen) {
+    const fullscreen = await isForegroundFullscreenWindows()
+    if (fullscreen) {
+      scheduleBreak(5 * 60 * 1000, intervalMs)
+      return
+    }
+  }
+
+  showAlarmWindows('break', '休息提醒', pickRestTip())
+  scheduleBreak(intervalMs, intervalMs)
 }
 
 function resolveRestTipsFilePath(): string | null {
@@ -1210,69 +1246,95 @@ function triggerAlarm(reason: AlarmReason): void {
   const title = reason === 'alarm' ? settings.alarm.label : '休息提醒'
   const body = reason === 'alarm' ? `现在时间：${settings.alarm.time}` : pickRestTip()
 
-  if (reason === 'break' && settings.break.disableInFullscreen) {
-    // Simple check: if the last active window is fullscreen.
-    // Since we can't easily check other apps, we'll skip this check for now or use a heuristic.
-    // Actually, let's implement a PowerShell check for Windows.
-    checkFullscreenWindows().then((isFullscreen) => {
-      if (isFullscreen) {
-        console.log('User is in fullscreen mode, skipping break reminder.')
-        // Snooze for 5 minutes instead of skipping entirely? Or just skip this cycle?
-        // Let's snooze for 5 minutes to try again.
-        snoozeAlarm(5)
-      } else {
-        showAlarmWindows(reason, title, body)
-      }
-    })
-    return
-  }
-
   showAlarmWindows(reason, title, body)
 }
 
-async function checkFullscreenWindows(): Promise<boolean> {
+async function isForegroundFullscreenWindows(): Promise<boolean> {
   if (process.platform !== 'win32') return false
   try {
-    // PowerShell script to check if the foreground window covers the screen
     const script = `
-      Add-Type @"
-        using System;
-        using System.Runtime.InteropServices;
-        public class User32 {
-          [DllImport("user32.dll")]
-          public static extern IntPtr GetForegroundWindow();
-          [DllImport("user32.dll")]
-          public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
-          [DllImport("user32.dll")]
-          public static extern int GetSystemMetrics(int nIndex);
-          
-          [StructLayout(LayoutKind.Sequential)]
-          public struct RECT {
-            public int Left;
-            public int Top;
-            public int Right;
-            public int Bottom;
-          }
-        }
-"@
-      $hwnd = [User32]::GetForegroundWindow()
-      $rect = New-Object User32+RECT
-      [User32]::GetWindowRect($hwnd, [ref]$rect)
-      $width = $rect.Right - $rect.Left
-      $height = $rect.Bottom - $rect.Top
-      $screenWidth = [User32]::GetSystemMetrics(0)
-      $screenHeight = [User32]::GetSystemMetrics(1)
-      
-      if ($width -eq $screenWidth -and $height -eq $screenHeight) {
-        Write-Output "True"
-      } else {
-        Write-Output "False"
+      Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public class WinApi {
+  [DllImport("user32.dll")]
+  public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")]
+  public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+  [DllImport("user32.dll")]
+  public static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+  [DllImport("user32.dll", CharSet = CharSet.Auto)]
+  public static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
+
+  [StructLayout(LayoutKind.Sequential)]
+  public struct RECT {
+    public int Left;
+    public int Top;
+    public int Right;
+    public int Bottom;
+  }
+
+  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+  public struct MONITORINFO {
+    public int cbSize;
+    public RECT rcMonitor;
+    public RECT rcWork;
+    public uint dwFlags;
+  }
+}
+'@
+      $hwnd = [WinApi]::GetForegroundWindow()
+      $rect = New-Object WinApi+RECT
+      [WinApi]::GetWindowRect($hwnd, [ref]$rect) | Out-Null
+      $mon = [WinApi]::MonitorFromWindow($hwnd, 2)
+      $mi = New-Object WinApi+MONITORINFO
+      $mi.cbSize = [System.Runtime.InteropServices.Marshal]::SizeOf($mi)
+      [WinApi]::GetMonitorInfo($mon, [ref]$mi) | Out-Null
+      $obj = [pscustomobject]@{
+        left = $rect.Left
+        top = $rect.Top
+        right = $rect.Right
+        bottom = $rect.Bottom
+        monLeft = $mi.rcMonitor.Left
+        monTop = $mi.rcMonitor.Top
+        monRight = $mi.rcMonitor.Right
+        monBottom = $mi.rcMonitor.Bottom
       }
+      $obj | ConvertTo-Json -Compress
     `
-    // Use encoded command to avoid escaping issues
     const encoded = Buffer.from(script, 'utf16le').toString('base64')
     const { stdout } = await execAsync(`powershell -EncodedCommand ${encoded}`)
-    return stdout.trim() === 'True'
+    const raw = stdout.trim()
+    if (!raw) return false
+    const p = JSON.parse(raw) as Record<string, unknown>
+    const left = Number(p['left'])
+    const top = Number(p['top'])
+    const right = Number(p['right'])
+    const bottom = Number(p['bottom'])
+    const monLeft = Number(p['monLeft'])
+    const monTop = Number(p['monTop'])
+    const monRight = Number(p['monRight'])
+    const monBottom = Number(p['monBottom'])
+    if (![left, top, right, bottom, monLeft, monTop, monRight, monBottom].every(Number.isFinite))
+      return false
+
+    const tol = 4
+    const w = Math.max(0, right - left)
+    const h = Math.max(0, bottom - top)
+    const mw = Math.max(0, monRight - monLeft)
+    const mh = Math.max(0, monBottom - monTop)
+    if (mw <= 0 || mh <= 0 || w <= 0 || h <= 0) return false
+
+    const covers =
+      left <= monLeft + tol &&
+      top <= monTop + tol &&
+      right >= monRight - tol &&
+      bottom >= monBottom - tol
+    if (covers) return true
+
+    const areaRatio = (w * h) / (mw * mh)
+    const sizeOk = w >= mw * 0.98 && h >= mh * 0.98
+    return areaRatio >= 0.98 && sizeOk
   } catch (e) {
     console.error('Failed to check fullscreen:', e)
     return false
@@ -1630,10 +1692,105 @@ async function translateWithBing(args: {
   }
 }
 
+function trimAiTranslateText(text: string): string {
+  const t = text.replace(/\r\n/g, '\n').trim()
+  if (t.length <= 12000) return t
+  return t.slice(0, 12000).trimEnd()
+}
+
+async function translateWithAi(args: {
+  text: string
+  source: string
+  target: string
+}): Promise<string> {
+  if (!settings.ai.enabled) throw new Error('AI 未启用，请到「全局设置」开启。')
+  const base = settings.ai.baseUrl.trim()
+  if (!base) throw new Error('未配置 AI Base URL，请到「全局设置」完善。')
+  const model = settings.ai.model.trim()
+  if (!model) throw new Error('未配置 AI Model，请到「全局设置」完善。')
+  const apiKey = getAiApiKeyFromSecrets()
+  if (!apiKey) throw new Error('未配置 AI API Key，请到「全局设置」完善。')
+
+  const source = args.source && args.source !== 'auto' ? args.source : 'auto'
+  const target = args.target
+  if (!target) throw new Error('未指定目标语言')
+
+  const url = buildAiChatCompletionsUrl(base)
+  const controller = new AbortController()
+  const timeoutMs = 45000
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    let res: Response
+    try {
+      res = await fetch(url.toString(), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0.1,
+          max_tokens: 2000,
+          messages: [
+            {
+              role: 'system',
+              content: '你是一个翻译引擎。只输出译文，不要解释，不要加引号。保留原文换行与格式。'
+            },
+            {
+              role: 'user',
+              content:
+                `请把下面内容翻译成目标语言。\n` +
+                `源语言：${source === 'auto' ? '自动检测' : source}\n` +
+                `目标语言：${target}\n` +
+                `内容：\n` +
+                args.text
+            }
+          ]
+        }),
+        signal: controller.signal
+      })
+    } catch (e) {
+      const name =
+        e &&
+        typeof e === 'object' &&
+        'name' in e &&
+        typeof (e as { name?: unknown }).name === 'string'
+          ? ((e as { name: string }).name as string)
+          : ''
+      if (name === 'AbortError')
+        throw new Error(`AI 翻译超时（${Math.round(timeoutMs / 1000)}秒），请稍后重试`)
+      throw e
+    }
+
+    const raw = await res.text()
+    if (!res.ok) {
+      const msg = extractAiErrorMessage(raw)
+      throw new Error(msg ? `AI 翻译失败：${msg}` : raw || `AI 翻译失败：HTTP ${res.status}`)
+    }
+    const data = JSON.parse(raw) as {
+      choices?: Array<{ message?: { content?: unknown } }>
+    }
+    const content = data?.choices?.[0]?.message?.content
+    if (typeof content !== 'string' || !content.trim()) throw new Error('AI 未返回有效内容')
+    return trimAiTranslateText(content)
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
 async function translate(payload: TranslatePayload): Promise<TranslateResult> {
   const cfg = resolveTranslateConfig(payload)
   const text = cfg.text.trim()
   if (!text) return { text: '' }
+  if (cfg.provider === 'ai') {
+    const out = await translateWithAi({
+      text,
+      source: cfg.source,
+      target: cfg.target
+    })
+    return { text: out }
+  }
   if (cfg.provider === 'bing') {
     const out = await translateWithBing({
       baseUrl: settings.translate.bing.baseUrl,
@@ -1954,10 +2111,36 @@ function ensureTray(): void {
 }
 
 function ensureAutoStart(): void {
-  app.setLoginItemSettings({
-    openAtLogin: settings.general.autoStart,
-    path: app.getPath('exe')
-  })
+  if (process.platform === 'linux') return
+
+  const desired = Boolean(settings.general.autoStart)
+  const openAsHidden = Boolean(settings.general.minimizeToTray)
+
+  try {
+    const args = process.argv.slice(1).filter((v) => v !== '--autostart')
+    if (desired) args.unshift('--autostart')
+    app.setLoginItemSettings({
+      openAtLogin: desired,
+      openAsHidden,
+      path: process.execPath,
+      args: desired ? args : []
+    })
+  } catch {
+    void 0
+  }
+
+  try {
+    const actual = app.getLoginItemSettings()
+    if (typeof actual.openAtLogin === 'boolean' && actual.openAtLogin !== desired) {
+      settings.general.autoStart = actual.openAtLogin
+      saveSettingsToDisk(settings)
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('settings:changed', settings)
+      }
+    }
+  } catch {
+    void 0
+  }
 }
 
 function ensureShortcuts(): void {
