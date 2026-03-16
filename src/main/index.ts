@@ -52,6 +52,7 @@ let settings: AppSettings = DEFAULT_SETTINGS
 const overlayWindows = new Map<number, BrowserWindow>()
 const alarmWindows = new Map<number, BrowserWindow>()
 const stickerWindows = new Map<number, BrowserWindow>()
+const stickerAspectRatios = new Map<number, number>()
 let stickersHidden = false
 let overlaySuspended = false
 
@@ -619,15 +620,58 @@ function createStickerWindow(payload: StickerPayload): BrowserWindow {
 
   let w = 460
   let h = 360
+  let aspectRatio: number | null = null
   if (payload.kind === 'image') {
     const image = payload.data.startsWith('data:')
       ? nativeImage.createFromDataURL(payload.data)
       : clipboard.readImage()
-    const size = image.getSize()
-    const maxW = Math.max(360, Math.round(work.width * 0.38))
-    const maxH = Math.max(260, Math.round(work.height * 0.38))
-    w = clampNumber(size.width + 24, 120, maxW)
-    h = clampNumber(size.height + 24, 90, maxH)
+    const size = image.isEmpty() ? { width: 0, height: 0 } : image.getSize()
+    const rawW = Number(size.width) || 0
+    const rawH = Number(size.height) || 0
+    if (rawW > 0 && rawH > 0) {
+      const iw = Math.round(rawW)
+      const ih = Math.round(rawH)
+      const maxW = Math.max(360, Math.round(work.width * 0.38))
+      const maxH = Math.max(260, Math.round(work.height * 0.38))
+      const minW = 90
+      const minH = 90
+      const maxScale = Math.min(maxW / iw, maxH / ih)
+      const minScale = Math.max(minW / iw, minH / ih)
+      let s = 1
+      if (Number.isFinite(maxScale)) s = Math.min(s, maxScale)
+      if (Number.isFinite(minScale)) s = Math.max(s, minScale)
+      if (Number.isFinite(maxScale) && Number.isFinite(minScale) && maxScale < minScale)
+        s = maxScale
+      const ratio = iw / ih
+      let nextW = Math.round(iw * s)
+      let nextH = Math.round(ih * s)
+      const enforceMax = (): void => {
+        if (nextW > maxW) {
+          nextW = maxW
+          nextH = Math.round(nextW / ratio)
+        }
+        if (nextH > maxH) {
+          nextH = maxH
+          nextW = Math.round(nextH * ratio)
+        }
+      }
+      const enforceMin = (): void => {
+        if (nextW < minW) {
+          nextW = minW
+          nextH = Math.round(nextW / ratio)
+        }
+        if (nextH < minH) {
+          nextH = minH
+          nextW = Math.round(nextH * ratio)
+        }
+      }
+      enforceMax()
+      enforceMin()
+      enforceMax()
+      w = nextW
+      h = nextH
+      aspectRatio = ratio
+    }
   } else if (payload.kind === 'color') {
     w = 260
     h = 220
@@ -664,6 +708,14 @@ function createStickerWindow(payload: StickerPayload): BrowserWindow {
 
   win.setAlwaysOnTop(true, 'screen-saver')
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  if (aspectRatio && Number.isFinite(aspectRatio) && aspectRatio > 0) {
+    try {
+      win.setAspectRatio(aspectRatio)
+      stickerAspectRatios.set(win.id, aspectRatio)
+    } catch {
+      void 0
+    }
+  }
 
   loadWindow(win, { mode: 'sticker' }).catch(() => null)
 
@@ -690,6 +742,7 @@ function createStickerWindow(payload: StickerPayload): BrowserWindow {
 
   win.on('closed', () => {
     stickerWindows.delete(win.id)
+    stickerAspectRatios.delete(win.id)
   })
 
   stickerWindows.set(win.id, win)
@@ -2784,13 +2837,28 @@ app.whenReady().then(() => {
     if (!Number.isFinite(x) || !Number.isFinite(y)) return
     if (!Number.isFinite(width) || !Number.isFinite(height)) return
     if (width <= 0 || height <= 0) return
+    const ratio = stickerAspectRatios.get(win.id) ?? null
+    const cx = x + width / 2
+    const cy = y + height / 2
+    let nextW = width
+    let nextH = height
+    if (ratio && Number.isFinite(ratio) && ratio > 0) {
+      const hFromW = width / ratio
+      const wFromH = height * ratio
+      if (Math.abs(hFromW - height) <= Math.abs(wFromH - width)) {
+        nextH = hFromW
+      } else {
+        nextW = wFromH
+      }
+    }
+    if (nextW <= 0 || nextH <= 0) return
     try {
       win.setBounds(
         {
-          x: Math.round(x),
-          y: Math.round(y),
-          width: Math.round(width),
-          height: Math.round(height)
+          x: Math.round(cx - nextW / 2),
+          y: Math.round(cy - nextH / 2),
+          width: Math.round(nextW),
+          height: Math.round(nextH)
         },
         false
       )

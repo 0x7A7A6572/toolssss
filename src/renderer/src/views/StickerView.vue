@@ -333,13 +333,14 @@ onBeforeUnmount(() => {
     <div v-if="payload?.kind === 'image'" class="content">
       <div class="stage">
         <div class="img-wrap" :style="stageStyle">
+          <!-- <div class="img-wrap-tips">{{ svgBase.w }} x {{ svgBase.h }}</div> -->
           <svg class="img-svg" :viewBox="svgViewBox" preserveAspectRatio="xMidYMid meet">
             <image
               x="0"
               y="0"
               :width="svgBase.w"
               :height="svgBase.h"
-              preserveAspectRatio="none"
+              preserveAspectRatio="xMidYMid meet"
               :href="payload.data"
             />
             <g v-if="ocr" class="ocr-group">
@@ -437,6 +438,14 @@ onBeforeUnmount(() => {
     0 0 28px color-mix(in srgb, var(--ev-c-theme) 42%, transparent);
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.img-wrap-tips {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.65);
 }
 
 .img-svg {

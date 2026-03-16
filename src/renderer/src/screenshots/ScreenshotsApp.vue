@@ -102,6 +102,7 @@ const dragMode = ref<DragMode>(null)
 const dragStart = ref<Point | null>(null)
 const dragStartBounds = ref<Bounds | null>(null)
 const lastPointer = ref<Point | null>(null)
+let pointerAltKey = false
 
 const handleRadius = 6
 
@@ -891,6 +892,11 @@ function updateCursorFromPointer(p: { x: number; y: number }): void {
     if (canvas) canvas.style.cursor = 'crosshair'
     return
   }
+  if (!handle && inside && tool.value === 'select' && !pointerAltKey) {
+    const canvas = canvasRef.value
+    if (canvas) canvas.style.cursor = 'crosshair'
+    return
+  }
   setCursorByMode(handle, inside)
 }
 
@@ -946,6 +952,7 @@ function applyPointer(p: Point): void {
 function onPointerDown(e: PointerEvent): void {
   if (!url.value) return
   autoBounds.value = false
+  pointerAltKey = e.altKey
   if (e.button === 2) {
     if (!bounds.value) {
       e.preventDefault()
@@ -992,9 +999,16 @@ function onPointerDown(e: PointerEvent): void {
 
   if (isPointInBounds(p, b)) {
     if (tool.value === 'select') {
-      dragMode.value = 'move'
+      if (e.altKey) {
+        dragMode.value = 'move'
+        dragStart.value = p
+        dragStartBounds.value = { ...b }
+        return
+      }
+      dragMode.value = 'new'
       dragStart.value = p
-      dragStartBounds.value = { ...b }
+      dragStartBounds.value = null
+      setBounds({ x: p.x, y: p.y, width: 0, height: 0 })
       return
     }
 
@@ -1073,6 +1087,7 @@ function onContextMenu(e: MouseEvent): void {
 
 function onPointerMove(e: PointerEvent): void {
   if (!url.value) return
+  pointerAltKey = e.altKey
   pendingPointerX = clamp(e.clientX, 0, viewportWidth.value)
   pendingPointerY = clamp(e.clientY, 0, viewportHeight.value)
   hasPendingPointer = true
@@ -1293,7 +1308,7 @@ function onKeyDown(e: KeyboardEvent): void {
 const toolbarStyle = computed(() => {
   const b = bounds.value
   if (!b || !imageReady.value || b.width < 1 || b.height < 1) return { display: 'none' }
-  const top = clamp(b.y + b.height + 10, 10, viewportHeight.value - 54)
+  const top = clamp(b.y + b.height + 10, 10, viewportHeight.value - 80)
   const left = clamp(b.x, 10, viewportWidth.value - 260)
   return { top: `${top}px`, left: `${left}px` }
 })
