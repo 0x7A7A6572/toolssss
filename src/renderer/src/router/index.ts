@@ -1,5 +1,6 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import EyeProtection from '../views/EyeProtection/EyeProtection.vue'
+import LandingView from '../views/Landing/LandingView.vue'
 import OtherTools from '../views/OtherTools/OtherTools.vue'
 import ScriptLibrary from '../views/ScriptLibrary/ScriptLibrary.vue'
 import SettingsView from '../views/Settings/SettingsView.vue'
@@ -11,6 +12,11 @@ const routes = [
   {
     path: '/',
     redirect: '/other-tools'
+  },
+  {
+    path: '/landing',
+    name: 'Landing',
+    component: LandingView
   },
   {
     path: '/sticky-notes',

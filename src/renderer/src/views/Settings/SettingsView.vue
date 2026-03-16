@@ -364,13 +364,14 @@ onMounted(() => {
           @change="
             update({
               translate: {
-                provider: ($event.target as HTMLSelectElement).value as 'baidu' | 'bing'
+                provider: ($event.target as HTMLSelectElement).value as 'baidu' | 'bing' | 'ai'
               }
             })
           "
         >
           <option value="baidu">百度翻译</option>
           <option value="bing">必应翻译（Microsoft Translator）</option>
+          <option value="ai">AI 翻译（OpenAI Compatible）</option>
         </select>
       </div>
 
@@ -421,7 +422,7 @@ onMounted(() => {
         </div>
       </template>
 
-      <template v-else>
+      <template v-else-if="settings.translate.provider === 'bing'">
         <div class="row">
           <div class="label">Base URL</div>
           <input
@@ -465,6 +466,12 @@ onMounted(() => {
               })
             "
           />
+        </div>
+      </template>
+
+      <template v-else>
+        <div class="hint">
+          使用下方「AI 服务」配置的 Base URL / Model / API Key，通过 /v1/chat/completions 进行翻译。
         </div>
       </template>
 
@@ -514,7 +521,7 @@ onMounted(() => {
       </div>
 
       <div class="hint">
-        百度翻译接口：/api/trans/vip/translate；必应翻译接口：/translate?api-version=3.0
+        百度翻译接口：/api/trans/vip/translate；必应翻译接口：/translate?api-version=3.0；AI：/v1/chat/completions
       </div>
     </section>
 

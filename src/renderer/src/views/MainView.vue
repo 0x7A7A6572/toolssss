@@ -8,11 +8,12 @@ const route = useRoute()
 
 const tabs = [
   { id: 'OtherTools', label: House, type: 'icon', path: '/other-tools' },
-  { id: 'StickyNotes', label: '便签工具', path: '/sticky-notes' },
-  { id: 'EyeProtection', label: '护眼工具', path: '/eye-protection' },
+  { id: 'StickyNotes', label: '便签', path: '/sticky-notes' },
+  { id: 'EyeProtection', label: '护眼', path: '/eye-protection' },
   { id: 'Translator', label: '快捷翻译', path: '/translator' },
   { id: 'SnipPaste', label: '截屏贴图', path: '/snip-paste' },
-  { id: 'ScriptLibrary', label: '脚本库', path: '/script-library' }
+  { id: 'ScriptLibrary', label: '脚本库', path: '/script-library' },
+  { id: 'Landing', label: '关于', path: '/landing' }
 ]
 
 function selectTab(path: string): void {

@@ -1,4 +1,4 @@
-export type TranslateProvider = 'baidu' | 'bing'
+export type TranslateProvider = 'baidu' | 'bing' | 'ai'
 
 export interface TranslateConfig {
   provider: TranslateProvider
