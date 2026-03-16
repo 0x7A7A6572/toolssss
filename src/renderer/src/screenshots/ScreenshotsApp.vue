@@ -91,7 +91,7 @@ let lastMagnifierPointer: { x: number; y: number } | null = null
 let lastUiUpdateAt = 0
 let lastMagnifierDrawAt = 0
 let lastColorSampleAt = 0
-const uiUpdateIntervalMs = 33
+const uiUpdateIntervalMs = 16
 const colorSampleIntervalMs = 66
 
 const dragMode = ref<DragMode>(null)
@@ -600,7 +600,7 @@ function ensureOverlayContext(): { ctx: CanvasRenderingContext2D; dpr: number } 
   const ctx = overlayCtx
   if (!ctx) return null
 
-  const dpr = window.devicePixelRatio || 1
+  const dpr = 1
   const targetW = Math.floor(viewportWidth.value * dpr)
   const targetH = Math.floor(viewportHeight.value * dpr)
   if (overlayCanvasW !== targetW || overlayCanvasH !== targetH || overlayCanvasDpr !== dpr) {
