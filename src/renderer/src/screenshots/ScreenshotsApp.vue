@@ -70,6 +70,10 @@ const defaultLang: Lang = {
 const url = ref<string | null>(null)
 const display = ref<Display | null>(null)
 const lang = ref<Lang>(defaultLang)
+const windowRects = ref<Array<{ x: number; y: number; width: number; height: number; z?: number }>>(
+  []
+)
+const autoBounds = ref(false)
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const imageRef = ref<HTMLImageElement | null>(null)
@@ -924,6 +928,7 @@ function applyPointer(p: Point): void {
 
 function onPointerDown(e: PointerEvent): void {
   if (!url.value) return
+  autoBounds.value = false
   if (e.button === 2) {
     if (!bounds.value) {
       e.preventDefault()
@@ -1055,6 +1060,36 @@ function onPointerMove(e: PointerEvent): void {
   pendingPointerY = clamp(e.clientY, 0, viewportHeight.value)
   hasPendingPointer = true
   magnifierDirty = true
+  if (dragMode.value === null && drawingPointerId === null) {
+    const p = { x: pendingPointerX, y: pendingPointerY }
+    if (!bounds.value || autoBounds.value) {
+      let hit: { x: number; y: number; width: number; height: number } | null = null
+      for (const r of windowRects.value) {
+        if (
+          p.x >= r.x - (display.value?.x ?? 0) &&
+          p.x <= r.x - (display.value?.x ?? 0) + r.width &&
+          p.y >= r.y - (display.value?.y ?? 0) &&
+          p.y <= r.y - (display.value?.y ?? 0) + r.height
+        ) {
+          hit = {
+            x: r.x - (display.value?.x ?? 0),
+            y: r.y - (display.value?.y ?? 0),
+            width: r.width,
+            height: r.height
+          }
+          break
+        }
+      }
+      if (hit) {
+        autoBounds.value = true
+        setBounds(hit)
+      } else if (autoBounds.value) {
+        autoBounds.value = false
+        bounds.value = null
+        overlayDirty = true
+      }
+    }
+  }
   const b = bounds.value
   const pid = drawingPointerId
   const draft = drawingOp.value
@@ -1267,6 +1302,7 @@ function onImageError(): void {
 const onCapture = (d: Display, dataURL: string): void => {
   display.value = d
   url.value = dataURL
+  windowRects.value = []
   bounds.value = null
   imageReady.value = false
   magnifierPos.value = null
@@ -1283,6 +1319,7 @@ const onCapture = (d: Display, dataURL: string): void => {
 const onReset = (): void => {
   url.value = null
   display.value = null
+  windowRects.value = []
   bounds.value = null
   imageReady.value = false
   magnifierPos.value = null
@@ -1359,6 +1396,21 @@ function requestFrame(): void {
 
 const captureListener: ScreenshotsListener = (...args: unknown[]): void => {
   onCapture(args[0] as Display, args[1] as string)
+  const rects = Array.isArray(args[2]) ? (args[2] as Array<Record<string, unknown>>) : []
+  windowRects.value = rects
+    .map((r) => {
+      const x = Number((r as { x?: unknown }).x)
+      const y = Number((r as { y?: unknown }).y)
+      const width = Number((r as { width?: unknown }).width)
+      const height = Number((r as { height?: unknown }).height)
+      const z = Number((r as { z?: unknown }).z)
+      return { x, y, width, height, z }
+    })
+    .filter((r) => Number.isFinite(r.x) && Number.isFinite(r.y) && r.width > 0 && r.height > 0)
+    .sort(
+      (a, b) =>
+        (Number.isFinite(b.z ?? 0) ? (b.z ?? 0) : 0) - (Number.isFinite(a.z ?? 0) ? (a.z ?? 0) : 0)
+    )
 }
 const setLangListener: ScreenshotsListener = (...args: unknown[]): void => {
   onSetLang(args[0] as Partial<Lang>)

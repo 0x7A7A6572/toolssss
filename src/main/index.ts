@@ -433,9 +433,56 @@ async function getStickerOcrWorker(): Promise<{
       }
 
       const bundledLangPath = join(process.resourcesPath, 'tessdata')
-      const langPath = existsSync(join(bundledLangPath, 'chi_sim.traineddata.gz'))
+      let langPath: string | undefined = existsSync(join(bundledLangPath, 'chi_sim.traineddata.gz'))
         ? bundledLangPath
         : undefined
+
+      if (!langPath) {
+        try {
+          const appRoot = app.getAppPath()
+          const chiSrc = join(
+            appRoot,
+            'node_modules',
+            '@tesseract.js-data',
+            'chi_sim',
+            '4.0.0_best_int',
+            'chi_sim.traineddata.gz'
+          )
+          const engSrc = join(
+            appRoot,
+            'node_modules',
+            '@tesseract.js-data',
+            'eng',
+            '4.0.0_best_int',
+            'eng.traineddata.gz'
+          )
+          if (existsSync(chiSrc) && existsSync(engSrc)) {
+            const devLangPath = join(app.getPath('userData'), 'tessdata-dev')
+            try {
+              await fsp.mkdir(devLangPath, { recursive: true })
+            } catch {
+              // ignore
+            }
+            const chiDst = join(devLangPath, 'chi_sim.traineddata.gz')
+            const engDst = join(devLangPath, 'eng.traineddata.gz')
+            try {
+              await fsp.copyFile(chiSrc, chiDst)
+            } catch {
+              // ignore
+            }
+            try {
+              await fsp.copyFile(engSrc, engDst)
+            } catch {
+              // ignore
+            }
+            if (existsSync(chiDst) && existsSync(engDst)) {
+              langPath = devLangPath
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
 
       const mod = await import('tesseract.js')
       const createWorker = (

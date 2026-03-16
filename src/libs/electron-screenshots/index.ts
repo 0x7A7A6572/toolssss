@@ -98,9 +98,67 @@ export default class Screenshots extends Events {
 
     const [imageUrl] = await Promise.all([this.capture(display), this.isReady])
 
+    let windows: Array<{ x: number; y: number; width: number; height: number; z?: number }> = []
+    try {
+      const { Window } = await import('node-screenshots')
+      type NSSWindow = {
+        x: () => number
+        y: () => number
+        width: () => number
+        height: () => number
+        z?: () => number
+      }
+      const all = Window.all() as unknown as NSSWindow[]
+      const dx1 = display.x
+      const dy1 = display.y
+      const dx2 = display.x + display.width
+      const dy2 = display.y + display.height
+      const toDipRect = (r: {
+        x: number
+        y: number
+        width: number
+        height: number
+      }): { x: number; y: number; width: number; height: number } => {
+        const p1 = screen.screenToDipPoint({ x: Math.round(r.x), y: Math.round(r.y) })
+        const p2 = screen.screenToDipPoint({
+          x: Math.round(r.x + r.width),
+          y: Math.round(r.y + r.height)
+        })
+        return {
+          x: p1.x,
+          y: p1.y,
+          width: Math.max(0, p2.x - p1.x),
+          height: Math.max(0, p2.y - p1.y)
+        }
+      }
+      const intersect = (r: { x: number; y: number; width: number; height: number }): boolean => {
+        const x2 = r.x + r.width
+        const y2 = r.y + r.height
+        return !(x2 <= dx1 || r.x >= dx2 || y2 <= dy1 || r.y >= dy2)
+      }
+      windows = all
+        .map((w) => {
+          const x = Number(w.x?.() ?? 0)
+          const y = Number(w.y?.() ?? 0)
+          const width = Number(w.width?.() ?? 0)
+          const height = Number(w.height?.() ?? 0)
+          const z = Number(w.z?.() ?? 0)
+          const dip = toDipRect({ x, y, width, height })
+          return { x: dip.x, y: dip.y, width: dip.width, height: dip.height, z }
+        })
+        .filter((r) => r.width > 0 && r.height > 0 && intersect(r))
+        .sort(
+          (a, b) =>
+            (Number.isFinite(b.z ?? 0) ? (b.z ?? 0) : 0) -
+            (Number.isFinite(a.z ?? 0) ? (a.z ?? 0) : 0)
+        )
+    } catch (err) {
+      this.logger('SCREENSHOTS:capture list windows error %o', err)
+    }
+
     await this.createWindow(display)
 
-    this.$view.webContents.send('SCREENSHOTS:capture', display, imageUrl)
+    this.$view.webContents.send('SCREENSHOTS:capture', display, imageUrl, windows)
   }
 
   /**
