@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { isProxy, nextTick } from 'vue'
-import { mount } from '@vue/test-utils'
+import { enableAutoUnmount, mount } from '@vue/test-utils'
 import ScreenshotsApp from '../ScreenshotsApp.vue'
+
+enableAutoUnmount(afterEach)
 
 type Listener = (...args: unknown[]) => void
 

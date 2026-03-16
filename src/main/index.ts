@@ -55,6 +55,20 @@ const stickerWindows = new Map<number, BrowserWindow>()
 let stickersHidden = false
 let overlaySuspended = false
 
+const snipShortcutDebug = Boolean(is.dev) || process.env.SNIP_SHORTCUT_DEBUG === '1'
+
+function snipDbg(...args: unknown[]): void {
+  if (!snipShortcutDebug) return
+  console.log('[snip-shortcut]', ...args)
+}
+
+function setSnipCapturing(next: boolean): void {
+  if (snipCapturing === next) return
+  snipCapturing = next
+  snipDbg('snipCapturing', snipCapturing)
+  ensureShortcuts()
+}
+
 let dailyAlarmTimer: NodeJS.Timeout | undefined
 let breakTimer: NodeJS.Timeout | undefined
 let snoozeTimer: NodeJS.Timeout | undefined
@@ -610,8 +624,8 @@ function createStickerWindow(payload: StickerPayload): BrowserWindow {
       ? nativeImage.createFromDataURL(payload.data)
       : clipboard.readImage()
     const size = image.getSize()
-    const maxW = Math.max(360, Math.round(work.width * 0.6))
-    const maxH = Math.max(260, Math.round(work.height * 0.6))
+    const maxW = Math.max(360, Math.round(work.width * 0.38))
+    const maxH = Math.max(260, Math.round(work.height * 0.38))
     w = clampNumber(size.width + 24, 120, maxW)
     h = clampNumber(size.height + 24, 90, maxH)
   } else if (payload.kind === 'color') {
@@ -882,16 +896,16 @@ function startAppSnip(): void {
   if (!isScreenshotsHooked) {
     isScreenshotsHooked = true
     screenshots.on('windowClosed', () => {
-      snipCapturing = false
+      setSnipCapturing(false)
       resumeOverlayAfterSnip()
     })
     screenshots.on('windowCreated', (win: BrowserWindow) => {
       win.on('hide', () => {
-        snipCapturing = false
+        setSnipCapturing(false)
         resumeOverlayAfterSnip()
       })
       win.on('closed', () => {
-        snipCapturing = false
+        setSnipCapturing(false)
         resumeOverlayAfterSnip()
       })
     })
@@ -930,15 +944,15 @@ function startAppSnip(): void {
     })
 
     screenshots.on('cancel', () => {
-      snipCapturing = false
+      setSnipCapturing(false)
       resumeOverlayAfterSnip()
     })
   }
 
   suspendOverlayForSnip()
-  snipCapturing = true
+  setSnipCapturing(true)
   screenshots.startCapture().catch(() => {
-    snipCapturing = false
+    setSnipCapturing(false)
     resumeOverlayAfterSnip()
     return null
   })
@@ -2208,6 +2222,27 @@ function ensureAutoStart(): void {
 function ensureShortcuts(): void {
   globalShortcut.unregisterAll()
 
+  const conflicts: Record<string, string[]> = {}
+  const entries: Array<{ name: string; acc: string }> = []
+  for (const [name, raw] of Object.entries(settings.shortcuts ?? ({} as Record<string, unknown>))) {
+    if (typeof raw !== 'string') continue
+    const acc = raw.trim()
+    if (!acc) continue
+    entries.push({ name, acc })
+  }
+  for (const { name, acc } of entries) {
+    const k = acc.toLowerCase()
+    const arr = conflicts[k] ?? (conflicts[k] = [])
+    arr.push(name)
+  }
+  const dup = Object.entries(conflicts).filter(([, names]) => names.length > 1)
+  if (dup.length) {
+    console.warn(
+      'Shortcut conflicts detected:',
+      dup.map(([acc, names]) => ({ acc, keys: names }))
+    )
+  }
+
   if (settings.shortcuts.toggleEye) {
     try {
       globalShortcut.register(settings.shortcuts.toggleEye, () => {
@@ -2265,10 +2300,11 @@ function ensureShortcuts(): void {
       const acc = (settings.shortcuts as Record<string, string>).stickerPaste
       if (acc) {
         try {
-          globalShortcut.register(acc, () => {
-            if (snipCapturing) return
-            pasteStickerFromClipboard()
-          })
+          if (!snipCapturing) {
+            globalShortcut.register(acc, () => pasteStickerFromClipboard())
+          } else {
+            snipDbg('skip register stickerPaste during snip', acc)
+          }
         } catch (e) {
           console.error('Failed to register shortcut:', acc, e)
         }
@@ -2279,7 +2315,11 @@ function ensureShortcuts(): void {
       const acc = (settings.shortcuts as Record<string, string>).stickersToggleHidden
       if (acc) {
         try {
-          globalShortcut.register(acc, () => toggleStickersHidden())
+          if (!snipCapturing) {
+            globalShortcut.register(acc, () => toggleStickersHidden())
+          } else {
+            snipDbg('skip register stickersToggleHidden during snip', acc)
+          }
         } catch (e) {
           console.error('Failed to register shortcut:', acc, e)
         }

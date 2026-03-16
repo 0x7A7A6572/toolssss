@@ -263,6 +263,12 @@ function commitTextEditor(): void {
 
 function onTextEditorKeyDown(e: KeyboardEvent): void {
   e.stopPropagation()
+  if (e.key === 'F3' || e.code === 'F3') {
+    e.preventDefault()
+    commitTextEditor()
+    void onSaveAndStick()
+    return
+  }
   if (e.key === 'Escape') {
     e.preventDefault()
     closeTextEditor()
@@ -842,6 +848,17 @@ async function onSaveAndStick(): Promise<void> {
   const b = bounds.value
   const d = display.value
   if (!b || !d) return
+  if (!imageReady.value) {
+    const img = imageRef.value
+    if (img) {
+      const handler = (): void => {
+        img.removeEventListener('load', handler)
+        void onSaveAndStick()
+      }
+      img.addEventListener('load', handler, { once: true })
+    }
+    return
+  }
   submitting.value = true
   try {
     const blob = await cropToBlob(b)
@@ -1254,16 +1271,10 @@ function onKeyDown(e: KeyboardEvent): void {
   }
   if (key === 'c') {
     e.preventDefault()
-    const shouldExit = !bounds.value
     void (async () => {
       await copyColor(e.shiftKey ? 'rgb' : 'hex')
-      if (shouldExit) {
-        onCancel()
-        return
-      }
-      bounds.value = null
-      requestAnimationFrame(() => window.screenshots.reset())
-      requestFrame()
+      autoBounds.value = false
+      onCancel()
     })()
     return
   }
@@ -1460,11 +1471,14 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  window.screenshots.off('capture', captureListener)
-  window.screenshots.off('reset', onReset)
-  window.screenshots.off('setLang', setLangListener)
+  const api = window.screenshots
+  if (api?.off) {
+    api.off('capture', captureListener)
+    api.off('reset', onReset)
+    api.off('setLang', setLangListener)
+  }
   if (debugEnabled) {
-    window.screenshots.off('ipcAck', ipcAckListener)
+    api?.off?.('ipcAck', ipcAckListener)
     document.removeEventListener('click', docClickCapture, true)
   }
 

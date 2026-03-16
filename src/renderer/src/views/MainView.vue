@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router'
-// import logo from '../assets/electron.svg'
 import { House, Settings2 } from 'lucide-vue-next'
 
 const router = useRouter()
