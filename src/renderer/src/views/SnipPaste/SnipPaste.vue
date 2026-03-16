@@ -8,6 +8,7 @@ type SnipSavedItem = {
   name: string
   filePath: string
   thumbUrl: string | null
+  thumbStatus?: 'idle' | 'loading' | 'ready' | 'error'
   mtimeMs: number
   size: number
 }
@@ -15,12 +16,25 @@ type SnipSavedItem = {
 const saved = ref<SnipSavedItem[]>([])
 const loadingSaved = ref(false)
 const helpOpen = ref(false)
+let thumbListToken = 0
+let thumbObserver: IntersectionObserver | null = null
+const elToItem = new WeakMap<Element, SnipSavedItem>()
+const thumbQueue: SnipSavedItem[] = []
+let thumbActive = 0
+const thumbConcurrency = 3
 
 async function refreshSaved(): Promise<void> {
   loadingSaved.value = true
   try {
+    thumbListToken += 1
+    thumbQueue.length = 0
     const result = await window.electron.ipcRenderer.invoke('snip:saved:list')
-    saved.value = Array.isArray(result) ? (result as SnipSavedItem[]) : []
+    const next = Array.isArray(result) ? (result as SnipSavedItem[]) : []
+    for (const it of next) {
+      it.thumbUrl = null
+      it.thumbStatus = 'idle'
+    }
+    saved.value = next
   } finally {
     loadingSaved.value = false
   }
@@ -36,9 +50,16 @@ async function clearSaved(): Promise<void> {
   if (!ok) return
   loadingSaved.value = true
   try {
+    thumbListToken += 1
+    thumbQueue.length = 0
     await window.electron.ipcRenderer.invoke('snip:saved:clear')
     const result = await window.electron.ipcRenderer.invoke('snip:saved:list')
-    saved.value = Array.isArray(result) ? (result as SnipSavedItem[]) : []
+    const next = Array.isArray(result) ? (result as SnipSavedItem[]) : []
+    for (const it of next) {
+      it.thumbUrl = null
+      it.thumbStatus = 'idle'
+    }
+    saved.value = next
   } finally {
     loadingSaved.value = false
   }
@@ -52,16 +73,78 @@ function stickSaved(item: SnipSavedItem): void {
   window.electron.ipcRenderer.invoke('snip:saved:stick', item.filePath).catch(() => null)
 }
 
+function pumpThumbQueue(token: number): void {
+  while (thumbActive < thumbConcurrency && thumbQueue.length) {
+    const item = thumbQueue.shift()
+    if (!item) continue
+    if (item.thumbStatus !== 'loading') continue
+    thumbActive += 1
+    window.electron.ipcRenderer
+      .invoke('snip:saved:thumb', item.filePath)
+      .then((v: unknown) => {
+        if (token !== thumbListToken) return
+        const url = typeof v === 'string' && v.trim() ? v : null
+        item.thumbUrl = url
+        item.thumbStatus = url ? 'ready' : 'error'
+      })
+      .catch(() => {
+        if (token !== thumbListToken) return
+        item.thumbUrl = null
+        item.thumbStatus = 'error'
+      })
+      .finally(() => {
+        thumbActive -= 1
+        pumpThumbQueue(token)
+      })
+  }
+}
+
+function ensureThumb(item: SnipSavedItem): void {
+  if (
+    item.thumbStatus === 'ready' ||
+    item.thumbStatus === 'loading' ||
+    item.thumbStatus === 'error'
+  )
+    return
+  item.thumbStatus = 'loading'
+  thumbQueue.push(item)
+  pumpThumbQueue(thumbListToken)
+}
+
+function onShotEl(el: unknown, item: SnipSavedItem): void {
+  const o = thumbObserver
+  if (!o) return
+  if (!(el instanceof Element)) return
+  elToItem.set(el, item)
+  o.observe(el)
+}
+
 const onSavedChanged = (): void => {
   refreshSaved().catch(() => null)
 }
 
 onMounted(() => {
+  thumbObserver = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue
+        const item = elToItem.get(entry.target)
+        if (!item) continue
+        ensureThumb(item)
+        thumbObserver?.unobserve(entry.target)
+      }
+    },
+    { rootMargin: '220px' }
+  )
   refreshSaved().catch(() => null)
   window.electron.ipcRenderer.on('snip:saved:changed', onSavedChanged)
 })
 
 onBeforeUnmount(() => {
+  if (thumbObserver) {
+    thumbObserver.disconnect()
+    thumbObserver = null
+  }
   window.electron.ipcRenderer.removeListener('snip:saved:changed', onSavedChanged)
 })
 </script>
@@ -112,9 +195,16 @@ onBeforeUnmount(() => {
 
       <MasonryWall v-else :items="saved" :ssr-columns="1" :column-width="240" :gap="12">
         <template #default="{ item }">
-          <div class="shot" role="button" tabindex="0" @click="revealSaved(item)">
-            <div v-if="!item.thumbUrl" class="shot-img missing">无法预览</div>
-            <img v-else class="shot-img" :src="item.thumbUrl" :alt="item.name" loading="lazy" />
+          <div
+            :ref="(el) => onShotEl(el, item)"
+            class="shot"
+            role="button"
+            tabindex="0"
+            @click="revealSaved(item)"
+          >
+            <div v-if="item.thumbStatus === 'error'" class="shot-img missing">无法预览</div>
+            <div v-else-if="!item.thumbUrl" class="shot-img loading">加载中…</div>
+            <img v-else class="shot-img" :src="item.thumbUrl" :alt="item.name" />
             <button class="pin-btn" type="button" @click.stop="stickSaved(item)">贴图</button>
             <div class="shot-name">{{ item.name }}</div>
           </div>
@@ -258,6 +348,14 @@ onBeforeUnmount(() => {
   cursor: not-allowed;
 }
 
+.shot-img.loading {
+  aspect-ratio: 4 / 3;
+  display: grid;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 12px;
+}
+
 .btn:hover:enabled {
   background: rgba(255, 255, 255, 0.1);
 }
@@ -323,6 +421,8 @@ onBeforeUnmount(() => {
 .shot-img {
   width: 100%;
   height: auto;
+  max-height: 300px;
+  object-fit: cover;
   display: block;
 }
 

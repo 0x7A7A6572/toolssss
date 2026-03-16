@@ -422,6 +422,97 @@ test('text editor Enter does not trigger OK', async () => {
   expect(mock.api.ok).toHaveBeenCalledTimes(0)
 })
 
+test('each capture resets tool to select', async () => {
+  const mock = createScreenshotsMock()
+  ;(window as unknown as Record<string, unknown>)['screenshots'] = mock.api
+
+  const wrapper = mount(ScreenshotsApp, { attachTo: document.body })
+  await nextTick()
+
+  mock.emit('capture', display, 'data:image/png;base64,iVBORw0KGgo=')
+  await nextTick()
+
+  const img1 = wrapper.get('img.bg').element as HTMLImageElement
+  Object.defineProperty(img1, 'naturalWidth', { value: 800, configurable: true })
+  Object.defineProperty(img1, 'naturalHeight', { value: 600, configurable: true })
+  await wrapper.get('img.bg').trigger('load')
+  await nextTick()
+
+  const canvas = wrapper.get('canvas.overlay').element as HTMLCanvasElement & {
+    setPointerCapture?: (id: number) => void
+    releasePointerCapture?: (id: number) => void
+  }
+  canvas.setPointerCapture = vi.fn()
+  canvas.releasePointerCapture = vi.fn()
+
+  dispatchPointer(canvas, 'pointerdown', { clientX: 10, clientY: 10, pointerId: 1, button: 0 })
+  dispatchPointer(canvas, 'pointermove', { clientX: 110, clientY: 110, pointerId: 1, button: 0 })
+  flushRaf()
+  dispatchPointer(canvas, 'pointerup', { clientX: 110, clientY: 110, pointerId: 1, button: 0 })
+  flushRaf()
+  await nextTick()
+
+  await wrapper.get('.toolbar button[aria-label="矩形"]').trigger('click')
+  await nextTick()
+  expect(wrapper.get('.toolbar button[aria-label="矩形"]').classes()).toContain('active')
+
+  mock.emit('capture', display, 'data:image/png;base64,iVBORw0KGgo2=')
+  await nextTick()
+
+  const img2 = wrapper.get('img.bg').element as HTMLImageElement
+  Object.defineProperty(img2, 'naturalWidth', { value: 800, configurable: true })
+  Object.defineProperty(img2, 'naturalHeight', { value: 600, configurable: true })
+  await wrapper.get('img.bg').trigger('load')
+  await nextTick()
+
+  dispatchPointer(canvas, 'pointerdown', { clientX: 10, clientY: 10, pointerId: 2, button: 0 })
+  dispatchPointer(canvas, 'pointermove', { clientX: 110, clientY: 110, pointerId: 2, button: 0 })
+  flushRaf()
+  dispatchPointer(canvas, 'pointerup', { clientX: 110, clientY: 110, pointerId: 2, button: 0 })
+  flushRaf()
+  await nextTick()
+
+  expect(wrapper.get('.toolbar button[aria-label="选择/移动"]').classes()).toContain('active')
+})
+
+test('double click locks snapped bounds and disables snapping until next capture', async () => {
+  const mock = createScreenshotsMock()
+  ;(window as unknown as Record<string, unknown>)['screenshots'] = mock.api
+
+  const wrapper = mount(ScreenshotsApp, { attachTo: document.body })
+  await nextTick()
+
+  const winRect = { x: 0, y: 0, width: 200, height: 200 }
+  mock.emit('capture', display, 'data:image/png;base64,iVBORw0KGgo=', [winRect])
+  await nextTick()
+
+  const img = wrapper.get('img.bg').element as HTMLImageElement
+  Object.defineProperty(img, 'naturalWidth', { value: 800, configurable: true })
+  Object.defineProperty(img, 'naturalHeight', { value: 600, configurable: true })
+  await wrapper.get('img.bg').trigger('load')
+  await nextTick()
+
+  const canvas = wrapper.get('canvas.overlay').element as HTMLCanvasElement
+  dispatchPointer(canvas, 'pointermove', { clientX: 10, clientY: 10, pointerId: 1, button: 0 })
+  flushRaf()
+  await nextTick()
+
+  await wrapper.get('canvas.overlay').trigger('dblclick')
+  await nextTick()
+
+  dispatchPointer(canvas, 'pointermove', { clientX: 500, clientY: 500, pointerId: 1, button: 0 })
+  flushRaf()
+  await nextTick()
+
+  await wrapper.get('.toolbar button[aria-label="完成"]').trigger('click')
+  await vi.runAllTimersAsync()
+  await nextTick()
+
+  expect(mock.api.ok).toHaveBeenCalledTimes(1)
+  const payload = mock.api.ok.mock.calls[0]?.[0] as ScreenshotsData
+  expect(payload.bounds).toEqual(winRect)
+})
+
 describe('e2e-ish viewport coverage', () => {
   test.each([
     { w: 800, h: 600 },

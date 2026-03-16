@@ -9,6 +9,7 @@ const settings = ref<AppSettings>(structuredClone(DEFAULT_SETTINGS))
 const saving = ref(false)
 const appPaths = ref<{ userData: string; pictures: string } | null>(null)
 const aiApiKeyDraft = ref('')
+const version = ref('')
 
 function joinPath(base: string, tail: string): string {
   const b = base.trim().replace(/[\\/]+$/, '')
@@ -121,6 +122,12 @@ onMounted(() => {
       const p = v as { userData?: unknown; pictures?: unknown }
       if (typeof p.userData !== 'string' || typeof p.pictures !== 'string') return
       appPaths.value = { userData: p.userData, pictures: p.pictures }
+    })
+    .catch(() => null)
+  window.electron.ipcRenderer
+    .invoke('app:version')
+    .then((v: unknown) => {
+      version.value = typeof v === 'string' ? v : ''
     })
     .catch(() => null)
   window.electron.ipcRenderer.on('settings:changed', (_: unknown, s: unknown) => {
@@ -625,6 +632,7 @@ onMounted(() => {
     </section>
 
     <footer class="footer">
+      <div class="version">{{ version }}</div>
       <div class="status">{{ saving ? '保存中…' : '已保存' }}</div>
     </footer>
   </div>
@@ -806,7 +814,9 @@ onMounted(() => {
   margin-top: auto;
   padding-top: 8px;
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--ev-c-text-3);
 }
 
 .status {

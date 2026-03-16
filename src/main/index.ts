@@ -20,7 +20,7 @@ import {
 
 const execAsync = promisify(exec)
 import { readFileSync, writeFileSync, existsSync } from 'fs'
-import { join } from 'path'
+import { join, resolve, sep } from 'path'
 import { promises as fsp } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -76,6 +76,7 @@ let snoozeTimer: NodeJS.Timeout | undefined
 let lastAlarmPayload: { reason: AlarmReason; title: string; body: string } | null = null
 let breakNextAt: number | null = null
 let restTipsCache: string[] | null = null
+const snipSavedThumbCache = new Map<string, string | null>()
 
 function getBreakStatus(): { enabled: boolean; intervalMinutes: number; nextAt: number | null } {
   return {
@@ -903,6 +904,17 @@ function defaultSnipSaveDir(): string {
 function resolveSnipSaveDir(): string {
   const raw = settings.snip.saveDir.trim()
   return raw ? raw : defaultSnipSaveDir()
+}
+
+function isWithinSnipSaveDir(filePath: string): boolean {
+  const base = resolveSnipSaveDir()
+  const absBase = resolve(base)
+  const absTarget = resolve(filePath)
+  const basePrefix = absBase.endsWith(sep) ? absBase : absBase + sep
+  if (process.platform === 'win32') {
+    return absTarget.toLowerCase().startsWith(basePrefix.toLowerCase())
+  }
+  return absTarget.startsWith(basePrefix)
 }
 
 function formatSnipFileName(ts: number): string {
@@ -2257,19 +2269,6 @@ function ensureAutoStart(): void {
   } catch {
     void 0
   }
-
-  try {
-    const actual = app.getLoginItemSettings()
-    if (typeof actual.openAtLogin === 'boolean' && actual.openAtLogin !== desired) {
-      settings.general.autoStart = actual.openAtLogin
-      saveSettingsToDisk(settings)
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('settings:changed', settings)
-      }
-    }
-  } catch {
-    void 0
-  }
 }
 
 function ensureShortcuts(): void {
@@ -2449,6 +2448,9 @@ app.whenReady().then(() => {
       userData: app.getPath('userData'),
       pictures: app.getPath('pictures')
     }
+  })
+  ipcMain.handle('app:version', () => {
+    return app.getVersion()
   })
   ipcMain.handle('settings:get', () => settings)
   ipcMain.handle('ai:apiKey:set', (_event, payload: unknown) => {
@@ -2639,30 +2641,31 @@ app.whenReady().then(() => {
     meta.sort((a, b) => b.mtimeMs - a.mtimeMs)
 
     const top = meta.slice(0, 120)
-    const items: Array<{
-      name: string
-      filePath: string
-      thumbUrl: string | null
-      mtimeMs: number
-      size: number
-    }> = []
-
-    for (const it of top) {
-      let thumbUrl: string | null = null
-      try {
-        const img = nativeImage.createFromPath(it.filePath)
-        if (!img.isEmpty()) {
-          const resized = img.resize({ width: 420 })
-          const png = resized.toPNG()
-          thumbUrl = `data:image/png;base64,${png.toString('base64')}`
-        }
-      } catch {
-        thumbUrl = null
+    return top.map((it) => ({ ...it, thumbUrl: null }))
+  })
+  ipcMain.handle('snip:saved:thumb', async (_event, payload: unknown) => {
+    const filePath = typeof payload === 'string' ? payload : ''
+    if (!filePath) return null
+    if (!isWithinSnipSaveDir(filePath)) return null
+    const cached = snipSavedThumbCache.get(filePath)
+    if (cached !== undefined) return cached
+    let thumbUrl: string | null = null
+    try {
+      const img = nativeImage.createFromPath(filePath)
+      if (!img.isEmpty()) {
+        const resized = img.resize({ width: 420 })
+        const png = resized.toPNG()
+        thumbUrl = `data:image/png;base64,${png.toString('base64')}`
       }
-      items.push({ ...it, thumbUrl })
+    } catch {
+      thumbUrl = null
     }
-
-    return items
+    snipSavedThumbCache.set(filePath, thumbUrl)
+    if (snipSavedThumbCache.size > 300) {
+      const k = snipSavedThumbCache.keys().next().value as string | undefined
+      if (k) snipSavedThumbCache.delete(k)
+    }
+    return thumbUrl
   })
   ipcMain.handle('snip:saved:clear', async () => {
     const dir = resolveSnipSaveDir()

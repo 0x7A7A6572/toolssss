@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRaw } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRaw, watch } from 'vue'
 import {
   Brush,
   Check,
@@ -74,6 +74,7 @@ const windowRects = ref<Array<{ x: number; y: number; width: number; height: num
   []
 )
 const autoBounds = ref(false)
+const autoBoundsEnabled = ref(true)
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const imageRef = ref<HTMLImageElement | null>(null)
@@ -1085,6 +1086,17 @@ function onContextMenu(e: MouseEvent): void {
   if (!bounds.value) onCancel()
 }
 
+function onDblClick(e: MouseEvent): void {
+  if (!autoBoundsEnabled.value) return
+  if (!autoBounds.value) return
+  if (!bounds.value) return
+  e.preventDefault()
+  autoBounds.value = false
+  autoBoundsEnabled.value = false
+  overlayDirty = true
+  requestFrame()
+}
+
 function onPointerMove(e: PointerEvent): void {
   if (!url.value) return
   pointerAltKey = e.altKey
@@ -1094,7 +1106,7 @@ function onPointerMove(e: PointerEvent): void {
   magnifierDirty = true
   if (dragMode.value === null && drawingPointerId === null) {
     const p = { x: pendingPointerX, y: pendingPointerY }
-    if (!bounds.value || autoBounds.value) {
+    if (autoBoundsEnabled.value && (!bounds.value || autoBounds.value)) {
       let hit: { x: number; y: number; width: number; height: number } | null = null
       for (const r of windowRects.value) {
         if (
@@ -1331,15 +1343,22 @@ const onCapture = (d: Display, dataURL: string): void => {
   windowRects.value = []
   bounds.value = null
   imageReady.value = false
+  autoBounds.value = false
+  autoBoundsEnabled.value = true
   magnifierPos.value = null
   lastPointer.value = null
   ops.value = []
   redoOps.value = []
   drawingOp.value = null
   drawingPointerId = null
+  tool.value = 'select'
   overlayDirty = true
   magnifierDirty = true
   requestFrame()
+  void nextTick().then(() => {
+    const img = imageRef.value
+    if (img && img.complete && img.naturalWidth > 0) onImageLoad()
+  })
 }
 
 const onReset = (): void => {
@@ -1348,17 +1367,24 @@ const onReset = (): void => {
   windowRects.value = []
   bounds.value = null
   imageReady.value = false
+  autoBounds.value = false
+  autoBoundsEnabled.value = true
   magnifierPos.value = null
   lastPointer.value = null
   ops.value = []
   redoOps.value = []
   drawingOp.value = null
   drawingPointerId = null
+  tool.value = 'select'
   overlayDirty = true
   magnifierDirty = true
   requestAnimationFrame(() => window.screenshots.reset())
   requestFrame()
 }
+
+watch(url, () => {
+  imageReady.value = false
+})
 
 const onSetLang = (next: Partial<Lang>): void => {
   lang.value = { ...defaultLang, ...next }
@@ -1530,7 +1556,7 @@ onBeforeUnmount(() => {
       @error="onImageError"
     />
     <div v-else class="blank" />
-    <canvas ref="canvasRef" class="overlay" @contextmenu="onContextMenu" />
+    <canvas ref="canvasRef" class="overlay" @contextmenu="onContextMenu" @dblclick="onDblClick" />
     <textarea
       v-if="textEditorOpen"
       ref="textEditorRef"
