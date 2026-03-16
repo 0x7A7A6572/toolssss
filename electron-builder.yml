@@ -1,5 +1,6 @@
-appId: com.toolssss.app
+appId: cn.zzerx.toolssss
 productName: toolssss
+icon: resources/icon.png
 directories:
   buildResources: build
 files:
@@ -22,9 +23,13 @@ extraResources:
     to: tessdata/eng.traineddata.gz
 win:
   executableName: toolssss
-  signAndEditExecutable: false
+  icon: build/icon.ico
+  signAndEditExecutable: true
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
@@ -50,6 +55,6 @@ appImage:
 npmRebuild: false
 publish:
   provider: generic
-  url: https://example.com/auto-updates
+  url: https://toolssss.zzerx.cn/auto-updates
 electronDownload:
   mirror: https://npmmirror.com/mirrors/electron/
