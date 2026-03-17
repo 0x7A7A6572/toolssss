@@ -19,7 +19,7 @@
     "build": "npm run typecheck && electron-vite build",
     "postinstall": "electron-builder install-app-deps",
     "build:unpack": "npm run build && electron-builder --dir",
-    "build:win": "npm run build && npm run gen:icon-ico && powershell -NoProfile -Command \"$out='dist/win-build-'+[DateTimeOffset]::Now.ToUnixTimeMilliseconds(); & .\\\\node_modules\\\\.bin\\\\electron-builder.cmd --win --config.directories.output=$out\"",
+    "build:win": "npm run build && electron-builder --win",
     "build:mac": "npm run build && electron-builder --mac",
     "build:linux": "npm run build && electron-builder --linux"
   },

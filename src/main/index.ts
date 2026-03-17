@@ -23,6 +23,7 @@ import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { join, resolve, sep } from 'path'
 import { promises as fsp } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import { autoUpdater } from 'electron-updater'
 import icon from '../../resources/icon.png?asset'
 import {
   DEFAULT_SETTINGS,
@@ -77,6 +78,36 @@ let lastAlarmPayload: { reason: AlarmReason; title: string; body: string } | nul
 let breakNextAt: number | null = null
 let restTipsCache: string[] | null = null
 const snipSavedThumbCache = new Map<string, string | null>()
+
+type UpdateState = {
+  status:
+    | 'idle'
+    | 'checking'
+    | 'available'
+    | 'not-available'
+    | 'downloading'
+    | 'downloaded'
+    | 'error'
+    | 'unsupported'
+  hasUpdate: boolean
+  version: string | null
+  percent: number | null
+  message: string | null
+}
+
+let updateState: UpdateState = {
+  status: 'idle',
+  hasUpdate: false,
+  version: null,
+  percent: null,
+  message: null
+}
+
+function broadcastUpdateState(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  if (mainWindow.webContents.isLoading()) return
+  mainWindow.webContents.send('update:status', updateState)
+}
 
 function getBreakStatus(): { enabled: boolean; intervalMinutes: number; nextAt: number | null } {
   return {
@@ -2390,6 +2421,100 @@ function applySettingsToRuntime(): void {
   ensureShortcuts()
 }
 
+let updatesInitialized = false
+let updateCheckInFlight: Promise<UpdateState> | null = null
+
+function initUpdates(): void {
+  if (updatesInitialized) return
+  updatesInitialized = true
+
+  if (!app.isPackaged) {
+    updateState = {
+      status: 'unsupported',
+      hasUpdate: false,
+      version: null,
+      percent: null,
+      message: 'dev'
+    }
+    return
+  }
+
+  autoUpdater.autoDownload = true
+  autoUpdater.autoInstallOnAppQuit = true
+
+  autoUpdater.on('checking-for-update', () => {
+    updateState = {
+      status: 'checking',
+      hasUpdate: false,
+      version: null,
+      percent: null,
+      message: null
+    }
+    broadcastUpdateState()
+  })
+  autoUpdater.on('update-available', (info) => {
+    const version = typeof info?.version === 'string' ? info.version : null
+    updateState = { status: 'available', hasUpdate: true, version, percent: null, message: null }
+    broadcastUpdateState()
+  })
+  autoUpdater.on('update-not-available', () => {
+    updateState = {
+      status: 'not-available',
+      hasUpdate: false,
+      version: null,
+      percent: null,
+      message: null
+    }
+    broadcastUpdateState()
+  })
+  autoUpdater.on('download-progress', (p) => {
+    const percent = typeof p?.percent === 'number' && Number.isFinite(p.percent) ? p.percent : null
+    updateState = { ...updateState, status: 'downloading', percent }
+    broadcastUpdateState()
+  })
+  autoUpdater.on('update-downloaded', (info) => {
+    const version = typeof info?.version === 'string' ? info.version : updateState.version
+    updateState = { status: 'downloaded', hasUpdate: true, version, percent: 100, message: null }
+    broadcastUpdateState()
+  })
+  autoUpdater.on('error', (err) => {
+    const message = err instanceof Error ? err.message : String(err)
+    updateState = { status: 'error', hasUpdate: false, version: null, percent: null, message }
+    broadcastUpdateState()
+  })
+}
+
+async function requestUpdateCheck(): Promise<UpdateState> {
+  initUpdates()
+  if (updateState.status === 'unsupported') return updateState
+  if (updateCheckInFlight) return updateCheckInFlight
+  updateCheckInFlight = (async () => {
+    try {
+      await autoUpdater.checkForUpdates()
+      return updateState
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e)
+      updateState = { status: 'error', hasUpdate: false, version: null, percent: null, message }
+      broadcastUpdateState()
+      return updateState
+    } finally {
+      updateCheckInFlight = null
+    }
+  })()
+  return updateCheckInFlight
+}
+
+function installUpdate(): boolean {
+  initUpdates()
+  if (updateState.status !== 'downloaded') return false
+  try {
+    autoUpdater.quitAndInstall()
+    return true
+  } catch {
+    return false
+  }
+}
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 900,
@@ -2421,6 +2546,10 @@ function createWindow(): void {
   })
 
   loadWindow(mainWindow, {}).catch(() => null)
+
+  mainWindow.webContents.once('did-finish-load', () => {
+    broadcastUpdateState()
+  })
 }
 
 // This method will be called when Electron has finished
@@ -2452,6 +2581,11 @@ app.whenReady().then(() => {
   ipcMain.handle('app:version', () => {
     return app.getVersion()
   })
+  ipcMain.handle('update:status:get', () => updateState)
+  ipcMain.handle('update:check', async () => {
+    return await requestUpdateCheck()
+  })
+  ipcMain.handle('update:install', () => installUpdate())
   ipcMain.handle('settings:get', () => settings)
   ipcMain.handle('ai:apiKey:set', (_event, payload: unknown) => {
     const apiKey = typeof payload === 'string' ? payload.trim() : ''
@@ -2894,6 +3028,10 @@ app.whenReady().then(() => {
   screen.on('display-metrics-changed', () => ensureOverlayWindows())
 
   createWindow()
+  initUpdates()
+  setTimeout(() => {
+    void requestUpdateCheck()
+  }, 3500)
 
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the

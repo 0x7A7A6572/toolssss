@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { House, Settings2 } from 'lucide-vue-next'
 
@@ -15,9 +16,28 @@ const tabs = [
   { id: 'Landing', label: '关于', path: '/landing' }
 ]
 
+const hasUpdate = ref(false)
+const onUpdateStatus = (_: unknown, payload: unknown): void => {
+  if (!payload || typeof payload !== 'object') return
+  const p = payload as { hasUpdate?: unknown }
+  hasUpdate.value = Boolean(p.hasUpdate)
+}
+
 function selectTab(path: string): void {
   router.push(path)
 }
+
+onMounted(() => {
+  window.electron.ipcRenderer
+    .invoke('update:status:get')
+    .then((v: unknown) => onUpdateStatus(null, v))
+    .catch(() => null)
+  window.electron.ipcRenderer.on('update:status', onUpdateStatus)
+})
+
+onBeforeUnmount(() => {
+  window.electron.ipcRenderer.removeListener('update:status', onUpdateStatus)
+})
 </script>
 
 <template>
@@ -43,6 +63,7 @@ function selectTab(path: string): void {
         <div v-if="tab.type !== 'icon'" style="display: flex; align-items: center">
           <div class="pre-icon" :class="{ active: route.path === tab.path }"></div>
           <span>{{ tab.label }}</span>
+          <span v-if="tab.id === 'Landing' && hasUpdate" class="dot" />
         </div>
       </button>
 
@@ -135,6 +156,15 @@ function selectTab(path: string): void {
 
 .tab .pre-icon.active {
   background-color: rgba(35, 145, 255, 0.616);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(239, 68, 68, 0.95);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.25);
+  margin-left: 8px;
 }
 
 .settings-tab {

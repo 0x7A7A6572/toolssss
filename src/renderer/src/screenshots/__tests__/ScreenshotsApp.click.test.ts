@@ -509,7 +509,7 @@ test('double click locks snapped bounds and disables snapping until next capture
   await nextTick()
 
   expect(mock.api.ok).toHaveBeenCalledTimes(1)
-  const payload = mock.api.ok.mock.calls[0]?.[0] as ScreenshotsData
+  const payload = mock.api.ok.mock.calls[0]?.[1] as ScreenshotsData
   expect(payload.bounds).toEqual(winRect)
 })
 
