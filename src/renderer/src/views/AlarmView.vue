@@ -121,14 +121,17 @@ body {
   align-items: center;
 }
 
-$shooting-time: 3000ms;
+$shooting-time: 8000ms;
 
 .night {
   position: absolute;
   width: 100%;
   height: 100%;
+  top: -30%;
+  right: -30%;
   transform: rotateZ(45deg);
   z-index: -1;
+  // background-image: linear-gradient(180deg, #090a0f, rgba(0, 0, 0, 0));
   // animation: sky 200000ms linear infinite;
 }
 

@@ -1,21 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import {
-  ArrowRight,
-  // Blocks,
-  BookOpenText,
-  ClipboardPaste,
-  LayoutGrid,
-  Languages,
-  Settings2,
-  ShieldCheck,
-  StickyNote,
-  SunMoon,
-  Zap
-} from 'lucide-vue-next'
-import { useRouter } from 'vue-router'
 
-const router = useRouter()
 const logoUrl = new URL('../../../../../resources/icon.png', import.meta.url).href
 const version = ref('')
 type UpdateState = {
@@ -85,83 +70,10 @@ async function installUpdate(): Promise<void> {
   }
 }
 
-type Feature = {
-  title: string
-  desc: string
-  icon: unknown
-}
-
 type Faq = {
   q: string
   a: string
 }
-
-type QuickLink = {
-  title: string
-  desc: string
-  icon: unknown
-  path: string
-}
-
-const features: Feature[] = [
-  {
-    title: '截屏贴图',
-    desc: '把一张图“钉”在屏幕上，不挡操作，不丢重点。',
-    icon: ClipboardPaste
-  },
-  {
-    title: '便签工具',
-    desc: '随手记、快速搜、随时整理。就像你的第二块脑子。',
-    icon: StickyNote
-  },
-  {
-    title: '快捷翻译',
-    desc: '选中即翻，复制即用。把切换成本砍掉。',
-    icon: Languages
-  },
-  {
-    title: '脚本库',
-    desc: '把高频操作变成脚本，一次写好，处处复用。',
-    icon: BookOpenText
-  },
-  {
-    title: '护眼工具',
-    desc: '节律提醒与护眼模式，长时间工作也不崩。',
-    icon: SunMoon
-  }
-  // {
-  //   title: '可扩展',
-  //   desc: '工具箱不是一堆按钮，是一套可生长的结构。',
-  //   icon: Blocks
-  // }
-]
-
-const quickLinks: QuickLink[] = [
-  { title: '工具集合', desc: '小工具入口与日常面板。', icon: LayoutGrid, path: '/other-tools' },
-  { title: '便签', desc: '随手记录，快速整理。', icon: StickyNote, path: '/sticky-notes' },
-  {
-    title: '截屏贴图',
-    desc: '截取后悬浮置顶，随时对照。',
-    icon: ClipboardPaste,
-    path: '/snip-paste'
-  },
-  { title: '翻译', desc: '选中即翻，复制即用。', icon: Languages, path: '/translator' },
-  { title: '脚本库', desc: '把重复操作写成脚本。', icon: BookOpenText, path: '/script-library' },
-  { title: '设置', desc: '配置快捷键与行为偏好。', icon: Settings2, path: '/settings' }
-]
-
-const points = [
-  {
-    title: '离线优先',
-    desc: '不依赖云端也能跑，网络不稳定也不影响基本工作流。',
-    icon: ShieldCheck
-  },
-  {
-    title: '快',
-    desc: '打开即用，减少等待与跳转，让注意力留在任务本身。',
-    icon: Zap
-  }
-]
 
 const faqs: Faq[] = [
   {
@@ -173,10 +85,6 @@ const faqs: Faq[] = [
     a: '默认以本地能力为主。涉及网络能力（比如翻译/AI）只在你配置并使用时发生请求。'
   }
 ]
-
-function go(path: string): void {
-  router.push(path)
-}
 
 onMounted(() => {
   window.electron.ipcRenderer
@@ -218,9 +126,9 @@ onBeforeUnmount(() => {
         <button v-if="canInstallUpdate" class="btn primary" type="button" @click="installUpdate">
           重启更新
         </button>
-        <div v-if="updateText" class="about-status">{{ updateText }}</div>
       </div>
     </section>
+    <div v-if="updateText" class="about-status">{{ updateText }}</div>
 
     <section class="hero card">
       <div class="hero-main">
@@ -230,16 +138,16 @@ onBeforeUnmount(() => {
           便签、截屏贴图、翻译、脚本库……你需要的不是更多工具，而是更少切换。
         </p>
 
-        <div class="cta">
+        <!-- <div class="cta">
           <button class="btn primary" type="button" @click="go('/other-tools')">
             立即开始
             <ArrowRight class="btn-icon" />
           </button>
           <button class="btn" type="button" @click="go('/settings')">全局设置</button>
-        </div>
+        </div> -->
       </div>
 
-      <div class="hero-side">
+      <!-- <div class="hero-side">
         <div class="stat-grid">
           <div class="stat">
             <div class="stat-title">目标</div>
@@ -262,10 +170,10 @@ onBeforeUnmount(() => {
             <div class="stat-desc">该安静的时候就安静。</div>
           </div>
         </div>
-      </div>
+      </div> -->
     </section>
 
-    <section class="section">
+    <!-- <section class="section">
       <header class="section-head">
         <div class="section-title">一键直达</div>
         <div class="section-subtitle">落地页不是展示页，是入口。</div>
@@ -288,9 +196,9 @@ onBeforeUnmount(() => {
           <div class="feature-desc">{{ i.desc }}</div>
         </button>
       </div>
-    </section>
+    </section> -->
 
-    <section class="section">
+    <!-- <section class="section">
       <header class="section-head">
         <div class="section-title">核心功能</div>
         <div class="section-subtitle">围绕真实工作流设计，而不是堆功能。</div>
@@ -305,9 +213,9 @@ onBeforeUnmount(() => {
           <div class="feature-desc">{{ f.desc }}</div>
         </div>
       </div>
-    </section>
+    </section> -->
 
-    <section class="section">
+    <!-- <section class="section">
       <header class="section-head">
         <div class="section-title">为什么是它</div>
         <div class="section-subtitle">把“特殊情况”变成“正常情况”。</div>
@@ -324,12 +232,12 @@ onBeforeUnmount(() => {
           <div class="feature-desc">{{ p.desc }}</div>
         </div>
       </div>
-    </section>
+    </section> -->
 
     <section class="section">
       <header class="section-head">
         <div class="section-title">常见问题</div>
-        <div class="section-subtitle">如果你还有问题，那就是我们没把东西做简单。</div>
+        <!-- <div class="section-subtitle">如果你还有问题，那就是我们没把东西做简单。</div> -->
       </header>
 
       <div class="faq">
