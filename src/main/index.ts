@@ -74,7 +74,12 @@ function setSnipCapturing(next: boolean): void {
 let dailyAlarmTimer: NodeJS.Timeout | undefined
 let breakTimer: NodeJS.Timeout | undefined
 let snoozeTimer: NodeJS.Timeout | undefined
-let lastAlarmPayload: { reason: AlarmReason; title: string; body: string } | null = null
+let lastAlarmPayload: {
+  reason: AlarmReason
+  title: string
+  body: string
+  closeOnEnd: boolean
+} | null = null
 let breakNextAt: number | null = null
 let restTipsCache: string[] | null = null
 const snipSavedThumbCache = new Map<string, string | null>()
@@ -272,6 +277,10 @@ function normalizeSettings(input: unknown): AppSettings {
     typeof obj.break?.disableInFullscreen === 'boolean'
       ? obj.break.disableInFullscreen
       : base.break.disableInFullscreen
+  base.break.closeOnEnd =
+    typeof (obj.break as { closeOnEnd?: unknown } | undefined)?.closeOnEnd === 'boolean'
+      ? (obj.break as { closeOnEnd: boolean }).closeOnEnd
+      : base.break.closeOnEnd
 
   return base
 }
@@ -382,6 +391,8 @@ function applySettingsPatch(patch: unknown): AppSettings {
       next.break.intervalMinutes = p.break.intervalMinutes
     if (typeof p.break.disableInFullscreen === 'boolean')
       next.break.disableInFullscreen = p.break.disableInFullscreen
+    if (typeof (p.break as Record<string, unknown>).closeOnEnd === 'boolean')
+      next.break.closeOnEnd = (p.break as Record<string, boolean>).closeOnEnd
   }
   {
     const rsv = (p as { reminderSeconds?: unknown }).reminderSeconds
@@ -1513,7 +1524,8 @@ public class WinApi {
 }
 
 function showAlarmWindows(reason: AlarmReason, title: string, body: string): void {
-  lastAlarmPayload = { reason, title, body }
+  const closeOnEnd = reason === 'break' ? settings.break.closeOnEnd : true
+  lastAlarmPayload = { reason, title, body, closeOnEnd }
 
   if (alarmWindows.size === 0) {
     for (const display of screen.getAllDisplays()) {
@@ -1528,6 +1540,7 @@ function showAlarmWindows(reason: AlarmReason, title: string, body: string): voi
         reason,
         title,
         body,
+        closeOnEnd,
         timeoutSec: settings.reminderSeconds
       })
     if (!win.isVisible()) win.show()

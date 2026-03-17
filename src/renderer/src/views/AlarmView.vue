@@ -19,10 +19,17 @@ function clearTimer(): void {
 
 const onShow = (_: unknown, payload: unknown): void => {
   if (!payload || typeof payload !== 'object') return
-  const p = payload as { reason?: unknown; title?: unknown; body?: unknown; timeoutSec?: unknown }
+  const p = payload as {
+    reason?: unknown
+    title?: unknown
+    body?: unknown
+    timeoutSec?: unknown
+    closeOnEnd?: unknown
+  }
   if (p.reason === 'alarm' || p.reason === 'break') reason.value = p.reason
   if (typeof p.title === 'string') title.value = p.title
   if (typeof p.body === 'string') body.value = p.body
+  const closeOnEnd = typeof p.closeOnEnd === 'boolean' ? p.closeOnEnd : true
   const total = typeof p.timeoutSec === 'number' ? p.timeoutSec : undefined
   clearTimer()
   if (total && total > 0) {
@@ -32,7 +39,7 @@ const onShow = (_: unknown, payload: unknown): void => {
       secondsLeft.value = Math.max(0, secondsLeft.value - 1)
       if (secondsLeft.value <= 0) {
         clearTimer()
-        close()
+        if (closeOnEnd) close()
       }
     }, 1000)
   } else {

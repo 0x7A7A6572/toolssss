@@ -1,6 +1,6 @@
 {
   "name": "toolssss",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "A toolbox for workflow",
   "main": "./out/main/index.js",
   "author": "zzerx",

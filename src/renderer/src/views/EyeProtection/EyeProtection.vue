@@ -276,6 +276,21 @@ onBeforeUnmount(() => {
             <option value="60">60 秒</option>
           </select>
         </div>
+        <div class="row">
+          <div class="label">结束是否关闭</div>
+          <label class="switch">
+            <input
+              type="checkbox"
+              :checked="settings.break.closeOnEnd"
+              @change="
+                update({
+                  break: { closeOnEnd: ($event.target as HTMLInputElement).checked }
+                })
+              "
+            />
+            <span class="slider" />
+          </label>
+        </div>
       </section>
     </div>
 
