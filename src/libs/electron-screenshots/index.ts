@@ -303,7 +303,7 @@ export default class Screenshots extends Events {
       width: display.width,
       height: display.height
     })
-    this.$win.setAlwaysOnTop(true)
+    this.$win.setAlwaysOnTop(true, 'screen-saver', 30)
     this.$win.show()
     // show 后再次确保焦点在 BrowserView
     this.$view.webContents.focus()
@@ -462,7 +462,7 @@ export default class Screenshots extends Events {
         return
       }
 
-      this.$win.setAlwaysOnTop(true)
+      this.$win.setAlwaysOnTop(true, 'screen-saver', 30)
       if (canceled || !filePath) {
         this.emit('afterSave', new Event(), buffer, data, false) // isSaved = false
         return

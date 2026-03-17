@@ -830,7 +830,7 @@ function createStickerWindow(payload: StickerPayload): BrowserWindow {
     }
   })
 
-  win.setAlwaysOnTop(true, 'screen-saver')
+  win.setAlwaysOnTop(true, 'screen-saver', 0)
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   if (aspectRatio && Number.isFinite(aspectRatio) && aspectRatio > 0) {
     try {
@@ -1354,7 +1354,7 @@ function createOverlayWindow(display: Electron.Display): BrowserWindow {
     }
   })
 
-  win.setAlwaysOnTop(true, 'screen-saver')
+  win.setAlwaysOnTop(true, 'screen-saver', 20)
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   win.setIgnoreMouseEvents(true, { forward: true })
 

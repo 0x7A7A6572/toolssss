@@ -1595,7 +1595,7 @@ onBeforeUnmount(() => {
           <span>{{ colorMode === 'HEX' ? `#${hexColor}` : rgbText }}</span>
         </div>
         <div class="magnifier-tips">
-          <span class="tips-key">C</span> 复制并退出 / <span class="tips-key">Shift</span> 切换
+          <span class="tips-key">C</span> 复制 / <span class="tips-key">Shift</span> 切换
         </div>
       </div>
     </div>
@@ -1607,7 +1607,7 @@ onBeforeUnmount(() => {
             class="icon-btn"
             type="button"
             :class="{ active: tool === 'select' }"
-            title="选择/移动"
+            title="选择/移动 alt"
             aria-label="选择/移动"
             @click="setTool('select')"
           >

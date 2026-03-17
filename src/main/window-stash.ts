@@ -358,7 +358,7 @@ async function ensureHandleWindow(s: {
     }
   })
 
-  win.setAlwaysOnTop(true, 'screen-saver')
+  win.setAlwaysOnTop(true, 'screen-saver', 10)
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
 
   const query: Record<string, string> = { mode: 'stash-handle', hwnd: s.hwnd, edge: s.edge }
