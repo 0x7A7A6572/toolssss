@@ -98,3 +98,50 @@ select option {
   background: #0b0f16;
   color: rgba(235, 235, 245, 0.92);
 }
+
+.v-select .v-field {
+  border-radius: var(--ev-control-radius);
+  background: var(--ev-control-bg);
+  color: var(--ev-control-text);
+  font-size: var(--ev-control-font-size);
+}
+
+.v-select .v-field__outline {
+  color: var(--ev-control-border);
+}
+
+.v-select:hover .v-field__outline {
+  color: rgba(255, 255, 255, 0.18);
+}
+
+.v-select.v-input--is-focused .v-field__outline {
+  color: var(--ev-control-focus-border);
+}
+
+.v-select.v-input--disabled {
+  opacity: var(--ev-control-disabled-opacity);
+}
+
+.v-select .v-field__input {
+  min-height: 32px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.v-select .v-field__append-inner {
+  padding-top: 0;
+}
+
+.ev-select-menu .v-list {
+  background: #0b0f16;
+  color: rgba(235, 235, 245, 0.92);
+  font-size: var(--ev-control-font-size);
+}
+
+.ev-select-menu .v-list-item {
+  min-height: 32px;
+}
+
+.v-list-item-title {
+  font-size: 13px !important;
+}

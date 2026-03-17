@@ -41,8 +41,13 @@ import { registerScriptLibraryHandlers } from './script-library'
 import { disposeExternalWindowPowerShell, warmupExternalWindowPowerShell } from './external-window'
 import {
   disposeAllWindowStash,
+  getWindowStashPreviousExitClean,
   initWindowStash,
+  markWindowStashSessionClean,
+  markWindowStashSessionRunning,
+  restoreAndClearPersistedWindowStash,
   restoreAllWindowStash,
+  rehydrateWindowStashFromDisk,
   stashForegroundToEdge
 } from './window-stash'
 import { TRANSLATOR_EVENTS, type TranslatePayload, type TranslateResult } from '@shared/translator'
@@ -204,6 +209,14 @@ function normalizeSettings(input: unknown): AppSettings {
       base.shortcuts.stickersToggleHidden = (
         obj.shortcuts as Record<string, string>
       ).stickersToggleHidden
+    if (typeof (obj.shortcuts as Record<string, unknown>).stashLeft === 'string')
+      base.shortcuts.stashLeft = (obj.shortcuts as Record<string, string>).stashLeft
+    if (typeof (obj.shortcuts as Record<string, unknown>).stashTop === 'string')
+      base.shortcuts.stashTop = (obj.shortcuts as Record<string, string>).stashTop
+    if (typeof (obj.shortcuts as Record<string, unknown>).stashRight === 'string')
+      base.shortcuts.stashRight = (obj.shortcuts as Record<string, string>).stashRight
+    if (typeof (obj.shortcuts as Record<string, unknown>).stashBottom === 'string')
+      base.shortcuts.stashBottom = (obj.shortcuts as Record<string, string>).stashBottom
   }
 
   if (
@@ -307,6 +320,12 @@ function normalizeSettings(input: unknown): AppSettings {
       if (right) base.windowStash.handleColors.right = right
       if (bottom) base.windowStash.handleColors.bottom = bottom
     }
+    if (typeof ws['handleOpacity'] === 'number')
+      base.windowStash.handleOpacity = clampNumber(Number(ws['handleOpacity']), 0, 1)
+    if (typeof ws['showHandleTitle'] === 'boolean')
+      base.windowStash.showHandleTitle = ws['showHandleTitle'] as boolean
+    if (typeof ws['showHandleDrag'] === 'boolean')
+      base.windowStash.showHandleDrag = ws['showHandleDrag'] as boolean
     if (typeof ws['animate'] === 'boolean') base.windowStash.animate = ws['animate'] as boolean
     if (typeof ws['durationMs'] === 'number')
       base.windowStash.durationMs = clampNumber(Number(ws['durationMs']), 60, 1200)
@@ -356,6 +375,14 @@ function applySettingsPatch(patch: unknown): AppSettings {
       next.shortcuts.stickersToggleHidden = (
         p.shortcuts as Record<string, string>
       ).stickersToggleHidden
+    if (typeof (p.shortcuts as Record<string, unknown>).stashLeft === 'string')
+      next.shortcuts.stashLeft = (p.shortcuts as Record<string, string>).stashLeft
+    if (typeof (p.shortcuts as Record<string, unknown>).stashTop === 'string')
+      next.shortcuts.stashTop = (p.shortcuts as Record<string, string>).stashTop
+    if (typeof (p.shortcuts as Record<string, unknown>).stashRight === 'string')
+      next.shortcuts.stashRight = (p.shortcuts as Record<string, string>).stashRight
+    if (typeof (p.shortcuts as Record<string, unknown>).stashBottom === 'string')
+      next.shortcuts.stashBottom = (p.shortcuts as Record<string, string>).stashBottom
   }
 
   if (
@@ -438,6 +465,12 @@ function applySettingsPatch(patch: unknown): AppSettings {
       if (typeof c['bottom'] === 'string')
         next.windowStash.handleColors.bottom = c['bottom'] as string
     }
+    if (typeof ws['handleOpacity'] === 'number')
+      next.windowStash.handleOpacity = ws['handleOpacity'] as number
+    if (typeof ws['showHandleTitle'] === 'boolean')
+      next.windowStash.showHandleTitle = ws['showHandleTitle'] as boolean
+    if (typeof ws['showHandleDrag'] === 'boolean')
+      next.windowStash.showHandleDrag = ws['showHandleDrag'] as boolean
     if (typeof ws['animate'] === 'boolean') next.windowStash.animate = ws['animate'] as boolean
     if (typeof ws['durationMs'] === 'number')
       next.windowStash.durationMs = ws['durationMs'] as number
@@ -2471,19 +2504,21 @@ function ensureShortcuts(): void {
     }
   }
 
-  const fixed = [
-    { acc: 'CommandOrControl+Shift+1', edge: 'left' as const },
-    { acc: 'CommandOrControl+Shift+2', edge: 'top' as const },
-    { acc: 'CommandOrControl+Shift+3', edge: 'right' as const },
-    { acc: 'CommandOrControl+Shift+4', edge: 'bottom' as const }
+  const stashShortcuts = [
+    { acc: (settings.shortcuts as Record<string, string>).stashLeft, edge: 'left' as const },
+    { acc: (settings.shortcuts as Record<string, string>).stashTop, edge: 'top' as const },
+    { acc: (settings.shortcuts as Record<string, string>).stashRight, edge: 'right' as const },
+    { acc: (settings.shortcuts as Record<string, string>).stashBottom, edge: 'bottom' as const }
   ]
-  for (const it of fixed) {
+  for (const it of stashShortcuts) {
+    const acc = typeof it.acc === 'string' ? it.acc.trim() : ''
+    if (!acc) continue
     try {
-      globalShortcut.register(it.acc, async () => {
+      globalShortcut.register(acc, async () => {
         await stashForegroundToEdge(it.edge)
       })
     } catch (e) {
-      console.error('Failed to register shortcut:', it.acc, e)
+      console.error('Failed to register shortcut:', acc, e)
     }
   }
 }
@@ -2696,9 +2731,12 @@ function createWindow(): void {
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.electron')
+
+  const windowStashPreviousExitClean = await getWindowStashPreviousExitClean().catch(() => true)
+  await markWindowStashSessionRunning().catch(() => null)
 
   initWindowStash({
     loadWindow,
@@ -2715,7 +2753,11 @@ app.whenReady().then(() => {
       .finally(() => {
         disposeAllWindowStash()
         disposeExternalWindowPowerShell()
-        app.exit(0)
+        markWindowStashSessionClean()
+          .catch(() => null)
+          .finally(() => {
+            app.exit(0)
+          })
       })
   })
 
@@ -2731,6 +2773,19 @@ app.whenReady().then(() => {
   setTimeout(() => {
     warmupExternalWindowPowerShell().catch(() => null)
   }, 800)
+  setTimeout(() => {
+    if (!windowStashPreviousExitClean) {
+      restoreAndClearPersistedWindowStash().catch(() => null)
+      return
+    }
+    rehydrateWindowStashFromDisk().catch(() => null)
+    setTimeout(() => {
+      rehydrateWindowStashFromDisk().catch(() => null)
+    }, 1800)
+    setTimeout(() => {
+      rehydrateWindowStashFromDisk().catch(() => null)
+    }, 5200)
+  }, 1100)
   registerStickyNotesHandlers()
   registerWeatherHandlers()
   registerScriptLibraryHandlers()

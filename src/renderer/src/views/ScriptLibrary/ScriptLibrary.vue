@@ -33,6 +33,11 @@ const loadedContent = ref('')
 const dirty = ref(false)
 const errorText = ref('')
 
+const extItems: Array<{ title: string; value: 'bat' | 'sh' }> = [
+  { title: 'bat', value: 'bat' },
+  { title: 'sh', value: 'sh' }
+]
+
 const running = ref(false)
 const runResult = ref<RunResult | null>(null)
 
@@ -342,10 +347,13 @@ onMounted(() => {
             type="text"
             placeholder="脚本名称（不含扩展名）"
           />
-          <select v-model="draftExt" class="select">
-            <option value="bat">bat</option>
-            <option value="sh">sh</option>
-          </select>
+          <v-select
+            v-model="draftExt"
+            class="select"
+            :items="extItems"
+            item-title="title"
+            item-value="value"
+          />
         </div>
 
         <div v-if="errorText" class="error">{{ errorText }}</div>
@@ -562,14 +570,6 @@ onMounted(() => {
 
 .select {
   width: 100px;
-  text-align: right;
-  padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(0, 0, 0, 0.2);
-  color: var(--ev-c-text-1);
-  outline: none;
-  font-size: 13px;
 }
 
 .editor {

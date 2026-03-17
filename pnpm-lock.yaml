@@ -14,6 +14,9 @@ importers:
       '@electron-toolkit/utils':
         specifier: ^4.0.0
         version: 4.0.0(electron@39.8.0)
+      '@mdi/font':
+        specifier: ^7.4.47
+        version: 7.4.47
       '@tesseract.js-data/chi_sim':
         specifier: ^1.0.0
         version: 1.0.0
@@ -77,6 +80,9 @@ importers:
       vue-router:
         specifier: ^4.6.4
         version: 4.6.4(vue@3.5.30(typescript@5.9.3))
+      vuetify:
+        specifier: ^3.10.3
+        version: 3.12.3(typescript@5.9.3)(vue@3.5.30(typescript@5.9.3))
     devDependencies:
       '@electron-toolkit/eslint-config-prettier':
         specifier: 3.0.0
@@ -735,6 +741,9 @@ packages:
   '@malept/flatpak-bundler@0.4.0':
     resolution: {integrity: sha512-9QOtNffcOF/c1seMCDnjckb3R9WHcG34tky+FHpNKKCW0wc/scYLwMtO+ptyGUfMW0/b/n4qRiALlaFHc9Oj7Q==}
     engines: {node: '>= 10.0.0'}
+
+  '@mdi/font@7.4.47':
+    resolution: {integrity: sha512-43MtGpd585SNzHZPcYowu/84Vz2a2g31TvPMTm9uTiCSWzaheQySUcSyUH/46fPnuPQWof2yd0pGBtzee/IQWw==}
 
   '@npmcli/agent@3.0.0':
     resolution: {integrity: sha512-S79NdEgDQd/NGCay6TCoVzXSj74skRZIKJcpJjC5lOq34SZzyI6MqtiiWoiVWoVrTcGjNeC4ipbh1VIHlpfF5Q==}
@@ -3456,6 +3465,21 @@ packages:
       typescript:
         optional: true
 
+  vuetify@3.12.3:
+    resolution: {integrity: sha512-7QzgftMu8OYKRz/jr2yntPEJ7WFmAzMn8jyeUcW7gz539MjQbDF3UrqZXW3aWi458UVJW9WWvzQn9x5B75Aijw==}
+    peerDependencies:
+      typescript: '>=4.7'
+      vite-plugin-vuetify: '>=2.1.0'
+      vue: ^3.5.0
+      webpack-plugin-vuetify: '>=3.1.0'
+    peerDependenciesMeta:
+      typescript:
+        optional: true
+      vite-plugin-vuetify:
+        optional: true
+      webpack-plugin-vuetify:
+        optional: true
+
   w3c-keyname@2.2.8:
     resolution: {integrity: sha512-dpojBhNsCNN7T82Tm7k26A6G9ML3NkhDsnw9n/eoxSRlVBB4CEtIQ/KTCLI2Fwf3ataSXRhYFkQi3SlnFwPvPQ==}
 
@@ -4129,6 +4153,8 @@ snapshots:
       tmp-promise: 3.0.3
     transitivePeerDependencies:
       - supports-color
+
+  '@mdi/font@7.4.47': {}
 
   '@npmcli/agent@3.0.0':
     dependencies:
@@ -7032,6 +7058,12 @@ snapshots:
       '@vue/runtime-dom': 3.5.30
       '@vue/server-renderer': 3.5.30(vue@3.5.30(typescript@5.9.3))
       '@vue/shared': 3.5.30
+    optionalDependencies:
+      typescript: 5.9.3
+
+  vuetify@3.12.3(typescript@5.9.3)(vue@3.5.30(typescript@5.9.3)):
+    dependencies:
+      vue: 3.5.30(typescript@5.9.3)
     optionalDependencies:
       typescript: 5.9.3
 

@@ -11,6 +11,46 @@ const appPaths = ref<{ userData: string; pictures: string } | null>(null)
 const aiApiKeyDraft = ref('')
 const version = ref('')
 
+const translateProviderItems: Array<{
+  title: string
+  value: AppSettings['translate']['provider']
+}> = [
+  { title: '百度翻译', value: 'baidu' },
+  { title: '必应翻译（Microsoft Translator）', value: 'bing' },
+  { title: 'AI 翻译（OpenAI Compatible）', value: 'ai' }
+]
+
+const translateSourceItems: Array<{ title: string; value: string }> = [
+  { title: '自动识别', value: 'auto' },
+  { title: '英语', value: 'en' },
+  { title: '中文', value: 'zh' },
+  { title: '日语', value: 'ja' },
+  { title: '韩语', value: 'ko' },
+  { title: '法语', value: 'fr' },
+  { title: '德语', value: 'de' },
+  { title: '西班牙语', value: 'es' },
+  { title: '俄语', value: 'ru' }
+]
+
+const translateTargetItems: Array<{ title: string; value: string }> = [
+  { title: '中文（简体）', value: 'zh' },
+  { title: '英语', value: 'en' },
+  { title: '日语', value: 'ja' },
+  { title: '韩语', value: 'ko' },
+  { title: '法语', value: 'fr' },
+  { title: '德语', value: 'de' },
+  { title: '西班牙语', value: 'es' },
+  { title: '俄语', value: 'ru' }
+]
+
+const aiProviderItems: Array<{ title: string; value: AppSettings['ai']['provider'] }> = [
+  { title: 'OpenAI', value: 'openai' },
+  { title: 'Google Gemini', value: 'gmini' },
+  { title: 'Kimi (Moonshot)', value: 'kimi' },
+  { title: '阿里通义（DashScope）', value: 'qwen' },
+  { title: 'Custom', value: 'custom' }
+]
+
 function joinPath(base: string, tail: string): string {
   const b = base.trim().replace(/[\\/]+$/, '')
   const t = tail.trim().replace(/^[\\/]+/, '')
@@ -47,8 +87,19 @@ const aiModelsForProvider = computed(() => {
   return Array.isArray(preset?.models) ? preset!.models! : []
 })
 
-function onAiProviderChange(e: Event): void {
-  const value = (e.target as HTMLSelectElement).value as AppSettings['ai']['provider']
+function onTranslateProviderChange(value: AppSettings['translate']['provider']): void {
+  update({ translate: { provider: value } }).catch(() => null)
+}
+
+function onTranslateSourceChange(value: string): void {
+  update({ translate: { defaultSource: value } }).catch(() => null)
+}
+
+function onTranslateTargetChange(value: string): void {
+  update({ translate: { defaultTarget: value } }).catch(() => null)
+}
+
+function onAiProviderChange(value: AppSettings['ai']['provider']): void {
   const preset = (AI_PROVIDERS as Record<string, { baseUrl: string; models?: string[] }>)[value]
   if (preset) {
     const models = Array.isArray(preset.models) ? preset.models : []
@@ -60,6 +111,10 @@ function onAiProviderChange(e: Event): void {
   } else {
     update({ ai: { provider: value } }).catch(() => null)
   }
+}
+
+function onAiModelChange(value: string): void {
+  update({ ai: { model: value } }).catch(() => null)
 }
 
 async function refresh(): Promise<void> {
@@ -355,6 +410,62 @@ onMounted(() => {
         />
       </div>
 
+      <div class="shortcut-group">
+        <div class="shortcut-group-title">窗口收纳</div>
+
+        <div class="row">
+          <div class="label">收纳到左侧</div>
+          <ShortcutInput
+            :model-value="settings.shortcuts.stashLeft"
+            placeholder="未设置"
+            @update:model-value="
+              update({
+                shortcuts: { stashLeft: $event }
+              })
+            "
+          />
+        </div>
+
+        <div class="row">
+          <div class="label">收纳到上侧</div>
+          <ShortcutInput
+            :model-value="settings.shortcuts.stashTop"
+            placeholder="未设置"
+            @update:model-value="
+              update({
+                shortcuts: { stashTop: $event }
+              })
+            "
+          />
+        </div>
+
+        <div class="row">
+          <div class="label">收纳到右侧</div>
+          <ShortcutInput
+            :model-value="settings.shortcuts.stashRight"
+            placeholder="未设置"
+            @update:model-value="
+              update({
+                shortcuts: { stashRight: $event }
+              })
+            "
+          />
+        </div>
+
+        <div class="row">
+          <div class="label">收纳到下侧</div>
+          <ShortcutInput
+            :model-value="settings.shortcuts.stashBottom"
+            placeholder="未设置"
+            @update:model-value="
+              update({
+                shortcuts: { stashBottom: $event }
+              })
+            "
+          />
+        </div>
+      </div>
+
       <div class="hint">点击上方快捷键进行录制，支持 Ctrl, Alt, Shift, Meta 组合</div>
     </section>
 
@@ -365,21 +476,18 @@ onMounted(() => {
 
       <div class="row">
         <div class="label">Provider</div>
-        <select
+        <v-select
           class="select"
-          :value="settings.translate.provider"
-          @change="
-            update({
-              translate: {
-                provider: ($event.target as HTMLSelectElement).value as 'baidu' | 'bing' | 'ai'
-              }
-            })
-          "
-        >
-          <option value="baidu">百度翻译</option>
-          <option value="bing">必应翻译（Microsoft Translator）</option>
-          <option value="ai">AI 翻译（OpenAI Compatible）</option>
-        </select>
+          :items="translateProviderItems"
+          item-title="title"
+          item-value="value"
+          :model-value="settings.translate.provider"
+          density="compact"
+          single-line
+          variant="outlined"
+          hide-details
+          @update:model-value="onTranslateProviderChange"
+        />
       </div>
 
       <template v-if="settings.translate.provider === 'baidu'">
@@ -484,47 +592,34 @@ onMounted(() => {
 
       <div class="row">
         <div class="label">默认源语言</div>
-        <select
+        <v-select
           class="select"
-          :value="settings.translate.defaultSource"
-          @change="
-            update({
-              translate: { defaultSource: ($event.target as HTMLSelectElement).value }
-            })
-          "
-        >
-          <option value="auto">自动识别</option>
-          <option value="en">英语</option>
-          <option value="zh">中文</option>
-          <option value="ja">日语</option>
-          <option value="ko">韩语</option>
-          <option value="fr">法语</option>
-          <option value="de">德语</option>
-          <option value="es">西班牙语</option>
-          <option value="ru">俄语</option>
-        </select>
+          :items="translateSourceItems"
+          item-title="title"
+          item-value="value"
+          :model-value="settings.translate.defaultSource"
+          density="compact"
+          single-line
+          variant="outlined"
+          hide-details
+          @update:model-value="onTranslateSourceChange"
+        />
       </div>
 
       <div class="row">
         <div class="label">默认目标语言</div>
-        <select
+        <v-select
           class="select"
-          :value="settings.translate.defaultTarget"
-          @change="
-            update({
-              translate: { defaultTarget: ($event.target as HTMLSelectElement).value }
-            })
-          "
-        >
-          <option value="zh">中文（简体）</option>
-          <option value="en">英语</option>
-          <option value="ja">日语</option>
-          <option value="ko">韩语</option>
-          <option value="fr">法语</option>
-          <option value="de">德语</option>
-          <option value="es">西班牙语</option>
-          <option value="ru">俄语</option>
-        </select>
+          :items="translateTargetItems"
+          item-title="title"
+          item-value="value"
+          :model-value="settings.translate.defaultTarget"
+          density="compact"
+          single-line
+          variant="outlined"
+          hide-details
+          @update:model-value="onTranslateTargetChange"
+        />
       </div>
 
       <div class="hint">
@@ -555,13 +650,18 @@ onMounted(() => {
 
       <div class="row">
         <div class="label">Provider</div>
-        <select class="select" :value="settings.ai.provider" @change="onAiProviderChange">
-          <option value="openai">OpenAI</option>
-          <option value="gmini">Google Gemini</option>
-          <option value="kimi">Kimi (Moonshot)</option>
-          <option value="qwen">阿里通义（DashScope）</option>
-          <option value="custom">Custom</option>
-        </select>
+        <v-select
+          class="select"
+          :items="aiProviderItems"
+          item-title="title"
+          item-value="value"
+          :model-value="settings.ai.provider"
+          density="compact"
+          single-line
+          variant="outlined"
+          hide-details
+          @update:model-value="onAiProviderChange"
+        />
       </div>
 
       <div class="row">
@@ -582,34 +682,40 @@ onMounted(() => {
       <template v-if="aiModelsForProvider.length">
         <div class="row">
           <div class="label">模型选择</div>
-          <select
+          <v-select
             class="select"
-            :value="aiModelsForProvider.includes(settings.ai.model) ? settings.ai.model : ''"
-            @change="
-              update({
-                ai: { model: ($event.target as HTMLSelectElement).value }
-              })
-            "
-          >
-            <option value="" disabled>选择模型</option>
-            <option v-for="m in aiModelsForProvider" :key="m" :value="m">{{ m }}</option>
-          </select>
+            :items="aiModelsForProvider"
+            :model-value="aiModelsForProvider.includes(settings.ai.model) ? settings.ai.model : ''"
+            placeholder="选择模型"
+            density="compact"
+            single-line
+            variant="outlined"
+            hide-details
+            @update:model-value="onAiModelChange"
+          />
         </div>
       </template>
 
       <div class="row">
         <div class="label">API Key</div>
-        <div class="path-row">
+        <div class="api-key-field">
           <input
             v-model="aiApiKeyDraft"
-            class="text"
+            class="api-key-input"
             type="password"
             :placeholder="settings.ai.apiKeySet ? '已保存（输入新 Key 覆盖）' : '未设置'"
             @change="setAiApiKey"
           />
-          <div class="btn" :disabled="!settings.ai.apiKeySet" @click="clearAiApiKey">
+          <button
+            class="api-key-action"
+            type="button"
+            title="清除"
+            aria-label="清除"
+            :disabled="!settings.ai.apiKeySet"
+            @click="clearAiApiKey"
+          >
             <Delete :size="20" />
-          </div>
+          </button>
         </div>
       </div>
 
@@ -632,8 +738,8 @@ onMounted(() => {
     </section>
 
     <footer class="footer">
-      <div class="version">{{ version }}</div>
-      <div class="status">{{ saving ? '保存中…' : '已保存' }}</div>
+      <!-- <div class="version">{{ version }}</div>
+      <div class="status">{{ saving ? '保存中…' : '已保存' }}</div> -->
     </footer>
   </div>
 </template>
@@ -764,6 +870,59 @@ onMounted(() => {
   gap: 10px;
 }
 
+.api-key-field {
+  position: relative;
+  width: 200px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.2);
+  color: var(--ev-c-text-1);
+  display: flex;
+  align-items: center;
+}
+
+.api-key-field:focus-within {
+  border-color: rgba(59, 130, 246, 0.5);
+}
+
+.api-key-input {
+  width: 100%;
+  padding: 6px 38px 6px 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  outline: none;
+  font-size: 13px;
+  text-align: right;
+}
+
+.api-key-action {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 26px;
+  width: 26px;
+  border-radius: 6px;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 245, 0.92);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+
+.api-key-action:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.api-key-action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .path {
   width: 360px;
   text-align: left;
@@ -796,7 +955,18 @@ onMounted(() => {
 }
 
 .select {
-  width: 200px;
+  flex: 1;
+}
+
+.select :deep(.v-field__input) {
+  justify-content: flex-end;
+}
+
+.select :deep(input) {
+  text-align: right;
+}
+
+.select :deep(.v-select__selection-text) {
   text-align: right;
 }
 
@@ -808,6 +978,30 @@ onMounted(() => {
   font-size: 12px;
   color: var(--ev-c-text-3);
   margin-top: -4px;
+}
+
+.shortcut-group {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.12);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.shortcut-group-title {
+  font-size: 12px;
+  color: var(--ev-c-text-2);
+  font-weight: 700;
+}
+
+.shortcut-group .row {
+  min-height: 30px;
+}
+
+.shortcut-group .label {
+  color: rgba(235, 235, 245, 0.82);
 }
 
 .footer {

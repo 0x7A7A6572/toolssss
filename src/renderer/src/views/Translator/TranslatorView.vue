@@ -12,6 +12,29 @@ import {
   type TranslationHistoryItem
 } from '@renderer/utils/translationHistory'
 
+const sourceItems: Array<{ title: string; value: string }> = [
+  { title: '自动识别', value: 'auto' },
+  { title: '英语', value: 'en' },
+  { title: '中文', value: 'zh' },
+  { title: '日语', value: 'ja' },
+  { title: '韩语', value: 'ko' },
+  { title: '法语', value: 'fr' },
+  { title: '德语', value: 'de' },
+  { title: '西班牙语', value: 'es' },
+  { title: '俄语', value: 'ru' }
+]
+
+const targetItems: Array<{ title: string; value: string }> = [
+  { title: '中文（简体）', value: 'zh' },
+  { title: '英语', value: 'en' },
+  { title: '日语', value: 'ja' },
+  { title: '韩语', value: 'ko' },
+  { title: '法语', value: 'fr' },
+  { title: '德语', value: 'de' },
+  { title: '西班牙语', value: 'es' },
+  { title: '俄语', value: 'ru' }
+]
+
 const inputText = ref('')
 const outputText = ref('')
 const loading = ref(false)
@@ -150,33 +173,26 @@ onMounted(() => {
     <section class="card">
       <div class="row">
         <div class="label">源语言</div>
-        <select v-model="source" class="select">
-          <option value="auto">自动识别</option>
-          <option value="en">英语</option>
-          <option value="zh">中文</option>
-          <option value="ja">日语</option>
-          <option value="ko">韩语</option>
-          <option value="fr">法语</option>
-          <option value="de">德语</option>
-          <option value="es">西班牙语</option>
-          <option value="ru">俄语</option>
-        </select>
+        <v-select
+          v-model="source"
+          class="select"
+          :items="sourceItems"
+          item-title="title"
+          item-value="value"
+        />
 
         <button class="swap" type="button" @click="swapLanguages">
           <ArrowLeftRight :size="16" />
         </button>
 
         <div class="label">目标语言</div>
-        <select v-model="target" class="select">
-          <option value="zh">中文（简体）</option>
-          <option value="en">英语</option>
-          <option value="ja">日语</option>
-          <option value="ko">韩语</option>
-          <option value="fr">法语</option>
-          <option value="de">德语</option>
-          <option value="es">西班牙语</option>
-          <option value="ru">俄语</option>
-        </select>
+        <v-select
+          v-model="target"
+          class="select"
+          :items="targetItems"
+          item-title="title"
+          item-value="value"
+        />
 
         <div class="spacer" />
 
@@ -295,8 +311,8 @@ onMounted(() => {
 }
 
 .select {
-  height: 34px;
-  padding: 0 10px;
+  width: 140px;
+  flex: none;
 }
 
 .swap {

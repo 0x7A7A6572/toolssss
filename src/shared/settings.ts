@@ -56,6 +56,9 @@ export interface AppSettings {
   }
   windowStash: {
     handleColors: Record<'left' | 'top' | 'right' | 'bottom', string>
+    handleOpacity: number
+    showHandleTitle: boolean
+    showHandleDrag: boolean
     animate: boolean
     durationMs: number
   }
@@ -98,7 +101,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
     snipStart: 'F1',
     stickerPaste: 'F3',
     stickersToggleHidden: 'Shift+F3',
-    stickyNotesPopup: 'Ctrl+Shift+N'
+    stickyNotesPopup: 'Ctrl+Shift+N',
+    stashLeft: 'Ctrl+Shift+1',
+    stashTop: 'Ctrl+Shift+2',
+    stashRight: 'Ctrl+Shift+3',
+    stashBottom: 'Ctrl+Shift+4'
   },
   translate: {
     provider: 'baidu',
@@ -146,6 +153,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
       right: '#3b82f6',
       bottom: '#ef4444'
     },
+    handleOpacity: 1,
+    showHandleTitle: true,
+    showHandleDrag: true,
     animate: true,
     durationMs: 180
   }

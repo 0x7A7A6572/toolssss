@@ -9,6 +9,23 @@ const breakNextAt = ref<number | null>(null)
 const nowMs = ref(Date.now())
 let timer: number | null = null
 
+const breakIntervalItems: Array<{ title: string; value: number }> = [
+  { title: '15 分钟', value: 15 },
+  { title: '30 分钟', value: 30 },
+  { title: '45 分钟', value: 45 },
+  { title: '1 小时', value: 60 },
+  { title: '1.5 小时', value: 90 },
+  { title: '2 小时', value: 120 }
+]
+
+const reminderSecondsItems: Array<{ title: string; value: number }> = [
+  { title: '10 秒', value: 10 },
+  { title: '20 秒', value: 20 },
+  { title: '30 秒', value: 30 },
+  { title: '45 秒', value: 45 },
+  { title: '60 秒', value: 60 }
+]
+
 function formatCountdown(targetAt: number | null, now: number): string {
   if (targetAt === null) return '—'
   const diff = targetAt - now
@@ -53,6 +70,14 @@ async function update(patch: SettingsPatch): Promise<void> {
 
 async function previewBreak(): Promise<void> {
   await window.electron.ipcRenderer.invoke('alarm:preview', { reason: 'break' })
+}
+
+function onBreakIntervalChange(value: number): void {
+  update({ break: { intervalMinutes: Number(value) } }).catch(() => null)
+}
+
+function onReminderSecondsChange(value: number): void {
+  update({ reminderSeconds: Number(value) }).catch(() => null)
 }
 
 const onBreakStatus = (_: unknown, payload: unknown): void => {
@@ -104,7 +129,22 @@ onBeforeUnmount(() => {
       </div>
       <div class="row">
         <div class="label">强度</div>
-        <input
+        <v-slider
+          v-model="settings.eye.opacity"
+          show-ticks="always"
+          thumb-label
+          :min="0.04"
+          :max="0.3"
+          :step="0.02"
+          @end="
+            update({
+              eye: { opacity: Number(settings.eye.opacity.toFixed(2)) }
+            })
+          "
+        >
+          <template #thumb-label="{ modelValue }"> {{ modelValue * 100 }}% </template>
+        </v-slider>
+        <!-- <input
           class="range"
           type="range"
           min="0"
@@ -116,7 +156,7 @@ onBeforeUnmount(() => {
               eye: { opacity: Number(($event.target as HTMLInputElement).value) }
             })
           "
-        />
+        /> -->
         <div class="value">{{ Math.round(settings.eye.opacity * 100) }}%</div>
       </div>
       <div class="row colors">
@@ -220,22 +260,14 @@ onBeforeUnmount(() => {
         </div>
         <div class="row">
           <div class="label">间隔</div>
-          <select
+          <v-select
             class="select"
-            :value="String(settings.break.intervalMinutes)"
-            @change="
-              update({
-                break: { intervalMinutes: Number(($event.target as HTMLSelectElement).value) }
-              })
-            "
-          >
-            <option value="15">15 分钟</option>
-            <option value="30">30 分钟</option>
-            <option value="45">45 分钟</option>
-            <option value="60">1 小时</option>
-            <option value="90">1.5 小时</option>
-            <option value="120">2 小时</option>
-          </select>
+            :items="breakIntervalItems"
+            item-title="title"
+            item-value="value"
+            :model-value="settings.break.intervalMinutes"
+            @update:model-value="onBreakIntervalChange"
+          />
         </div>
         <div class="row">
           <div class="label">倒计时</div>
@@ -262,19 +294,14 @@ onBeforeUnmount(() => {
         <div class="card-title">提醒时长</div>
         <div class="row">
           <div class="label">时长</div>
-          <select
+          <v-select
             class="select"
-            :value="String(settings.reminderSeconds)"
-            @change="
-              update({ reminderSeconds: Number(($event.target as HTMLSelectElement).value) })
-            "
-          >
-            <option value="10">10 秒</option>
-            <option value="20">20 秒</option>
-            <option value="30">30 秒</option>
-            <option value="45">45 秒</option>
-            <option value="60">60 秒</option>
-          </select>
+            :items="reminderSecondsItems"
+            item-title="title"
+            item-value="value"
+            :model-value="settings.reminderSeconds"
+            @update:model-value="onReminderSecondsChange"
+          />
         </div>
         <div class="row">
           <div class="label">结束是否关闭</div>
@@ -446,7 +473,6 @@ onBeforeUnmount(() => {
 
 .select {
   width: 100%;
-  padding: 8px 10px;
 }
 
 .text {

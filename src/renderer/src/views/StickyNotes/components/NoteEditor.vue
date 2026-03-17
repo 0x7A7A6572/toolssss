@@ -70,6 +70,18 @@ const languageAliases: Record<string, string> = {
   html: 'xml'
 }
 
+const codeBlockLanguageItems: Array<{ title: string; value: string }> = [
+  { title: 'Text', value: '' },
+  { title: 'JavaScript', value: 'javascript' },
+  { title: 'TypeScript', value: 'typescript' },
+  { title: 'JSON', value: 'json' },
+  { title: 'Bash', value: 'bash' },
+  { title: 'Python', value: 'python' },
+  { title: 'HTML', value: 'xml' },
+  { title: 'CSS', value: 'css' },
+  { title: 'SQL', value: 'sql' }
+]
+
 function focus(): void {
   editor.value?.chain().focus().run()
 }
@@ -127,10 +139,9 @@ const codeBlockLanguage = computed(() => {
   return languageAliases[v.language] ?? v.language
 })
 
-function setCodeBlockLanguage(e: Event): void {
+function setCodeBlockLanguage(value: string): void {
   if (!editor.value) return
-  const value = String((e.target as HTMLSelectElement).value || '')
-  editor.value.chain().focus().setCodeBlock({ language: value }).run()
+  editor.value.chain().focus().setCodeBlock({ language: String(value || '') }).run()
 }
 
 function undo(): void {
@@ -494,22 +505,16 @@ onBeforeUnmount(() => {
       <div class="divider" />
 
       <div class="group">
-        <select
+        <v-select
           v-if="isInCodeBlock"
           class="lang"
-          :value="codeBlockLanguage"
-          @change="setCodeBlockLanguage"
-        >
-          <option value="">Text</option>
-          <option value="javascript">JavaScript</option>
-          <option value="typescript">TypeScript</option>
-          <option value="json">JSON</option>
-          <option value="bash">Bash</option>
-          <option value="python">Python</option>
-          <option value="xml">HTML</option>
-          <option value="css">CSS</option>
-          <option value="sql">SQL</option>
-        </select>
+          :items="codeBlockLanguageItems"
+          item-title="title"
+          item-value="value"
+          :model-value="codeBlockLanguage"
+          variant="solo-filled"
+          @update:model-value="setCodeBlockLanguage"
+        />
         <button type="button" class="tool" @click="openImagePicker">
           <ImagePlus :size="16" />
         </button>
@@ -749,13 +754,22 @@ onBeforeUnmount(() => {
 }
 
 .lang {
-  height: 30px;
+  width: 160px;
+  flex: none;
+}
+
+.lang :deep(.v-field) {
   border-radius: 10px;
-  border: none;
   background: rgba(255, 255, 255, 0.7);
   color: rgba(17, 24, 39, 0.86);
-  padding: 0 10px;
   font-weight: 700;
+  font-size: 13px;
+}
+
+.lang :deep(.v-field__input) {
+  min-height: 30px;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
 :deep(pre) {

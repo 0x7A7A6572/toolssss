@@ -1,4 +1,5 @@
-import { BrowserWindow, ipcMain, screen } from 'electron'
+import { app, BrowserWindow, ipcMain, screen } from 'electron'
+import { readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
 import {
   activateExternalWindow,
@@ -26,6 +27,16 @@ type WindowStashListItem = { hwnd: string; title: string; edge: ExternalWindowEd
 
 const stashed = new Map<string, StashedWindow>()
 
+type PersistedStashItem = {
+  hwnd: string
+  title?: string
+  edge: ExternalWindowEdge
+  rect: ExternalWindowRect
+  savedAtMs: number
+  tries: number
+  lastTriedAtMs: number | null
+}
+
 const HANDLE_THICKNESS = 26
 const HANDLE_LENGTH = 92
 const PEEK_PX = 0
@@ -39,6 +50,134 @@ let loadWindowFn: ((win: BrowserWindow, query: Record<string, string>) => Promis
   null
 let getMainWindowFn: (() => BrowserWindow | null) | null = null
 let getSettingsFn: (() => AppSettings) | null = null
+let suppressHandleClosedRestore = false
+
+export async function getWindowStashPreviousExitClean(): Promise<boolean> {
+  const s = await readPersistedSession()
+  if (!s) return true
+  return Boolean(s.clean)
+}
+
+export async function markWindowStashSessionRunning(): Promise<void> {
+  await writePersistedSession(false)
+}
+
+export async function markWindowStashSessionClean(): Promise<void> {
+  await writePersistedSession(true)
+}
+
+function stashStateFilePath(): string {
+  return join(app.getPath('userData'), 'window-stash-state.json')
+}
+
+function stashSessionFilePath(): string {
+  return join(app.getPath('userData'), 'window-stash-session.json')
+}
+
+type PersistedStashSession = { clean: boolean; updatedAtMs: number; pid: number }
+
+function normalizePersistedSession(input: unknown): PersistedStashSession | null {
+  if (!input || typeof input !== 'object') return null
+  const p = input as Record<string, unknown>
+  const clean = Boolean(p['clean'])
+  const updatedAtMsRaw =
+    typeof p['updatedAtMs'] === 'number' ? p['updatedAtMs'] : Number(p['updatedAtMs'])
+  const pidRaw = typeof p['pid'] === 'number' ? p['pid'] : Number(p['pid'])
+  const updatedAtMs = Number.isFinite(updatedAtMsRaw) ? Math.max(0, Math.floor(updatedAtMsRaw)) : 0
+  const pid = Number.isFinite(pidRaw) ? Math.max(0, Math.floor(pidRaw)) : 0
+  if (!pid) return null
+  return { clean, updatedAtMs, pid }
+}
+
+async function readPersistedSession(): Promise<PersistedStashSession | null> {
+  try {
+    const raw = await readFile(stashSessionFilePath(), 'utf-8')
+    const parsed = raw ? (JSON.parse(raw) as unknown) : null
+    return normalizePersistedSession(parsed)
+  } catch {
+    return null
+  }
+}
+
+async function writePersistedSession(clean: boolean): Promise<void> {
+  try {
+    const payload: PersistedStashSession = {
+      clean: Boolean(clean),
+      updatedAtMs: Date.now(),
+      pid: process.pid
+    }
+    await writeFile(stashSessionFilePath(), JSON.stringify(payload), 'utf-8')
+  } catch {
+    void 0
+  }
+}
+
+function normalizePersistedItem(input: unknown): PersistedStashItem | null {
+  if (!input || typeof input !== 'object') return null
+  const p = input as Record<string, unknown>
+  const hwnd = typeof p['hwnd'] === 'string' ? p['hwnd'].trim() : ''
+  const title = typeof p['title'] === 'string' ? p['title'].trim() : ''
+  const edge = p['edge']
+  const rect = p['rect']
+  if (!hwnd) return null
+  if (edge !== 'left' && edge !== 'right' && edge !== 'top' && edge !== 'bottom') return null
+  if (!rect || typeof rect !== 'object') return null
+  const r = rect as Record<string, unknown>
+  const left = typeof r['left'] === 'number' ? r['left'] : Number(r['left'])
+  const top = typeof r['top'] === 'number' ? r['top'] : Number(r['top'])
+  const right = typeof r['right'] === 'number' ? r['right'] : Number(r['right'])
+  const bottom = typeof r['bottom'] === 'number' ? r['bottom'] : Number(r['bottom'])
+  if (![left, top, right, bottom].every((n) => Number.isFinite(n))) return null
+  const savedAtMsRaw = typeof p['savedAtMs'] === 'number' ? p['savedAtMs'] : Number(p['savedAtMs'])
+  const savedAtMs = Number.isFinite(savedAtMsRaw) ? Math.max(0, Math.floor(savedAtMsRaw)) : 0
+  const triesRaw = typeof p['tries'] === 'number' ? p['tries'] : Number(p['tries'])
+  const tries = Number.isFinite(triesRaw) ? Math.max(0, Math.floor(triesRaw)) : 0
+  const lastRaw =
+    typeof p['lastTriedAtMs'] === 'number' ? p['lastTriedAtMs'] : Number(p['lastTriedAtMs'])
+  const lastTriedAtMs = Number.isFinite(lastRaw) ? Math.max(0, Math.floor(lastRaw)) : null
+  return {
+    hwnd,
+    title: title ? title : undefined,
+    edge,
+    rect: { left, top, right, bottom },
+    savedAtMs,
+    tries,
+    lastTriedAtMs
+  }
+}
+
+async function readPersistedState(): Promise<PersistedStashItem[]> {
+  try {
+    const raw = await readFile(stashStateFilePath(), 'utf-8')
+    const parsed = raw ? (JSON.parse(raw) as unknown) : null
+    if (!Array.isArray(parsed)) return []
+    return parsed.map(normalizePersistedItem).filter((v): v is PersistedStashItem => Boolean(v))
+  } catch {
+    return []
+  }
+}
+
+async function writePersistedState(items: PersistedStashItem[]): Promise<void> {
+  try {
+    await writeFile(stashStateFilePath(), JSON.stringify(items), 'utf-8')
+  } catch {
+    void 0
+  }
+}
+
+let persistChain: Promise<void> = Promise.resolve()
+function persistMutate(
+  mutator: (items: PersistedStashItem[]) => PersistedStashItem[] | Promise<PersistedStashItem[]>
+): Promise<void> {
+  persistChain = persistChain
+    .then(async () => {
+      const cur = await readPersistedState()
+      const next = await mutator(cur)
+      await writePersistedState(next)
+    })
+    .catch(() => void 0)
+  return persistChain
+}
 
 function getStashSettings(): AppSettings['windowStash'] {
   const s = getSettingsFn?.()
@@ -48,7 +187,7 @@ function getStashSettings(): AppSettings['windowStash'] {
 function normalizeHexColor(s: string): string | null {
   const v = typeof s === 'string' ? s.trim() : ''
   if (!v) return null
-  return /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v) ? v : null
+  return /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(v) ? v : null
 }
 
 function clampNumber(value: number, min: number, max: number): number {
@@ -126,6 +265,7 @@ function cleanupOne(hwnd: string): void {
   }
   stashed.delete(hwnd)
   broadcastChanged()
+  persistMutate((items) => items.filter((it) => it.hwnd !== hwnd)).catch(() => null)
 }
 
 async function ensureHandleWindow(s: {
@@ -236,7 +376,14 @@ async function ensureHandleWindow(s: {
   })
 
   win.on('closed', () => {
-    cleanupOne(s.hwnd)
+    if (suppressHandleClosedRestore) return
+    const cur = stashed.get(s.hwnd)
+    if (cur) {
+      restore(cur.hwnd, false).catch(() => null)
+      return
+    }
+    restoreExternalWindow({ hwnd: s.hwnd, rect: s.rect, animate: false }).catch(() => null)
+    persistMutate((items) => items.filter((it) => it.hwnd !== s.hwnd)).catch(() => null)
   })
 
   return win
@@ -303,6 +450,13 @@ export function initWindowStash(opts: {
   loadWindowFn = opts.loadWindow
   getMainWindowFn = opts.getMainWindow
   getSettingsFn = opts.getSettings
+  suppressHandleClosedRestore = false
+  app.on('before-quit', () => {
+    suppressHandleClosedRestore = true
+  })
+  app.on('will-quit', () => {
+    suppressHandleClosedRestore = true
+  })
 
   ipcMain.handle('window-stash:list', () => listItems())
 
@@ -315,6 +469,46 @@ export function initWindowStash(opts: {
     if (stashed.has(hwnd)) {
       await restore(hwnd, activate)
       return
+    }
+  })
+
+  ipcMain.on('window-stash:handle:nudge', (_event, payload: unknown) => {
+    if (!payload || typeof payload !== 'object') return
+    const p = payload as { hwnd?: unknown; dx?: unknown; dy?: unknown }
+    const hwnd = typeof p.hwnd === 'string' ? p.hwnd.trim() : ''
+    if (!hwnd) return
+    const s = stashed.get(hwnd)
+    if (!s) return
+    if (s.handle.isDestroyed()) return
+    const dx = typeof p.dx === 'number' ? p.dx : Number(p.dx)
+    const dy = typeof p.dy === 'number' ? p.dy : Number(p.dy)
+    const ddx = Number.isFinite(dx) ? Math.round(dx) : 0
+    const ddy = Number.isFinite(dy) ? Math.round(dy) : 0
+    if (!ddx && !ddy) return
+
+    const b = s.handle.getBounds()
+    const vertical = s.edge === 'left' || s.edge === 'right'
+    let x = b.x
+    let y = b.y
+    if (vertical) y += ddy
+    else x += ddx
+
+    const cx = Math.round(x + b.width / 2)
+    const cy = Math.round(y + b.height / 2)
+    const wa = screen.getDisplayNearestPoint({ x: cx, y: cy }).workArea
+
+    if (vertical) {
+      x = s.edge === 'left' ? wa.x : wa.x + wa.width - b.width
+      y = clampNumber(y, wa.y, wa.y + wa.height - b.height)
+    } else {
+      y = s.edge === 'top' ? wa.y : wa.y + wa.height - b.height
+      x = clampNumber(x, wa.x, wa.x + wa.width - b.width)
+    }
+
+    try {
+      s.handle.setBounds({ x, y, width: b.width, height: b.height }, false)
+    } catch {
+      void 0
     }
   })
 
@@ -374,6 +568,19 @@ export async function stashForegroundToEdge(edge: ExternalWindowEdge): Promise<v
     peeking: false,
     peekGraceUntilMs: 0
   })
+  await persistMutate((items) => {
+    const keep = items.filter((it) => it.hwnd !== hwnd)
+    keep.push({
+      hwnd,
+      title: title.trim() ? title.trim() : undefined,
+      edge,
+      rect,
+      savedAtMs: Date.now(),
+      tries: 0,
+      lastTriedAtMs: null
+    })
+    return keep
+  })
   broadcastChanged()
 }
 
@@ -393,6 +600,7 @@ export async function restore(hwnd: string, activate: boolean): Promise<void> {
     durationMs: cfg.durationMs
   })
   cleanupOne(hwnd)
+  await persistMutate((items) => items.filter((it) => it.hwnd !== hwnd))
   if (activate && ret.ok) {
     await activateExternalWindow(hwnd)
   }
@@ -434,4 +642,119 @@ export function disposeAllWindowStash(): void {
   }
   stashed.clear()
   broadcastChanged()
+}
+
+export async function rehydrateWindowStashFromDisk(): Promise<number> {
+  if (!loadWindowFn) return 0
+  const items = await readPersistedState()
+  if (!items.length) return 0
+
+  const now = Date.now()
+  const outcomes = new Map<
+    string,
+    { kind: 'drop' } | { kind: 'set'; item: PersistedStashItem } | { kind: 'noop' }
+  >()
+  let hydrated = 0
+  const maxTries = 6
+
+  for (const it of items) {
+    const hwnd = it.hwnd
+    if (!hwnd) continue
+    if (stashed.has(hwnd)) {
+      outcomes.set(hwnd, { kind: 'noop' })
+      hydrated += 1
+      continue
+    }
+
+    const title = typeof it.title === 'string' ? it.title : ''
+    let rect = it.rect
+
+    try {
+      const ret = await hideExternalWindowToEdge({
+        hwnd,
+        edge: it.edge,
+        peekPx: PEEK_PX,
+        animate: false
+      })
+      if (!ret.ok) throw new Error('hide failed')
+      if (ret.rect) rect = ret.rect
+
+      const handle = await ensureHandleWindow({ hwnd, title, edge: it.edge, rect })
+      if (!handle) {
+        await restoreExternalWindow({ hwnd, rect, animate: false })
+        throw new Error('handle failed')
+      }
+
+      stashed.set(hwnd, {
+        hwnd,
+        title,
+        edge: it.edge,
+        originalRect: rect,
+        handle,
+        hoverTimer: null,
+        peeking: false,
+        peekGraceUntilMs: 0
+      })
+      hydrated += 1
+      outcomes.set(hwnd, {
+        kind: 'set',
+        item: {
+          hwnd,
+          title: title.trim() ? title.trim() : undefined,
+          edge: it.edge,
+          rect,
+          savedAtMs: it.savedAtMs || now,
+          tries: 0,
+          lastTriedAtMs: null
+        }
+      })
+    } catch {
+      const tries = Math.max(0, it.tries) + 1
+      if (tries >= maxTries) {
+        outcomes.set(hwnd, { kind: 'drop' })
+      } else {
+        outcomes.set(hwnd, {
+          kind: 'set',
+          item: {
+            ...it,
+            title: title.trim() ? title.trim() : undefined,
+            rect,
+            tries,
+            lastTriedAtMs: now
+          }
+        })
+      }
+    }
+  }
+
+  await persistMutate((cur) => {
+    const map = new Map(cur.map((it) => [it.hwnd, it] as const))
+    for (const [hwnd, oc] of outcomes) {
+      if (oc.kind === 'noop') continue
+      if (oc.kind === 'drop') map.delete(hwnd)
+      else map.set(hwnd, oc.item)
+    }
+    return Array.from(map.values())
+  })
+  broadcastChanged()
+  return hydrated
+}
+
+export async function restoreAndClearPersistedWindowStash(): Promise<number> {
+  const items = await readPersistedState()
+  if (!items.length) {
+    await writePersistedState([])
+    return 0
+  }
+  let restored = 0
+  for (const it of items) {
+    try {
+      const ret = await restoreExternalWindow({ hwnd: it.hwnd, rect: it.rect, animate: false })
+      if (ret.ok) restored += 1
+    } catch {
+      void 0
+    }
+  }
+  await writePersistedState([])
+  return restored
 }

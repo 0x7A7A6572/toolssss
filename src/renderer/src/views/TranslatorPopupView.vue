@@ -4,6 +4,21 @@ import { Copy, X } from 'lucide-vue-next'
 import { TRANSLATOR_EVENTS } from '@shared/translator'
 import { appendTranslationHistory } from '@renderer/utils/translationHistory'
 
+const sourceItems: Array<{ title: string; value: string }> = [
+  { title: '自动', value: 'auto' },
+  { title: 'en', value: 'en' },
+  { title: 'zh', value: 'zh' },
+  { title: 'ja', value: 'ja' },
+  { title: 'ko', value: 'ko' }
+]
+
+const targetItems: Array<{ title: string; value: string }> = [
+  { title: 'zh', value: 'zh' },
+  { title: 'en', value: 'en' },
+  { title: 'ja', value: 'ja' },
+  { title: 'ko', value: 'ko' }
+]
+
 const inputText = ref('')
 const outputText = ref('')
 const loading = ref(false)
@@ -123,20 +138,21 @@ onBeforeUnmount(() => {
           "
         />
         <div class="panel-foot">
-          <select v-model="source" class="select">
-            <option value="auto">自动</option>
-            <option value="en">en</option>
-            <option value="zh">zh</option>
-            <option value="ja">ja</option>
-            <option value="ko">ko</option>
-          </select>
+          <v-select
+            v-model="source"
+            class="select"
+            :items="sourceItems"
+            item-title="title"
+            item-value="value"
+          />
           <div class="arrow">→</div>
-          <select v-model="target" class="select">
-            <option value="zh">zh</option>
-            <option value="en">en</option>
-            <option value="ja">ja</option>
-            <option value="ko">ko</option>
-          </select>
+          <v-select
+            v-model="target"
+            class="select"
+            :items="targetItems"
+            item-title="title"
+            item-value="value"
+          />
 
           <div class="spacer" />
 
@@ -261,8 +277,8 @@ onBeforeUnmount(() => {
 }
 
 .select {
-  height: 30px;
-  padding: 0 10px;
+  width: 92px;
+  flex: none;
 }
 
 .arrow {
@@ -275,7 +291,7 @@ onBeforeUnmount(() => {
 }
 
 .btn {
-  height: 30px;
+  height: 32px;
   padding: 0 12px;
   border-radius: 10px;
   border: 1px solid rgba(59, 130, 246, 0.45);
