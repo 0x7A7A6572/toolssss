@@ -38,6 +38,13 @@ import {
 } from './sticky-notes'
 import { registerWeatherHandlers } from './weather'
 import { registerScriptLibraryHandlers } from './script-library'
+import { disposeExternalWindowPowerShell, warmupExternalWindowPowerShell } from './external-window'
+import {
+  disposeAllWindowStash,
+  initWindowStash,
+  restoreAllWindowStash,
+  stashForegroundToEdge
+} from './window-stash'
 import { TRANSLATOR_EVENTS, type TranslatePayload, type TranslateResult } from '@shared/translator'
 import Screenshots from '../libs/electron-screenshots/index'
 
@@ -48,6 +55,7 @@ let translatorPopupWindow: BrowserWindow | null = null
 let screenshots: Screenshots | null = null
 let isScreenshotsHooked = false
 let snipCapturing = false
+let windowStashRestoredOnQuit = false
 
 let settings: AppSettings = DEFAULT_SETTINGS
 const overlayWindows = new Map<number, BrowserWindow>()
@@ -282,6 +290,28 @@ function normalizeSettings(input: unknown): AppSettings {
       ? (obj.break as { closeOnEnd: boolean }).closeOnEnd
       : base.break.closeOnEnd
 
+  if (
+    (obj as { windowStash?: unknown }).windowStash &&
+    typeof (obj as { windowStash?: unknown }).windowStash === 'object'
+  ) {
+    const ws = (obj as { windowStash: Record<string, unknown> }).windowStash
+    const colors = ws['handleColors']
+    if (colors && typeof colors === 'object') {
+      const c = colors as Record<string, unknown>
+      const left = typeof c['left'] === 'string' ? c['left'].trim() : ''
+      const top = typeof c['top'] === 'string' ? c['top'].trim() : ''
+      const right = typeof c['right'] === 'string' ? c['right'].trim() : ''
+      const bottom = typeof c['bottom'] === 'string' ? c['bottom'].trim() : ''
+      if (left) base.windowStash.handleColors.left = left
+      if (top) base.windowStash.handleColors.top = top
+      if (right) base.windowStash.handleColors.right = right
+      if (bottom) base.windowStash.handleColors.bottom = bottom
+    }
+    if (typeof ws['animate'] === 'boolean') base.windowStash.animate = ws['animate'] as boolean
+    if (typeof ws['durationMs'] === 'number')
+      base.windowStash.durationMs = clampNumber(Number(ws['durationMs']), 60, 1200)
+  }
+
   return base
 }
 
@@ -393,6 +423,24 @@ function applySettingsPatch(patch: unknown): AppSettings {
       next.break.disableInFullscreen = p.break.disableInFullscreen
     if (typeof (p.break as Record<string, unknown>).closeOnEnd === 'boolean')
       next.break.closeOnEnd = (p.break as Record<string, boolean>).closeOnEnd
+  }
+  if (
+    (p as { windowStash?: unknown }).windowStash &&
+    typeof (p as { windowStash?: unknown }).windowStash === 'object'
+  ) {
+    const ws = (p as { windowStash: Record<string, unknown> }).windowStash
+    const colors = ws['handleColors']
+    if (colors && typeof colors === 'object') {
+      const c = colors as Record<string, unknown>
+      if (typeof c['left'] === 'string') next.windowStash.handleColors.left = c['left'] as string
+      if (typeof c['top'] === 'string') next.windowStash.handleColors.top = c['top'] as string
+      if (typeof c['right'] === 'string') next.windowStash.handleColors.right = c['right'] as string
+      if (typeof c['bottom'] === 'string')
+        next.windowStash.handleColors.bottom = c['bottom'] as string
+    }
+    if (typeof ws['animate'] === 'boolean') next.windowStash.animate = ws['animate'] as boolean
+    if (typeof ws['durationMs'] === 'number')
+      next.windowStash.durationMs = ws['durationMs'] as number
   }
   {
     const rsv = (p as { reminderSeconds?: unknown }).reminderSeconds
@@ -2422,6 +2470,22 @@ function ensureShortcuts(): void {
       }
     }
   }
+
+  const fixed = [
+    { acc: 'CommandOrControl+Shift+1', edge: 'left' as const },
+    { acc: 'CommandOrControl+Shift+2', edge: 'top' as const },
+    { acc: 'CommandOrControl+Shift+3', edge: 'right' as const },
+    { acc: 'CommandOrControl+Shift+4', edge: 'bottom' as const }
+  ]
+  for (const it of fixed) {
+    try {
+      globalShortcut.register(it.acc, async () => {
+        await stashForegroundToEdge(it.edge)
+      })
+    } catch (e) {
+      console.error('Failed to register shortcut:', it.acc, e)
+    }
+  }
 }
 
 function applySettingsToRuntime(): void {
@@ -2533,6 +2597,7 @@ function createWindow(): void {
     width: 900,
     height: 670,
     show: false,
+    frame: false,
     resizable: false,
     autoHideMenuBar: true,
     ...(process.platform === 'linux' ? { icon } : {}),
@@ -2545,6 +2610,22 @@ function createWindow(): void {
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show()
   })
+
+  const sendWindowState = (): void => {
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    const payload = {
+      maximized: mainWindow.isMaximized(),
+      minimized: mainWindow.isMinimized(),
+      focused: mainWindow.isFocused()
+    }
+    mainWindow.webContents.send('window:state', payload)
+  }
+  mainWindow.on('maximize', sendWindowState)
+  mainWindow.on('unmaximize', sendWindowState)
+  mainWindow.on('minimize', sendWindowState)
+  mainWindow.on('restore', sendWindowState)
+  mainWindow.on('focus', sendWindowState)
+  mainWindow.on('blur', sendWindowState)
 
   mainWindow.on('close', (event) => {
     if (settings.general.minimizeToTray && !isQuitting) {
@@ -2563,6 +2644,53 @@ function createWindow(): void {
   mainWindow.webContents.once('did-finish-load', () => {
     broadcastUpdateState()
   })
+
+  ipcMain.handle('window:state:get', () => {
+    if (!mainWindow || mainWindow.isDestroyed())
+      return { maximized: false, minimized: false, focused: false }
+    return {
+      maximized: mainWindow.isMaximized(),
+      minimized: mainWindow.isMinimized(),
+      focused: mainWindow.isFocused()
+    }
+  })
+  ipcMain.on('window:control', (event, payload: unknown) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed()) return
+    const action =
+      typeof payload === 'string'
+        ? payload
+        : payload && typeof payload === 'object'
+          ? (payload as { action?: unknown }).action
+          : ''
+    const act = typeof action === 'string' ? action : ''
+    if (!act) return
+    if (act === 'minimize') {
+      try {
+        win.minimize()
+      } catch {
+        void 0
+      }
+      return
+    }
+    if (act === 'toggleMaximize') {
+      try {
+        if (win.isMaximized()) win.unmaximize()
+        else win.maximize()
+      } catch {
+        void 0
+      }
+      return
+    }
+    if (act === 'close') {
+      try {
+        win.close()
+      } catch {
+        void 0
+      }
+      return
+    }
+  })
 }
 
 // This method will be called when Electron has finished
@@ -2571,6 +2699,25 @@ function createWindow(): void {
 app.whenReady().then(() => {
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.electron')
+
+  initWindowStash({
+    loadWindow,
+    getMainWindow: () => mainWindow,
+    getSettings: () => settings
+  })
+
+  app.on('will-quit', (e) => {
+    if (windowStashRestoredOnQuit) return
+    windowStashRestoredOnQuit = true
+    e.preventDefault()
+    restoreAllWindowStash()
+      .catch(() => null)
+      .finally(() => {
+        disposeAllWindowStash()
+        disposeExternalWindowPowerShell()
+        app.exit(0)
+      })
+  })
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.
@@ -2581,6 +2728,9 @@ app.whenReady().then(() => {
 
   settings = loadSettingsFromDisk()
   applySettingsToRuntime()
+  setTimeout(() => {
+    warmupExternalWindowPowerShell().catch(() => null)
+  }, 800)
   registerStickyNotesHandlers()
   registerWeatherHandlers()
   registerScriptLibraryHandlers()
@@ -3026,6 +3176,15 @@ app.whenReady().then(() => {
     saveSettingsToDisk(settings)
     applySettingsToRuntime()
     broadcastBreakStatus()
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (win.isDestroyed()) continue
+      if (win.webContents.isLoading()) continue
+      try {
+        win.webContents.send('settings:changed', settings)
+      } catch {
+        void 0
+      }
+    }
     return settings
   })
 

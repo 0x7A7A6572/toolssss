@@ -2,6 +2,7 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { House, Settings2 } from 'lucide-vue-next'
+import { Minus, Square, X } from 'lucide-vue-next'
 
 const router = useRouter()
 const route = useRoute()
@@ -12,11 +13,13 @@ const tabs = [
   { id: 'EyeProtection', label: '护眼', path: '/eye-protection' },
   { id: 'Translator', label: '快捷翻译', path: '/translator' },
   { id: 'SnipPaste', label: '截屏贴图', path: '/snip-paste' },
+  { id: 'WindowStash', label: '窗口收纳', path: '/window-stash' },
   { id: 'ScriptLibrary', label: '脚本库', path: '/script-library' },
   { id: 'Landing', label: '关于', path: '/landing' }
 ]
 
 const hasUpdate = ref(false)
+const maximized = ref(false)
 const onUpdateStatus = (_: unknown, payload: unknown): void => {
   if (!payload || typeof payload !== 'object') return
   const p = payload as { hasUpdate?: unknown }
@@ -27,21 +30,75 @@ function selectTab(path: string): void {
   router.push(path)
 }
 
+function minimize(): void {
+  window.electron.ipcRenderer.send('window:control', { action: 'minimize' })
+}
+function toggleMaximize(): void {
+  window.electron.ipcRenderer.send('window:control', { action: 'toggleMaximize' })
+}
+function closeWindow(): void {
+  window.electron.ipcRenderer.send('window:control', { action: 'close' })
+}
+
 onMounted(() => {
   window.electron.ipcRenderer
     .invoke('update:status:get')
     .then((v: unknown) => onUpdateStatus(null, v))
     .catch(() => null)
   window.electron.ipcRenderer.on('update:status', onUpdateStatus)
+  window.electron.ipcRenderer
+    .invoke('window:state:get')
+    .then((v: unknown) => {
+      const p = v && typeof v === 'object' ? (v as { maximized?: unknown }) : {}
+      maximized.value = Boolean(p.maximized)
+    })
+    .catch(() => null)
+  window.electron.ipcRenderer.on('window:state', (_: unknown, payload: unknown) => {
+    const p = payload && typeof payload === 'object' ? (payload as { maximized?: unknown }) : {}
+    maximized.value = Boolean(p.maximized)
+  })
 })
 
 onBeforeUnmount(() => {
   window.electron.ipcRenderer.removeListener('update:status', onUpdateStatus)
+  window.electron.ipcRenderer.removeAllListeners('window:state')
 })
 </script>
 
 <template>
   <div class="layout">
+    <div class="window-titlebar">
+      <div class="titlebar-drag"></div>
+      <div class="titlebar-actions">
+        <button
+          class="titlebar-btn"
+          type="button"
+          aria-label="最小化"
+          title="最小化"
+          @click="minimize"
+        >
+          <Minus :size="16" />
+        </button>
+        <button
+          class="titlebar-btn"
+          type="button"
+          :aria-label="maximized ? '还原' : '最大化'"
+          :title="maximized ? '还原' : '最大化'"
+          @click="toggleMaximize"
+        >
+          <Square :size="14" />
+        </button>
+        <button
+          class="titlebar-btn danger"
+          type="button"
+          aria-label="关闭"
+          title="关闭"
+          @click="closeWindow"
+        >
+          <X :size="16" />
+        </button>
+      </div>
+    </div>
     <aside class="sidebar">
       <!-- <div class="brand">
         <img class="brand-icon" :src="logo" alt="icon" />
@@ -94,10 +151,58 @@ onBeforeUnmount(() => {
   background-color: black;
 }
 
+.window-titlebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  -webkit-app-region: drag;
+  z-index: 1000;
+  background: linear-gradient(
+    270deg,
+    /* black 100px, */ #3370d32e 50px,
+    #5957dc4a 100px,
+    black 250px,
+    transparent 50%
+  );
+}
+.titlebar-drag {
+  flex: 1;
+}
+.titlebar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px 8px 0;
+  -webkit-app-region: no-drag;
+}
+.titlebar-btn {
+  width: 28px;
+  height: 22px;
+  display: flex;
+  border: none;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  color: rgba(235, 235, 245, 0.82);
+  cursor: pointer;
+}
+.titlebar-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+.titlebar-btn.danger:hover {
+  background: rgba(239, 68, 68, 0.18);
+  border-color: rgba(239, 68, 68, 0.26);
+}
+
 .sidebar {
   height: 100vh;
   border-right: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 18px 12px;
+  padding: 18px 12px 18px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -188,7 +293,7 @@ onBeforeUnmount(() => {
 .page {
   height: 100vh;
   width: 100%;
-  padding: 24px;
+  padding: 60px 24px 24px;
   display: flex;
   flex-direction: column;
   overflow-y: scroll;

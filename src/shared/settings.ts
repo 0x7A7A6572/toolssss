@@ -54,6 +54,11 @@ export interface AppSettings {
     disableInFullscreen: boolean
     closeOnEnd: boolean
   }
+  windowStash: {
+    handleColors: Record<'left' | 'top' | 'right' | 'bottom', string>
+    animate: boolean
+    durationMs: number
+  }
 }
 
 export type SettingsPatch = Partial<{
@@ -70,6 +75,7 @@ export type SettingsPatch = Partial<{
   reminderSeconds: number
   alarm: Partial<AppSettings['alarm']>
   break: Partial<AppSettings['break']>
+  windowStash: Partial<AppSettings['windowStash']>
 }>
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -132,5 +138,15 @@ export const DEFAULT_SETTINGS: AppSettings = {
     intervalMinutes: 45,
     disableInFullscreen: true,
     closeOnEnd: true
+  },
+  windowStash: {
+    handleColors: {
+      left: '#22c55e',
+      top: '#f59e0b',
+      right: '#3b82f6',
+      bottom: '#ef4444'
+    },
+    animate: true,
+    durationMs: 180
   }
 }

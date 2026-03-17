@@ -7,6 +7,7 @@ import SettingsView from '../views/Settings/SettingsView.vue'
 import SnipPaste from '../views/SnipPaste/SnipPaste.vue'
 import StickyNotes from '../views/StickyNotes/StickyNotes.vue'
 import TranslatorView from '../views/Translator/TranslatorView.vue'
+import WindowStashView from '../views/WindowStash/WindowStashView.vue'
 
 const routes = [
   {
@@ -47,6 +48,11 @@ const routes = [
     path: '/translator',
     name: 'Translator',
     component: TranslatorView
+  },
+  {
+    path: '/window-stash',
+    name: 'WindowStash',
+    component: WindowStashView
   },
   {
     path: '/settings',
