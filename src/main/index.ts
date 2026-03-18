@@ -1712,7 +1712,7 @@ function ensureTranslatorPopupWindow(): BrowserWindow {
 
   const display = screen.getPrimaryDisplay()
   const w = 520
-  const h = 360
+  const h = 260
   const x = display.workArea.x + display.workArea.width - w - 20
   const y = display.workArea.y + 80
   const win = new BrowserWindow({

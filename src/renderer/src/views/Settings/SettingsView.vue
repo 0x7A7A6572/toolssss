@@ -4,6 +4,7 @@ import { DEFAULT_SETTINGS, type AppSettings, type SettingsPatch } from '@shared/
 import ShortcutInput from '../../components/ShortcutInput.vue'
 import { Delete, FolderOpen } from 'lucide-vue-next'
 import { AI_PROVIDERS } from '../../constants/aiProviders'
+import { Languages } from '@renderer/utils/bean'
 
 const settings = ref<AppSettings>(structuredClone(DEFAULT_SETTINGS))
 const saving = ref(false)
@@ -22,26 +23,10 @@ const translateProviderItems: Array<{
 
 const translateSourceItems: Array<{ title: string; value: string }> = [
   { title: '自动识别', value: 'auto' },
-  { title: '英语', value: 'en' },
-  { title: '中文', value: 'zh' },
-  { title: '日语', value: 'ja' },
-  { title: '韩语', value: 'ko' },
-  { title: '法语', value: 'fr' },
-  { title: '德语', value: 'de' },
-  { title: '西班牙语', value: 'es' },
-  { title: '俄语', value: 'ru' }
+  ...Languages
 ]
 
-const translateTargetItems: Array<{ title: string; value: string }> = [
-  { title: '中文（简体）', value: 'zh' },
-  { title: '英语', value: 'en' },
-  { title: '日语', value: 'ja' },
-  { title: '韩语', value: 'ko' },
-  { title: '法语', value: 'fr' },
-  { title: '德语', value: 'de' },
-  { title: '西班牙语', value: 'es' },
-  { title: '俄语', value: 'ru' }
-]
+const translateTargetItems: Array<{ title: string; value: string }> = [...Languages]
 
 const aiProviderItems: Array<{ title: string; value: AppSettings['ai']['provider'] }> = [
   { title: 'OpenAI', value: 'openai' },

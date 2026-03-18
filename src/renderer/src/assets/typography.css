@@ -1,0 +1,175 @@
+:root {
+  --prose-text: rgba(17, 24, 39, 0.92);
+  --prose-muted: rgba(17, 24, 39, 0.72);
+  --prose-border: rgba(17, 24, 39, 0.18);
+  --prose-soft: rgba(17, 24, 39, 0.06);
+  --prose-link: rgba(37, 99, 235, 0.95);
+  --prose-code-bg: rgba(17, 24, 39, 0.08);
+}
+ 
+.prose {
+  color: var(--prose-text);
+  font-size: 14px;
+  line-height: 1.75;
+  word-break: break-word;
+}
+ 
+.prose.prose-invert {
+  --prose-text: rgba(235, 235, 245, 0.92);
+  --prose-muted: rgba(235, 235, 245, 0.72);
+  --prose-border: rgba(255, 255, 255, 0.2);
+  --prose-soft: rgba(255, 255, 255, 0.08);
+  --prose-link: rgba(96, 165, 250, 0.95);
+  --prose-code-bg: rgba(255, 255, 255, 0.1);
+}
+ 
+.prose :where(p) {
+  margin: 0.6em 0;
+}
+ 
+.prose :where(h1, h2, h3) {
+  margin: 0.9em 0 0.4em;
+  font-weight: 800;
+  line-height: 1.2;
+}
+ 
+.prose :where(h1) {
+  font-size: 1.6em;
+}
+ 
+.prose :where(h2) {
+  font-size: 1.3em;
+}
+ 
+.prose :where(h3) {
+  font-size: 1.15em;
+}
+ 
+.prose :where(ul, ol) {
+  margin: 0.6em 0;
+  padding-left: 1.5em;
+}
+ 
+.prose :where(li) {
+  margin: 0.2em 0;
+}
+ 
+.prose :where(a) {
+  color: var(--prose-link);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+ 
+.prose :where(hr) {
+  border: none;
+  border-top: 1px solid var(--prose-border);
+  margin: 1em 0;
+}
+ 
+.prose :where(blockquote) {
+  border-left: 4px solid var(--prose-border);
+  background: var(--prose-soft);
+  padding: 0.6em 0.9em;
+  border-radius: 10px;
+  margin: 0.75em 0;
+}
+ 
+.prose :where(blockquote p) {
+  margin: 0;
+  color: var(--prose-muted);
+}
+ 
+.prose :where(code) {
+  background: var(--prose-code-bg);
+  padding: 0.2em 0.4em;
+  border-radius: 6px;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+    monospace;
+  font-size: 0.95em;
+}
+ 
+.prose :where(pre) {
+  background: var(--prose-soft);
+  border: 1px solid var(--prose-border);
+  padding: 12px 14px;
+  border-radius: 10px;
+  overflow: auto;
+  margin: 0.75em 0;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+    monospace;
+  font-size: 13px;
+  line-height: 1.5;
+}
+ 
+.prose :where(pre code) {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  font-family: inherit;
+  font-size: inherit;
+}
+ 
+.prose :where(img) {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 10px;
+  margin: 0.75em 0;
+}
+ 
+.prose ul[data-type='taskList'] {
+  list-style: none !important;
+  padding-left: 0;
+}
+ 
+.prose li[data-type='taskItem'] {
+  display: flex !important;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 0.35em 0;
+  line-height: 1.6;
+}
+ 
+.prose li[data-type='taskItem'] > label {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: flex-start;
+  /* user-select: none; */
+  line-height: 1;
+  margin-top: 0.2em;
+}
+ 
+.prose li[data-type='taskItem'] > label input {
+  margin: 0;
+  width: 1.05em;
+  height: 1.05em;
+  accent-color: var(--prose-link);
+}
+ 
+.prose li[data-type='taskItem'] > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+ 
+.prose li[data-type='taskItem'] > div > p {
+  margin: 0;
+}
+ 
+.prose li[data-type='taskItem'] > div > :not(:first-child) {
+  margin-top: 0.4em;
+}
+
+.prose li[data-type='taskItem'][data-checked='true'] > div {
+  color: var(--prose-muted);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  text-decoration-color: var(--prose-border);
+}
+
+.prose li[data-type='taskItem'] > div > ul[data-type='taskList'] {
+  padding-left: 1.4em;
+}

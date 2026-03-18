@@ -141,7 +141,11 @@ const codeBlockLanguage = computed(() => {
 
 function setCodeBlockLanguage(value: string): void {
   if (!editor.value) return
-  editor.value.chain().focus().setCodeBlock({ language: String(value || '') }).run()
+  editor.value
+    .chain()
+    .focus()
+    .setCodeBlock({ language: String(value || '') })
+    .run()
 }
 
 function undo(): void {
@@ -297,7 +301,7 @@ const editor = useEditor({
   },
   editorProps: {
     attributes: {
-      class: 'prose prose-invert max-w-none focus:outline-none min-h-[100px]'
+      class: 'prose note-prose'
     },
     handleDOMEvents: {
       paste: (_view, event) => {
@@ -851,57 +855,10 @@ onBeforeUnmount(() => {
   font-weight: 800;
 }
 
-:deep(ul[data-type='taskList']) {
-  list-style: none;
-  padding-left: 0;
-}
-
-:deep(li[data-type='taskItem']) {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-  margin: 0.35em 0;
-}
-
-:deep(li[data-type='taskItem'] > label) {
-  flex: 0 0 auto;
-  margin-top: 0.1em;
-  user-select: none;
-}
-
-:deep(li[data-type='taskItem'] > div) {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-:deep(.ProseMirror) {
+:deep(.note-prose) {
   outline: none;
   min-height: 100px;
   color: inherit;
-}
-
-:deep(p) {
-  margin: 0.5em 0;
-}
-
-:deep(ul),
-:deep(ol) {
-  padding-left: 1.5em;
-  margin: 0.5em 0;
-}
-
-:deep(blockquote) {
-  border-left: 3px solid rgba(255, 255, 255, 0.3);
-  padding-left: 1em;
-  margin: 0.5em 0;
-  opacity: 0.8;
-}
-
-:deep(code) {
-  background: rgba(255, 255, 255, 0.1);
-  padding: 0.2em 0.4em;
-  border-radius: 4px;
-  font-family: monospace;
 }
 
 :deep(img) {
@@ -912,11 +869,5 @@ onBeforeUnmount(() => {
   object-fit: contain;
   border-radius: 8px;
   margin: 10px 0;
-}
-
-:deep(a) {
-  color: rgba(96, 165, 250, 0.95);
-  text-decoration: underline;
-  text-underline-offset: 2px;
 }
 </style>

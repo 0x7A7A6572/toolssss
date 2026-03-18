@@ -11,29 +11,13 @@ import {
   removeTranslationHistoryItem,
   type TranslationHistoryItem
 } from '@renderer/utils/translationHistory'
-
+import { Languages } from '@renderer/utils/bean'
 const sourceItems: Array<{ title: string; value: string }> = [
   { title: '自动识别', value: 'auto' },
-  { title: '英语', value: 'en' },
-  { title: '中文', value: 'zh' },
-  { title: '日语', value: 'ja' },
-  { title: '韩语', value: 'ko' },
-  { title: '法语', value: 'fr' },
-  { title: '德语', value: 'de' },
-  { title: '西班牙语', value: 'es' },
-  { title: '俄语', value: 'ru' }
+  ...Languages
 ]
 
-const targetItems: Array<{ title: string; value: string }> = [
-  { title: '中文（简体）', value: 'zh' },
-  { title: '英语', value: 'en' },
-  { title: '日语', value: 'ja' },
-  { title: '韩语', value: 'ko' },
-  { title: '法语', value: 'fr' },
-  { title: '德语', value: 'de' },
-  { title: '西班牙语', value: 'es' },
-  { title: '俄语', value: 'ru' }
-]
+const targetItems: Array<{ title: string; value: string }> = [...Languages]
 
 const inputText = ref('')
 const outputText = ref('')

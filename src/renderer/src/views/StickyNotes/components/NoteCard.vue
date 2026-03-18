@@ -58,10 +58,10 @@ function openFullscreen(): void {
     <div class="note-header">
       <span class="date">{{ new Date(note.updatedAt).toLocaleString() }}</span>
       <div class="actions">
+        <button class="btn-icon" title="全屏编辑" @click="openFullscreen">
+          <Maximize2 :size="16" />
+        </button>
         <template v-if="isEditing">
-          <button class="btn-icon" title="全屏编辑" @click="openFullscreen">
-            <Maximize2 :size="16" />
-          </button>
           <button class="btn-icon save" title="保存" @click="saveEdit">
             <Check :size="16" />
           </button>

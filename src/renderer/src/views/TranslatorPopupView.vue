@@ -1,23 +1,17 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
-import { Copy, X } from 'lucide-vue-next'
+import { Copy, X, ArrowRight } from 'lucide-vue-next'
 import { TRANSLATOR_EVENTS } from '@shared/translator'
 import { appendTranslationHistory } from '@renderer/utils/translationHistory'
 
+import { Languages } from '@renderer/utils/bean'
+
 const sourceItems: Array<{ title: string; value: string }> = [
   { title: '自动', value: 'auto' },
-  { title: 'en', value: 'en' },
-  { title: 'zh', value: 'zh' },
-  { title: 'ja', value: 'ja' },
-  { title: 'ko', value: 'ko' }
+  ...Languages
 ]
 
-const targetItems: Array<{ title: string; value: string }> = [
-  { title: 'zh', value: 'zh' },
-  { title: 'en', value: 'en' },
-  { title: 'ja', value: 'ja' },
-  { title: 'ko', value: 'ko' }
-]
+const targetItems: Array<{ title: string; value: string }> = [...Languages]
 
 const inputText = ref('')
 const outputText = ref('')
@@ -117,6 +111,33 @@ onBeforeUnmount(() => {
   <div class="wrap">
     <header class="header">
       <div class="title">快捷翻译</div>
+      <div class="title-toolbar">
+        <v-select
+          v-model="source"
+          class="select"
+          :items="sourceItems"
+          item-title="title"
+          item-value="value"
+        />
+        <div class="arrow">
+          <ArrowRight :size="16" />
+        </div>
+        <v-select
+          v-model="target"
+          class="select"
+          :items="targetItems"
+          item-title="title"
+          item-value="value"
+        />
+        <button
+          class="btn"
+          type="button"
+          :disabled="loading || !inputText.trim()"
+          @click="translate"
+        >
+          {{ loading ? '翻译中...' : '翻译' }}
+        </button>
+      </div>
       <div class="actions">
         <button class="icon" type="button" :disabled="!outputText" @click="copyResult">
           <Copy :size="16" />
@@ -137,34 +158,9 @@ onBeforeUnmount(() => {
             selectionPending ? '正在获取选中文本…' : '选中文本后按快捷键，或手动粘贴...'
           "
         />
-        <div class="panel-foot">
-          <v-select
-            v-model="source"
-            class="select"
-            :items="sourceItems"
-            item-title="title"
-            item-value="value"
-          />
-          <div class="arrow">→</div>
-          <v-select
-            v-model="target"
-            class="select"
-            :items="targetItems"
-            item-title="title"
-            item-value="value"
-          />
-
+        <!-- <div class="panel-foot">
           <div class="spacer" />
-
-          <button
-            class="btn"
-            type="button"
-            :disabled="loading || !inputText.trim()"
-            @click="translate"
-          >
-            {{ loading ? '翻译中...' : '翻译' }}
-          </button>
-        </div>
+        </div> -->
       </div>
 
       <div class="panel">
@@ -188,13 +184,13 @@ onBeforeUnmount(() => {
 }
 
 .header {
-  padding: 10px 12px;
+  padding: 4px 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  -webkit-app-region: drag;
+  /* -webkit-app-region: drag; */
 }
 
 .title {
@@ -203,6 +199,13 @@ onBeforeUnmount(() => {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   opacity: 0.9;
+  -webkit-app-region: drag;
+}
+
+.title-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .actions {
@@ -283,7 +286,6 @@ onBeforeUnmount(() => {
 
 .arrow {
   opacity: 0.7;
-  font-size: 12px;
 }
 
 .spacer {
