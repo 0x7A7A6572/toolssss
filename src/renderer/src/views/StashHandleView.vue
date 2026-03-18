@@ -6,12 +6,14 @@ import { GripHorizontal, GripVertical } from 'lucide-vue-next'
 const params = new URLSearchParams(window.location.search)
 const hwnd = params.get('hwnd') ?? ''
 const edge = (params.get('edge') ?? 'right') as 'left' | 'right' | 'top' | 'bottom'
-const title = params.get('title') ?? ''
-const queryColor = params.get('color') ?? ''
+const initialTitle = params.get('title') ?? ''
+const initialColor = params.get('color') ?? ''
 
 const vertical = computed(() => edge === 'left' || edge === 'right')
 
 const settings = ref<AppSettings | null>(null)
+const handleTitle = ref(initialTitle)
+const handleColor = ref(initialColor)
 
 const showHandleTitle = computed(() => settings.value?.windowStash?.showHandleTitle !== false)
 const showHandleDrag = computed(() => settings.value?.windowStash?.showHandleDrag !== false)
@@ -56,17 +58,17 @@ function hexToRgba(hex: string): { r: number; g: number; b: number; a: number } 
 }
 
 const displayTitle = computed(() => {
-  const t = title.trim()
+  const t = handleTitle.value.trim()
   if (!t) return '收纳'
   return truncateByCodePoints(t, 10)
 })
 
 const rawBg = computed(() => {
+  const byHandle = normalizeHexColor(handleColor.value)
+  if (byHandle) return byHandle
   const cfg = settings.value?.windowStash
   const bySetting = cfg && cfg.handleColors ? normalizeHexColor(cfg.handleColors[edge]) : null
   if (bySetting) return bySetting
-  const byQuery = normalizeHexColor(queryColor)
-  if (byQuery) return byQuery
   if (edge === 'left') return '#22c55e88'
   if (edge === 'top') return '#f59e0b88'
   if (edge === 'bottom') return '#ef444488'
@@ -78,9 +80,17 @@ const bgStyle = computed(() => {
   const cfg = settings.value?.windowStash
   const opacity = clampNumber(Number(cfg?.handleOpacity ?? 1), 0, 1)
   const a = clampNumber(rgba.a * opacity, 0, 1)
+
+  const degMap = {
+    left: '90deg',
+    top: '180deg',
+    bottom: '0deg',
+    right: '270deg'
+  }
+
   return {
     // backgroundColor: `rgba(${rgba.r}, ${rgba.g}, ${rgba.b}, ${a})`,
-    backgroundImage: `linear-gradient(${vertical.value ? '90deg' : '180deg'}, rgba(${rgba.r}, ${rgba.g}, ${rgba.b}, ${a}), transparent)`
+    backgroundImage: `linear-gradient(${degMap[edge]}, rgba(${rgba.r}, ${rgba.g}, ${rgba.b}, ${a}), transparent)`
   }
 })
 
@@ -132,6 +142,16 @@ const onSettingsChanged = (_: unknown, payload: unknown): void => {
   settings.value = payload as AppSettings
 }
 
+const onHandleUpdate = (_: unknown, payload: unknown): void => {
+  if (!payload || typeof payload !== 'object') return
+  const p = payload as { title?: unknown; color?: unknown }
+  const t = typeof p.title === 'string' ? p.title : ''
+  const c = typeof p.color === 'string' ? p.color : ''
+  if (t.trim()) handleTitle.value = t
+  else handleTitle.value = initialTitle
+  handleColor.value = c
+}
+
 onMounted(() => {
   window.electron.ipcRenderer
     .invoke('settings:get')
@@ -140,10 +160,12 @@ onMounted(() => {
     })
     .catch(() => null)
   window.electron.ipcRenderer.on('settings:changed', onSettingsChanged)
+  window.electron.ipcRenderer.on('window-stash:handle:update', onHandleUpdate)
 })
 
 onBeforeUnmount(() => {
   window.electron.ipcRenderer.removeListener('settings:changed', onSettingsChanged)
+  window.electron.ipcRenderer.removeListener('window-stash:handle:update', onHandleUpdate)
   stopDragging()
 })
 
@@ -165,13 +187,8 @@ function startDragging(ev: PointerEvent): void {
 }
 
 function restore(): void {
-  // if (restoring.value) return
-  // if (!hwnd.trim()) return
-  // restoring.value = true
-  // window.electron.ipcRenderer.send('window-stash:toggle', { hwnd, activate: true })
-  // window.setTimeout(() => {
-  //   restoring.value = false
-  // }, 250)
+  if (!hwnd.trim()) return
+  window.electron.ipcRenderer.send('window-stash:toggle', { hwnd, activate: true })
 }
 </script>
 
@@ -181,7 +198,7 @@ function restore(): void {
     :class="{ vertical, edge }"
     :style="bgStyle"
     @mouseenter="startPeek"
-    @mousedown.prevent="restore"
+    @dblclick.stop.prevent="restore"
   >
     <div class="content" :class="{ vertical }">
       <button

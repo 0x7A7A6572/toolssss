@@ -21,15 +21,25 @@ type StashedWindow = {
   hoverTimer: NodeJS.Timeout | null
   peeking: boolean
   peekGraceUntilMs: number
+  handleAlias?: string
+  handleColor?: string
 }
 
-type WindowStashListItem = { hwnd: string; title: string; edge: ExternalWindowEdge }
+type WindowStashListItem = {
+  hwnd: string
+  title: string
+  edge: ExternalWindowEdge
+  handleAlias?: string
+  handleColor?: string
+}
 
 const stashed = new Map<string, StashedWindow>()
 
 type PersistedStashItem = {
   hwnd: string
   title?: string
+  handleAlias?: string
+  handleColor?: string
   edge: ExternalWindowEdge
   rect: ExternalWindowRect
   savedAtMs: number
@@ -117,6 +127,9 @@ function normalizePersistedItem(input: unknown): PersistedStashItem | null {
   const p = input as Record<string, unknown>
   const hwnd = typeof p['hwnd'] === 'string' ? p['hwnd'].trim() : ''
   const title = typeof p['title'] === 'string' ? p['title'].trim() : ''
+  const handleAliasRaw = typeof p['handleAlias'] === 'string' ? p['handleAlias'].trim() : ''
+  const handleColorRaw = typeof p['handleColor'] === 'string' ? p['handleColor'].trim() : ''
+  const handleColor = normalizeHexColor(handleColorRaw)
   const edge = p['edge']
   const rect = p['rect']
   if (!hwnd) return null
@@ -138,6 +151,8 @@ function normalizePersistedItem(input: unknown): PersistedStashItem | null {
   return {
     hwnd,
     title: title ? title : undefined,
+    handleAlias: handleAliasRaw ? handleAliasRaw : undefined,
+    handleColor: handleColor ? handleColor : undefined,
     edge,
     rect: { left, top, right, bottom },
     savedAtMs,
@@ -243,7 +258,13 @@ function rectsOverlap(
 }
 
 function listItems(): WindowStashListItem[] {
-  return Array.from(stashed.values()).map((s) => ({ hwnd: s.hwnd, title: s.title, edge: s.edge }))
+  return Array.from(stashed.values()).map((s) => ({
+    hwnd: s.hwnd,
+    title: s.title,
+    edge: s.edge,
+    handleAlias: s.handleAlias,
+    handleColor: s.handleColor
+  }))
 }
 
 function broadcastChanged(): void {
@@ -271,6 +292,8 @@ function cleanupOne(hwnd: string): void {
 async function ensureHandleWindow(s: {
   hwnd: string
   title: string
+  handleAlias?: string
+  handleColor?: string
   edge: ExternalWindowEdge
   rect: ExternalWindowRect
 }): Promise<BrowserWindow | null> {
@@ -362,10 +385,12 @@ async function ensureHandleWindow(s: {
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
 
   const query: Record<string, string> = { mode: 'stash-handle', hwnd: s.hwnd, edge: s.edge }
-  const handleTitle = truncateByCodePoints(s.title.trim(), HANDLE_TITLE_MAX_CHARS)
+  const handleTitle = truncateByCodePoints(
+    (s.handleAlias ?? s.title).trim(),
+    HANDLE_TITLE_MAX_CHARS
+  )
   if (handleTitle) query['title'] = handleTitle
-  const cfg = getStashSettings()
-  const color = normalizeHexColor(cfg.handleColors?.[s.edge]) ?? null
+  const color = normalizeHexColor(s.handleColor ?? '') ?? null
   if (color) query['color'] = color
 
   loadWindowFn(win, query).catch(() => null)
@@ -387,6 +412,18 @@ async function ensureHandleWindow(s: {
   })
 
   return win
+}
+
+function sendHandleMetaToRenderer(s: StashedWindow): void {
+  try {
+    if (s.handle.isDestroyed()) return
+    s.handle.webContents.send('window-stash:handle:update', {
+      title: (s.handleAlias ?? '').trim(),
+      color: (s.handleColor ?? '').trim()
+    })
+  } catch {
+    void 0
+  }
 }
 
 async function collapseToEdge(hwnd: string): Promise<void> {
@@ -459,6 +496,48 @@ export function initWindowStash(opts: {
   })
 
   ipcMain.handle('window-stash:list', () => listItems())
+
+  ipcMain.handle('window-stash:update-meta', async (_event, payload: unknown) => {
+    if (!payload || typeof payload !== 'object') return listItems()
+    const p = payload as { hwnd?: unknown; handleAlias?: unknown; handleColor?: unknown }
+    const hwnd = typeof p.hwnd === 'string' ? p.hwnd.trim() : ''
+    if (!hwnd) return listItems()
+    const cur = stashed.get(hwnd)
+    if (!cur) return listItems()
+
+    const hasAlias = Object.prototype.hasOwnProperty.call(p, 'handleAlias')
+    const hasColor = Object.prototype.hasOwnProperty.call(p, 'handleColor')
+
+    if (hasAlias) {
+      const handleAlias = typeof p.handleAlias === 'string' ? p.handleAlias.trim() : ''
+      cur.handleAlias = handleAlias ? handleAlias : undefined
+    }
+
+    if (hasColor) {
+      const raw = typeof p.handleColor === 'string' ? p.handleColor.trim() : ''
+      if (!raw) {
+        cur.handleColor = undefined
+      } else {
+        const handleColor = normalizeHexColor(raw)
+        if (handleColor) cur.handleColor = handleColor
+      }
+    }
+    sendHandleMetaToRenderer(cur)
+    broadcastChanged()
+
+    await persistMutate((items) =>
+      items.map((it) => {
+        if (it.hwnd !== hwnd) return it
+        return {
+          ...it,
+          handleAlias: cur.handleAlias,
+          handleColor: cur.handleColor
+        }
+      })
+    )
+
+    return listItems()
+  })
 
   ipcMain.on('window-stash:toggle', async (_event, payload: unknown) => {
     if (!payload || typeof payload !== 'object') return
@@ -566,13 +645,17 @@ export async function stashForegroundToEdge(edge: ExternalWindowEdge): Promise<v
     handle,
     hoverTimer: null,
     peeking: false,
-    peekGraceUntilMs: 0
+    peekGraceUntilMs: 0,
+    handleAlias: undefined,
+    handleColor: undefined
   })
   await persistMutate((items) => {
     const keep = items.filter((it) => it.hwnd !== hwnd)
     keep.push({
       hwnd,
       title: title.trim() ? title.trim() : undefined,
+      handleAlias: undefined,
+      handleColor: undefined,
       edge,
       rect,
       savedAtMs: Date.now(),
@@ -679,7 +762,14 @@ export async function rehydrateWindowStashFromDisk(): Promise<number> {
       if (!ret.ok) throw new Error('hide failed')
       if (ret.rect) rect = ret.rect
 
-      const handle = await ensureHandleWindow({ hwnd, title, edge: it.edge, rect })
+      const handle = await ensureHandleWindow({
+        hwnd,
+        title,
+        handleAlias: it.handleAlias,
+        handleColor: it.handleColor,
+        edge: it.edge,
+        rect
+      })
       if (!handle) {
         await restoreExternalWindow({ hwnd, rect, animate: false })
         throw new Error('handle failed')
@@ -693,7 +783,9 @@ export async function rehydrateWindowStashFromDisk(): Promise<number> {
         handle,
         hoverTimer: null,
         peeking: false,
-        peekGraceUntilMs: 0
+        peekGraceUntilMs: 0,
+        handleAlias: it.handleAlias,
+        handleColor: it.handleColor
       })
       hydrated += 1
       outcomes.set(hwnd, {
@@ -701,6 +793,8 @@ export async function rehydrateWindowStashFromDisk(): Promise<number> {
         item: {
           hwnd,
           title: title.trim() ? title.trim() : undefined,
+          handleAlias: it.handleAlias,
+          handleColor: it.handleColor,
           edge: it.edge,
           rect,
           savedAtMs: it.savedAtMs || now,

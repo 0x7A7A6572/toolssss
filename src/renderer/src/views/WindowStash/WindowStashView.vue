@@ -3,7 +3,13 @@ import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { DEFAULT_SETTINGS, type AppSettings, type SettingsPatch } from '@shared/settings'
 
 type Edge = 'left' | 'right' | 'top' | 'bottom'
-type StashedItem = { hwnd: string; title: string; edge: Edge }
+type StashedItem = {
+  hwnd: string
+  title: string
+  edge: Edge
+  handleAlias?: string
+  handleColor?: string
+}
 
 const items = ref<StashedItem[]>([])
 const stashSettings = ref<AppSettings['windowStash']>(structuredClone(DEFAULT_SETTINGS.windowStash))
@@ -17,6 +23,10 @@ const colorMenus = ref<Record<Edge, boolean>>({
   right: false,
   bottom: false
 })
+
+const itemAliasDrafts = ref<Record<string, string>>({})
+const itemColorDrafts = ref<Record<string, string>>({})
+const itemColorMenus = ref<Record<string, boolean>>({})
 
 watch(
   () => stashSettings.value.durationMs,
@@ -37,6 +47,34 @@ watch(
   (v) => {
     colorDrafts.value = { ...v }
   }
+)
+
+watch(
+  items,
+  (next) => {
+    const nextHwnds = new Set(next.map((it) => it.hwnd))
+    for (const it of next) {
+      if (itemAliasDrafts.value[it.hwnd] === undefined) {
+        itemAliasDrafts.value[it.hwnd] = it.handleAlias ?? ''
+      }
+      if (itemColorDrafts.value[it.hwnd] === undefined) {
+        itemColorDrafts.value[it.hwnd] = it.handleColor ?? ''
+      }
+      if (itemColorMenus.value[it.hwnd] === undefined) {
+        itemColorMenus.value[it.hwnd] = false
+      }
+    }
+    for (const k of Object.keys(itemAliasDrafts.value)) {
+      if (!nextHwnds.has(k)) delete itemAliasDrafts.value[k]
+    }
+    for (const k of Object.keys(itemColorDrafts.value)) {
+      if (!nextHwnds.has(k)) delete itemColorDrafts.value[k]
+    }
+    for (const k of Object.keys(itemColorMenus.value)) {
+      if (!nextHwnds.has(k)) delete itemColorMenus.value[k]
+    }
+  },
+  { deep: false }
 )
 
 function edgeLabel(e: Edge): string {
@@ -122,6 +160,54 @@ function setShowHandleDrag(v: boolean): void {
 function restore(hwnd: string): void {
   if (!hwnd.trim()) return
   window.electron.ipcRenderer.send('window-stash:toggle', { hwnd, activate: true })
+}
+
+async function updateItemMeta(
+  hwnd: string,
+  patch: { handleAlias?: string; handleColor?: string }
+): Promise<void> {
+  const id = hwnd.trim()
+  if (!id) return
+  try {
+    const ret = (await window.electron.ipcRenderer.invoke('window-stash:update-meta', {
+      hwnd: id,
+      ...patch
+    })) as unknown
+    items.value = Array.isArray(ret) ? (ret as StashedItem[]) : items.value
+  } catch {
+    void 0
+  }
+}
+
+function onAliasInput(hwnd: string, v: string): void {
+  itemAliasDrafts.value[hwnd] = v
+}
+
+function applyAlias(hwnd: string): void {
+  void updateItemMeta(hwnd, { handleAlias: itemAliasDrafts.value[hwnd] ?? '' })
+}
+
+function onItemColorMenuChange(it: StashedItem, open: boolean): void {
+  if (open) {
+    itemColorDrafts.value[it.hwnd] = it.handleColor ?? stashSettings.value.handleColors[it.edge]
+  }
+}
+
+function cancelItemColor(hwnd: string): void {
+  const it = items.value.find((x) => x.hwnd === hwnd)
+  if (!it) return
+  itemColorDrafts.value[hwnd] = it.handleColor ?? stashSettings.value.handleColors[it.edge]
+  itemColorMenus.value[hwnd] = false
+}
+
+function applyItemColor(hwnd: string): void {
+  void updateItemMeta(hwnd, { handleColor: itemColorDrafts.value[hwnd] ?? '' })
+  itemColorMenus.value[hwnd] = false
+}
+
+function clearItemColor(hwnd: string): void {
+  void updateItemMeta(hwnd, { handleColor: '' })
+  itemColorMenus.value[hwnd] = false
 }
 
 const onChanged = (_: unknown, payload: unknown): void => {
@@ -277,19 +363,79 @@ onBeforeUnmount(() => {
 
       <div v-if="!items.length" class="empty">暂无收纳窗口</div>
 
-      <button
-        v-for="it in items"
-        :key="it.hwnd"
-        class="row btn-row"
-        type="button"
-        @click="restore(it.hwnd)"
-      >
-        <div class="left">
-          <div class="name">{{ it.title || it.hwnd }}</div>
-          <div class="meta">贴边：{{ edgeLabel(it.edge) }}</div>
+      <div v-for="it in items" :key="it.hwnd" class="stash-item">
+        <div class="stash-left">
+          <div class="name">
+            {{ it.handleAlias?.trim() ? it.handleAlias : it.title || it.hwnd }}
+          </div>
+          <div class="meta">
+            贴边：{{ edgeLabel(it.edge) }}
+            <span v-if="it.handleAlias?.trim() && it.title?.trim()"> · 原标题：{{ it.title }}</span>
+          </div>
         </div>
-        <div class="right">恢复</div>
-      </button>
+
+        <div class="stash-controls">
+          <input
+            class="text alias"
+            type="text"
+            :value="itemAliasDrafts[it.hwnd] ?? ''"
+            placeholder="外露标签别名"
+            @input="onAliasInput(it.hwnd, ($event.target as HTMLInputElement).value)"
+            @change="applyAlias(it.hwnd)"
+            @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
+          />
+
+          <v-menu
+            v-model="itemColorMenus[it.hwnd]"
+            :close-on-content-click="false"
+            :offset="8"
+            location="bottom"
+            @update:model-value="(open) => onItemColorMenuChange(it, open)"
+          >
+            <template #activator="{ props }">
+              <button
+                v-bind="props"
+                class="color-btn only"
+                type="button"
+                :style="{
+                  backgroundColor: it.handleColor?.trim()
+                    ? it.handleColor
+                    : stashSettings.handleColors[it.edge]
+                }"
+                :title="it.handleColor?.trim() ? `独立颜色：${it.handleColor}` : '跟随贴边颜色'"
+                aria-label="设置外露标签颜色"
+              />
+            </template>
+
+            <v-card class="color-pop">
+              <v-color-picker
+                v-model="itemColorDrafts[it.hwnd]"
+                :modes="['rgba']"
+                show-swatches
+                hide-inputs
+              />
+              <div class="color-actions">
+                <v-btn variant="text" density="compact" @click="clearItemColor(it.hwnd)"
+                  >跟随</v-btn
+                >
+                <v-btn variant="text" density="compact" @click="cancelItemColor(it.hwnd)"
+                  >取消</v-btn
+                >
+                <v-btn
+                  color="primary"
+                  variant="flat"
+                  density="compact"
+                  @click="applyItemColor(it.hwnd)"
+                >
+                  应用
+                </v-btn>
+              </div>
+            </v-card>
+          </v-menu>
+
+          <button class="btn restore-btn" type="button" @click="restore(it.hwnd)">恢复</button>
+        </div>
+      </div>
     </section>
   </div>
 </template>
@@ -405,6 +551,12 @@ onBeforeUnmount(() => {
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
   cursor: pointer;
+}
+
+.color-btn.only {
+  height: 20px;
+  width: 20px;
+  border-radius: 50%;
 }
 
 .color-pop {
@@ -547,5 +699,55 @@ onBeforeUnmount(() => {
   font-weight: 900;
   font-size: 12px;
   color: rgba(59, 130, 246, 0.95);
+}
+
+.stash-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  padding: 10px 12px;
+}
+
+.stash-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.stash-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.stash-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+.text.alias {
+  width: 220px;
+  max-width: 40vw;
+}
+
+.btn.restore-btn {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.12);
+  color: rgba(59, 130, 246, 0.95);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.btn.restore-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
 }
 </style>
