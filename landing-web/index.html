@@ -256,10 +256,87 @@
       }
     }
 
+    .bili-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 90;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      background: rgba(0, 0, 0, 0.65);
+    }
+
+    .bili-modal[data-open='1'] {
+      display: flex;
+    }
+
+    .bili-dialog {
+      width: min(980px, calc(100vw - 24px));
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(15, 20, 32, 0.94);
+      box-shadow: 0 24px 90px rgba(0, 0, 0, 0.65);
+      overflow: hidden;
+    }
+
+    .bili-dialog-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 4px 14px;
+      padding-right: 4px;
+      background: black;
+    }
+
+    .bili-dialog-title {
+      font-weight: 800;
+      color: rgba(255, 255, 255, 0.92);
+      font-size: 14px;
+      letter-spacing: 0.02em;
+    }
+
+    .bili-close {
+      appearance: none;
+      /* border: 1px solid rgba(255, 255, 255, 0.12); */
+      /* background: rgba(255, 255, 255, 0.04); */
+      color: rgba(255, 255, 255, 0.92);
+      border-radius: 12px;
+      padding: 0 10px;
+      line-height: 1;
+      /* transition: background-color 160ms ease, transform 120ms ease; */
+    }
+
+
+    .bili-frame-wrap {
+      position: relative;
+      width: 100%;
+      background: #000;
+    }
+
+    .bili-frame-wrap::before {
+      content: '';
+      display: block;
+      padding-top: 56.25%;
+    }
+
+    .bili-frame {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border: 0;
+    }
+
     @media (prefers-reduced-motion: reduce) {
+
       /* .animate-float {
         animation: none !important;
       } */
+      .bili-close {
+        transition: none !important;
+      }
     }
   </style>
 </head>
@@ -271,8 +348,7 @@
     <div class="glow-blob bg-blue-600 w-96 h-96 rounded-full top-0 left-[-100px]"></div>
     <div class="glow-blob bg-purple-600 w-[500px] h-[500px] rounded-full bottom-0 right-[-150px] animation-delay-2000">
     </div>
-    <div
-      class="glow-blob bg-cyan-600 w-80 h-80 rounded-full top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 opacity-30">
+    <div class="glow-blob bg-cyan-600 w-80 h-80 rounded-full top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 opacity-30">
     </div>
   </div>
 
@@ -280,17 +356,12 @@
   <nav class="fixed w-full z-50 top-0 start-0 border-b border-white/10 glass-card">
     <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between px-6 py-4">
       <a href="#" class="flex items-center space-x-2 rtl:space-x-reverse">
-        <div class="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center"
-          style="padding: 2px;display: flex;  ">
+        <div class="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center" style="padding: 2px;display: flex;  ">
           <!-- <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-lucide="zap" aria-hidden="true" class="lucide lucide-zap text-white w-5 h-5" style="">
             <path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"></path>
           </svg> -->
-          <svg style="position: absolute;width: 40px;height: 40px;" xmlns="http://www.w3.org/2000/svg" width="24"
-            height="24" viewBox="0 0 24 24" fill="white" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-            stroke-linejoin="round" data-lucide="zap" aria-hidden="true" class="lucide lucide-zap text-white w-5 h-5"
-            style="">
-            <path
-              d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z">
+          <svg style="position: absolute;width: 40px;height: 40px;" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-lucide="zap" aria-hidden="true" class="lucide lucide-zap text-white w-5 h-5" style="">
+            <path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z">
             </path>
           </svg>
           <!-- <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-lucide="zap" aria-hidden="true" class="lucide lucide-zap text-white w-5 h-5" style="">
@@ -299,6 +370,7 @@
         </div>
         <span class="self-center text-xl font-bold whitespace-nowrap tracking-wide">toolsss</span>
       </a>
+
       <!-- <a href="https://toolssss.zzerx.cn/download/toolssss-last-setup.exe" rel="noopener" target="_blank"
         class="flex md:order-2 space-x-3 md:space-x-0 rtl:space-x-reverse">
         <button type="button"
@@ -323,32 +395,36 @@
     <div class="px-4 mx-auto max-w-7xl relative z-10">
       <div class="grid items-center gap-12 lg:grid-cols-[0.85fr_1.15fr] xl:grid-cols-[0.8fr_1.2fr] lg:gap-16">
         <div class="text-left">
-          <div
-            class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-sm text-blue-300 mb-7">
-            <span class="flex h-2 w-2 rounded-full bg-blue-400"></span>
-            桌面端工具箱 · 离线优先 · 随开随用
+          <div class="flex items-center gap-2 mb-7">
+            <a href="https://github.com/0x7A7A6572/toolssss" rel="noopener" target="_blank" class="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white/80 transition-colors hover:bg-white/10 hover:text-white">
+              <i data-lucide="github" class="h-4 w-4"></i>
+              <span class="hidden sm:inline">GitHub</span>
+            </a>
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-sm text-blue-300">
+              <span class="flex h-2 w-2 rounded-full bg-blue-400"></span>
+              桌面端工具箱 · 离线优先 · 随开随用
+            </div>
           </div>
+
 
           <h1 class="mb-6 text-6xl font-extrabold tracking-tight leading-tight text-white">
             把碎片工具
-            <span class="text-gradient"> <br/>变成一套工作流</span>
+            <span class="text-gradient"> <br />变成一套工作流</span>
           </h1>
 
-          <p class="mb-10 text-sm font-normal text-gray-400">
-            便签、截屏贴图、翻译、脚本库…… <br/>你需要的不是更多工具，而是更少切换。
+          <p class="mb-10 text-md font-normal text-gray-400">
+            便签、截屏贴图、翻译、脚本库…… <br />你需要的不是更多工具，而是更少切换。
           </p>
 
           <div class="flex flex-col sm:flex-row sm:items-center gap-4">
-            <a rel="noopener" target="_blank"
-              data-latest-download
-              class="inline-flex items-center justify-center px-7 py-3 rounded-[10px] bg-blue-600 hover:bg-blue-700 transition-all shadow-[0_0_30px_rgba(59,130,246,0.35)]">
+            <a rel="noopener" target="_blank" data-latest-download class="inline-flex items-center justify-center px-7 py-3 rounded-[10px] bg-blue-600 hover:bg-blue-700 transition-all shadow-[0_0_30px_rgba(59,130,246,0.35)]">
               立即下载
-              <i data-lucide="arrow-right" class="ml-2 w-5 h-5"></i>
+              <i data-lucide="arrow-down-to-line" class="ml-2 w-5 h-5"></i>
             </a>
-            <a href="#features"
-              class="inline-flex items-center justify-center px-7 py-3 rounded-[10px] bg-white/5 hover:bg-white/10 border border-white/10 transition-all text-white">
-              看看功能
-            </a>
+            <button type="button" data-bili-modal-open data-bili-src="https://player.bilibili.com/player.html?bvid=BV1GJ411x7h7&page=1&high_quality=1&danmaku=0" class="inline-flex items-center justify-center px-7 py-3 rounded-[10px] bg-white/5 hover:bg-white/10 border border-white/10 transition-all text-white">
+              查看演示
+              <i data-lucide="play" class="ml-2 w-5 h-5"></i>
+            </button>
           </div>
         </div>
 
@@ -429,26 +505,24 @@
   <!-- 功能介绍 (Alternating Feature Blocks) -->
   <section id="features" class="py-24 relative overflow-hidden bg-[#000000]">
     <div class="px-4 mx-auto max-w-7xl">
-     <!-- CTA Section -->
+      <!-- CTA Section -->
 
-    <div class="px-4 mx-auto mb-16 max-w-4xl text-center relative z-10">
-      <h2 class="text-4xl md:text-6xl font-bold mb-6">把<span class="text-gradient">“找工具”</span>这件事删掉</h2>
-      <p class="text-xl text-gray-400 mb-10">你真正需要的是稳定、清晰、少打扰的工作流，而不是更多花哨按钮。</p>
-    </div>
+      <div class="px-4 mx-auto mb-16 max-w-4xl text-center relative z-10">
+        <h2 class="text-4xl md:text-6xl font-bold mb-6">把<span class="text-gradient">“找工具”</span>这件事删掉</h2>
+        <p class="text-xl text-gray-400 mb-10">你真正需要的是稳定、清晰、少打扰的工作流，而不是更多花哨按钮。</p>
+      </div>
 
       <div class="space-y-16 lg:space-y-24">
         <div class="grid lg:grid-cols-2 gap-12 items-center">
           <div class="relative lg:pr-10">
             <div class="glass-card p-6 sm:p-8 rounded-3xl relative z-10">
               <div class="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
-                <img src="assets/images/shot2.png" alt="截屏贴图" class="w-full h-72 sm:h-96 object-contain"
-                  loading="lazy" />
+                <img src="assets/images/shot2.png" alt="截屏贴图" class="w-full h-72 sm:h-96 object-contain" loading="lazy" />
               </div>
-              <div
-                class="mt-6 flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/5 px-5 py-4">
+              <div class="mt-6 flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/5 px-5 py-4">
                 <div>
-                  <div class="text-2xl font-bold text-white leading-none">一键</div>
-                  <div class="text-sm text-gray-400 mt-1">截屏 → 悬浮置顶</div>
+                  <div class="text-2xl font-bold text-white leading-none">截屏/标记/贴图</div>
+                  <div class="text-sm text-gray-400 mt-1">目标是将 snipaste 强大而又简单的截图贴图功能</div>
                 </div>
                 <!-- <div class="text-sm text-blue-300 font-semibold inline-flex items-center gap-2">
                   对照不切屏
@@ -464,8 +538,7 @@
             <p class="text-gray-400 mb-8 text-lg leading-relaxed">
               截取屏幕区域后直接悬浮置顶：对照文档、跟着教程做、核对数据——不用在窗口之间来回切。
             </p>
-            <a href="#features"
-              class="inline-flex items-center gap-2 px-6 py-3 rounded-[10px] bg-blue-600 hover:bg-blue-700 transition-colors shadow-[0_0_20px_rgba(59,130,246,0.35)]">
+            <a href="#features" class="inline-flex items-center gap-2 px-6 py-3 rounded-[10px] bg-blue-600 hover:bg-blue-700 transition-colors shadow-[0_0_20px_rgba(59,130,246,0.35)]">
               了解更多
               <i data-lucide="arrow-right" class="w-5 h-5"></i>
             </a>
@@ -478,8 +551,7 @@
             <p class="text-gray-400 mb-8 text-lg leading-relaxed">
               选中任意文本快速翻译，不用切到网页、也不用在多个应用里搬运内容。该留在手里的，只有结果。
             </p>
-            <a href="#features"
-              class="inline-flex items-center gap-2 px-6 py-3 rounded-[10px] bg-blue-600 hover:bg-blue-700 transition-colors shadow-[0_0_20px_rgba(59,130,246,0.35)]">
+            <a href="#features" class="inline-flex items-center gap-2 px-6 py-3 rounded-[10px] bg-blue-600 hover:bg-blue-700 transition-colors shadow-[0_0_20px_rgba(59,130,246,0.35)]">
               了解更多
               <i data-lucide="arrow-right" class="w-5 h-5"></i>
             </a>
@@ -488,8 +560,7 @@
           <div class="order-1 lg:order-2 relative lg:pl-10">
             <div class="glass-card p-6 sm:p-8 rounded-3xl relative z-10">
               <div class="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
-                <img src="assets/images/trans1.png" alt="翻译" class="w-full h-72 sm:h-96 object-contain"
-                  loading="lazy" />
+                <img src="assets/images/trans1.png" alt="翻译" class="w-full h-72 sm:h-96 object-contain" loading="lazy" />
               </div>
               <div class="mt-6 grid grid-cols-2 gap-4">
                 <div class="rounded-2xl border border-white/10 bg-white/5 px-5 py-4">
@@ -510,11 +581,9 @@
           <div class="relative lg:pr-10">
             <div class="glass-card p-6 sm:p-8 rounded-3xl relative z-10">
               <div class="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
-                <img src="assets/images/script.png" alt="脚本库" class="w-full h-72 sm:h-96 object-contain"
-                  loading="lazy" />
+                <img src="assets/images/script.png" alt="脚本库" class="w-full h-72 sm:h-96 object-contain" loading="lazy" />
               </div>
-              <div
-                class="mt-6 flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/5 px-5 py-4">
+              <div class="mt-6 flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/5 px-5 py-4">
                 <div class="inline-flex items-center gap-2 text-sm text-gray-400">
                   <i data-lucide="terminal" class="w-4 h-4 text-emerald-300"></i>
                   把重复操作写成脚本
@@ -533,8 +602,7 @@
             <p class="text-gray-400 mb-8 text-lg leading-relaxed">
               常见动作最浪费的是“重复”。把流程收敛成脚本，随时一键运行，减少人肉操作与出错概率。
             </p>
-            <a href="#features"
-              class="inline-flex items-center gap-2 px-6 py-3 rounded-[10px] bg-blue-600 hover:bg-blue-700 transition-colors shadow-[0_0_20px_rgba(59,130,246,0.35)]">
+            <a href="#features" class="inline-flex items-center gap-2 px-6 py-3 rounded-[10px] bg-blue-600 hover:bg-blue-700 transition-colors shadow-[0_0_20px_rgba(59,130,246,0.35)]">
               了解更多
               <i data-lucide="arrow-right" class="w-5 h-5"></i>
             </a>
@@ -547,6 +615,20 @@
 
 
 
+
+  <div class="bili-modal" data-bili-modal data-open="0" aria-hidden="true">
+    <div class="bili-dialog" role="dialog" aria-modal="true" aria-labelledby="bili-dialog-title">
+      <div class="bili-dialog-head">
+        <div class="bili-dialog-title" id="bili-dialog-title">演示视频</div>
+        <button type="button" class="bili-close" data-bili-modal-close aria-label="关闭">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      <div class="bili-frame-wrap">
+        <iframe class="bili-frame" data-bili-frame title="演示视频播放器" allowfullscreen></iframe>
+      </div>
+    </div>
+  </div>
 
   <!-- Footer -->
   <footer class="border-t border-white/10 bg-[#05080f] pt-16 pb-8">
@@ -595,7 +677,11 @@
           </div>
           <span class="text-lg font-bold text-white">toolsss</span>
         </div>
-        <div class="text-sm text-gray-600">
+        <div class="flex items-center gap-4 text-sm text-gray-600">
+          <a href="https://github.com/0x7A7A6572/toolssss" rel="noopener" target="_blank" class="inline-flex items-center gap-2 text-gray-400 transition-colors hover:text-blue-300">
+            <i data-lucide="github" class="h-4 w-4"></i>
+            GitHub
+          </a>
           &copy; 2026 toolsss. All rights reserved.
         </div>
       </div>
@@ -606,7 +692,7 @@
   <script>
     lucide.createIcons();
 
-    (function () {
+    (function() {
       const base = 'https://toolssss.zzerx.cn/auto-updates/';
       // const base = 'http://localhost/auto-updates/';
       const latestYmlUrl = new URL('latest.yml', base).toString();
@@ -627,7 +713,9 @@
       let latestPromise;
       const resolveLatest = () => {
         if (latestPromise) return latestPromise;
-        latestPromise = fetch(latestYmlUrl, { cache: 'no-store' })
+        latestPromise = fetch(latestYmlUrl, {
+            cache: 'no-store'
+          })
           .then((r) => (r.ok ? r.text() : Promise.reject(new Error('fetch latest.yml failed'))))
           .then((text) => {
             const url = parseFirstFileUrl(text);
@@ -665,6 +753,75 @@
               openUrl(fallbackUrl);
             });
         });
+      });
+    })();
+
+    (function() {
+      const openBtn = document.querySelector('[data-bili-modal-open]');
+      const modal = document.querySelector('[data-bili-modal]');
+      const closeBtn = document.querySelector('[data-bili-modal-close]');
+      const frame = document.querySelector('[data-bili-frame]');
+      if (!openBtn || !modal || !closeBtn || !frame) return;
+
+      const focusableSelector =
+        'a[href],button:not([disabled]),textarea,input,select,[tabindex]:not([tabindex="-1"])';
+      let lastActive = null;
+
+      const setOpen = (open, src) => {
+        if (open) {
+          lastActive = document.activeElement;
+          document.body.style.overflow = 'hidden';
+          modal.dataset.open = '1';
+          modal.setAttribute('aria-hidden', 'false');
+          if (typeof src === 'string' && src.trim()) frame.src = src.trim();
+          closeBtn.focus();
+          return;
+        }
+        modal.dataset.open = '0';
+        modal.setAttribute('aria-hidden', 'true');
+        frame.src = '';
+        document.body.style.overflow = '';
+        if (lastActive && typeof lastActive.focus === 'function') lastActive.focus();
+        lastActive = null;
+      };
+
+      openBtn.addEventListener('click', () => {
+        const src = openBtn.getAttribute('data-bili-src') || '';
+        setOpen(true, src);
+      });
+
+      closeBtn.addEventListener('click', () => setOpen(false));
+
+      modal.addEventListener('mousedown', (e) => {
+        if (e.target === modal) setOpen(false);
+      });
+
+      document.addEventListener('keydown', (e) => {
+        if (modal.getAttribute('aria-hidden') !== 'false') return;
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          setOpen(false);
+          return;
+        }
+        if (e.key !== 'Tab') return;
+        const focusables = Array.from(modal.querySelectorAll(focusableSelector)).filter(
+          (el) => el instanceof HTMLElement && !el.hasAttribute('disabled')
+        );
+        if (!focusables.length) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        const active = document.activeElement;
+        if (e.shiftKey) {
+          if (active === first || active === modal) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (active === last) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
       });
     })();
   </script>
