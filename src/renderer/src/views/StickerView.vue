@@ -375,21 +375,21 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div v-else-if="payload?.kind === 'color'" class="content">
+    <!-- <div v-else-if="payload?.kind === 'color'" class="content">
       <div class="stage">
         <div class="color" :style="{ ...stageStyle, backgroundColor: payload.data }">
           <div class="color-text">{{ payload.data }}</div>
         </div>
       </div>
-    </div>
+    </div> -->
 
-    <div v-else-if="payload?.kind === 'text'" class="content no-drag">
+    <!-- <div v-else-if="payload?.kind === 'text'" class="content no-drag">
       <div class="stage">
         <div class="text" :style="stageStyle">
           {{ payload.data }}
         </div>
       </div>
-    </div>
+    </div> -->
 
     <div v-else class="placeholder">贴图内容为空</div>
   </div>
@@ -438,6 +438,7 @@ onBeforeUnmount(() => {
     0 0 28px color-mix(in srgb, var(--ev-c-theme) 42%, transparent);
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.12);
+  transition: transform 0.2s ease-in-out;
 }
 
 .img-wrap-tips {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { DEFAULT_SETTINGS, type AppSettings, type SettingsPatch } from '@shared/settings'
+import { PencilLine } from 'lucide-vue-next'
 
 type Edge = 'left' | 'right' | 'top' | 'bottom'
 type StashedItem = {
@@ -366,7 +367,17 @@ onBeforeUnmount(() => {
       <div v-for="it in items" :key="it.hwnd" class="stash-item">
         <div class="stash-left">
           <div class="name">
-            {{ it.handleAlias?.trim() ? it.handleAlias : it.title || it.hwnd }}
+            <PencilLine :size="13"></PencilLine>
+            <input
+              class="text alias"
+              type="text"
+              :value="itemAliasDrafts[it.hwnd] ?? ''"
+              :placeholder="it.title"
+              @input="onAliasInput(it.hwnd, ($event.target as HTMLInputElement).value)"
+              @change="applyAlias(it.hwnd)"
+              @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
+            />
+            <!-- {{ it.handleAlias?.trim() ? it.handleAlias : it.title || it.hwnd }} -->
           </div>
           <div class="meta">
             贴边：{{ edgeLabel(it.edge) }}
@@ -375,16 +386,6 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="stash-controls">
-          <input
-            class="text alias"
-            type="text"
-            :value="itemAliasDrafts[it.hwnd] ?? ''"
-            placeholder="外露标签别名"
-            @input="onAliasInput(it.hwnd, ($event.target as HTMLInputElement).value)"
-            @change="applyAlias(it.hwnd)"
-            @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
-          />
-
           <v-menu
             v-model="itemColorMenus[it.hwnd]"
             :close-on-content-click="false"
@@ -423,7 +424,7 @@ onBeforeUnmount(() => {
                 >
                 <v-btn
                   color="primary"
-                  variant="flat"
+                  variant="text"
                   density="compact"
                   @click="applyItemColor(it.hwnd)"
                 >
@@ -433,7 +434,7 @@ onBeforeUnmount(() => {
             </v-card>
           </v-menu>
 
-          <button class="btn restore-btn" type="button" @click="restore(it.hwnd)">恢复</button>
+          <button class="btn restore-btn" type="button" @click="restore(it.hwnd)">退出收纳</button>
         </div>
       </div>
     </section>
@@ -734,6 +735,7 @@ onBeforeUnmount(() => {
 .text.alias {
   width: 220px;
   max-width: 40vw;
+  margin-left: 10px;
 }
 
 .btn.restore-btn {
