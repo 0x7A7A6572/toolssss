@@ -108,7 +108,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="landing">
-    <section class="about card">
+    <section class="about">
       <div class="about-left">
         <img class="about-logo" :src="logoUrl" alt="TOOLSSSS" />
         <div class="about-meta">
