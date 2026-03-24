@@ -108,7 +108,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="landing">
-    <section class="about card">
+    <section class="about">
       <div class="about-left">
         <img class="about-logo" :src="logoUrl" alt="TOOLSSSS" />
         <div class="about-meta">
@@ -273,8 +273,6 @@ onBeforeUnmount(() => {
 .about-logo {
   width: 44px;
   height: 44px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.04);
 }
 
