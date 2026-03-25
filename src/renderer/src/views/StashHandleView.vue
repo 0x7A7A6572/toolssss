@@ -95,6 +95,8 @@ const bgStyle = computed(() => {
 })
 
 const dragging = ref(false)
+let dragPointerId: number | null = null
+let dragCaptureEl: HTMLElement | null = null
 let lastClientX = 0
 let lastClientY = 0
 let pendingDx = 0
@@ -105,10 +107,11 @@ function flushNudge(): void {
   rafId = null
   if (!hwnd.trim()) return
   if (!pendingDx && !pendingDy) return
+  const verticalAxis = vertical.value
   window.electron.ipcRenderer.send('window-stash:handle:nudge', {
     hwnd,
-    dx: pendingDx,
-    dy: pendingDy
+    dx: verticalAxis ? 0 : pendingDx,
+    dy: verticalAxis ? pendingDy : 0
   })
   pendingDx = 0
   pendingDy = 0
@@ -116,6 +119,7 @@ function flushNudge(): void {
 
 function onDragMove(ev: PointerEvent): void {
   if (!dragging.value) return
+  if (dragPointerId !== null && ev.pointerId !== dragPointerId) return
   const dx = ev.clientX - lastClientX
   const dy = ev.clientY - lastClientY
   lastClientX = ev.clientX
@@ -125,9 +129,19 @@ function onDragMove(ev: PointerEvent): void {
   if (rafId === null) rafId = window.requestAnimationFrame(flushNudge)
 }
 
-function stopDragging(): void {
+function stopDragging(ev?: PointerEvent): void {
   if (!dragging.value) return
+  if (ev && dragPointerId !== null && ev.pointerId !== dragPointerId) return
   dragging.value = false
+  if (dragCaptureEl && dragPointerId !== null) {
+    try {
+      dragCaptureEl.releasePointerCapture(dragPointerId)
+    } catch {
+      void 0
+    }
+  }
+  dragCaptureEl = null
+  dragPointerId = null
   window.removeEventListener('pointermove', onDragMove, true)
   window.removeEventListener('pointerup', stopDragging, true)
   window.removeEventListener('pointercancel', stopDragging, true)
@@ -176,11 +190,22 @@ function startPeek(): void {
 
 function startDragging(ev: PointerEvent): void {
   if (!hwnd.trim()) return
+  if (dragPointerId !== null) return
   dragging.value = true
+  dragPointerId = ev.pointerId
+  dragCaptureEl = ev.currentTarget instanceof HTMLElement ? ev.currentTarget : null
+  if (dragCaptureEl) {
+    try {
+      dragCaptureEl.setPointerCapture(ev.pointerId)
+    } catch {
+      void 0
+    }
+  }
   lastClientX = ev.clientX
   lastClientY = ev.clientY
   pendingDx = 0
   pendingDy = 0
+  window.electron.ipcRenderer.send('window-stash:handle:nudge', { hwnd, dx: 0, dy: 0, reset: true })
   window.addEventListener('pointermove', onDragMove, true)
   window.addEventListener('pointerup', stopDragging, true)
   window.addEventListener('pointercancel', stopDragging, true)

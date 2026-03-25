@@ -130,7 +130,7 @@ onBeforeUnmount(() => {
     </section>
     <div v-if="updateText" class="about-status">{{ updateText }}</div>
 
-    <section class="hero card">
+    <!-- <section class="hero card">
       <div class="hero-main">
         <div class="kicker">TOOLSSSS</div>
         <h1 class="hero-title">把碎片工具变成一套工作流</h1>
@@ -138,16 +138,16 @@ onBeforeUnmount(() => {
           便签、截屏贴图、翻译、脚本库……你需要的不是更多工具，而是更少切换。
         </p>
 
-        <!-- <div class="cta">
+        <div class="cta">
           <button class="btn primary" type="button" @click="go('/other-tools')">
             立即开始
             <ArrowRight class="btn-icon" />
           </button>
           <button class="btn" type="button" @click="go('/settings')">全局设置</button>
-        </div> -->
+        </div>
       </div>
 
-      <!-- <div class="hero-side">
+      <div class="hero-side">
         <div class="stat-grid">
           <div class="stat">
             <div class="stat-title">目标</div>
@@ -170,8 +170,8 @@ onBeforeUnmount(() => {
             <div class="stat-desc">该安静的时候就安静。</div>
           </div>
         </div>
-      </div> -->
-    </section>
+      </div>
+    </section> -->
 
     <!-- <section class="section">
       <header class="section-head">
@@ -273,8 +273,6 @@ onBeforeUnmount(() => {
 .about-logo {
   width: 44px;
   height: 44px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.04);
 }
 

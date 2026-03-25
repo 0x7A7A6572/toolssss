@@ -4,6 +4,7 @@ import { join } from 'path'
 import {
   activateExternalWindow,
   getForegroundExternalWindow,
+  getExternalWindowRect,
   hideExternalWindowToEdge,
   raiseExternalWindow,
   restoreExternalWindow,
@@ -19,6 +20,8 @@ type StashedWindow = {
   originalRect: ExternalWindowRect
   handle: BrowserWindow
   hoverTimer: NodeJS.Timeout | null
+  hoverBusy: boolean
+  lastRectPollAtMs: number
   peeking: boolean
   peekGraceUntilMs: number
   handleAlias?: string
@@ -34,6 +37,7 @@ type WindowStashListItem = {
 }
 
 const stashed = new Map<string, StashedWindow>()
+const handleNudgeRemainders = new Map<string, { dx: number; dy: number }>()
 
 type PersistedStashItem = {
   hwnd: string
@@ -55,6 +59,7 @@ const PEEK_GRACE_MS = 650
 const LEAVE_MARGIN_PX = 6
 const HANDLE_GAP_PX = 8
 const HANDLE_TITLE_MAX_CHARS = 10
+const RECT_POLL_MS = 320
 
 let loadWindowFn: ((win: BrowserWindow, query: Record<string, string>) => Promise<void>) | null =
   null
@@ -429,6 +434,7 @@ function sendHandleMetaToRenderer(s: StashedWindow): void {
 async function collapseToEdge(hwnd: string): Promise<void> {
   const s = stashed.get(hwnd)
   if (!s) return
+  const wasPeeking = s.peeking
   if (s.peeking) s.peeking = false
   s.peekGraceUntilMs = 0
   const cfg = getStashSettings()
@@ -441,6 +447,16 @@ async function collapseToEdge(hwnd: string): Promise<void> {
   })
   if (!ret.ok) {
     cleanupOne(hwnd)
+    return
+  }
+  if (wasPeeking && ret.rect) {
+    s.originalRect = ret.rect
+    await persistMutate((items) =>
+      items.map((it) => {
+        if (it.hwnd !== hwnd) return it
+        return { ...it, rect: ret.rect as ExternalWindowRect }
+      })
+    )
   }
 }
 
@@ -449,6 +465,7 @@ async function peekOut(hwnd: string): Promise<void> {
   if (!s) return
   if (s.peeking) return
   s.peeking = true
+  s.lastRectPollAtMs = 0
   const cfg = getStashSettings()
 
   const ret = await restoreExternalWindow({
@@ -466,16 +483,40 @@ async function peekOut(hwnd: string): Promise<void> {
 
   if (s.hoverTimer) clearInterval(s.hoverTimer)
   s.hoverTimer = setInterval(async () => {
-    if (Date.now() < s.peekGraceUntilMs) return
-    const cur = screen.getCursorScreenPoint()
-    const handleRect = browserWindowRect(s.handle)
-    const inHandle = rectContainsPoint(handleRect, cur, 0)
-    const inWindow = rectContainsPoint(s.originalRect, cur, LEAVE_MARGIN_PX)
-    if (inHandle || inWindow) return
+    const curS = stashed.get(hwnd)
+    if (!curS) return
+    if (curS.hoverBusy) return
+    curS.hoverBusy = true
+    try {
+      if (Date.now() < curS.peekGraceUntilMs) return
+      const now = Date.now()
+      if (now - curS.lastRectPollAtMs >= RECT_POLL_MS) {
+        const rect = await getExternalWindowRect(hwnd)
+        if (rect) curS.originalRect = rect
+        curS.lastRectPollAtMs = now
+      }
 
-    if (s.hoverTimer) clearInterval(s.hoverTimer)
-    s.hoverTimer = null
-    await collapseToEdge(hwnd)
+      const cur = screen.getCursorScreenPoint()
+      const handleRect = browserWindowRect(curS.handle)
+      const inHandle = rectContainsPoint(handleRect, cur, 0)
+      if (inHandle) return
+
+      const inWindow = rectContainsPoint(curS.originalRect, cur, LEAVE_MARGIN_PX)
+      if (inWindow) return
+
+      const rectNow = await getExternalWindowRect(hwnd)
+      if (rectNow) curS.originalRect = rectNow
+      const stillInWindow = rectContainsPoint(curS.originalRect, cur, LEAVE_MARGIN_PX)
+      const stillInHandle = rectContainsPoint(handleRect, cur, 0)
+      if (stillInHandle || stillInWindow) return
+
+      if (curS.hoverTimer) clearInterval(curS.hoverTimer)
+      curS.hoverTimer = null
+      await collapseToEdge(hwnd)
+    } finally {
+      const latest = stashed.get(hwnd)
+      if (latest) latest.hoverBusy = false
+    }
   }, HOVER_POLL_MS)
 }
 
@@ -553,24 +594,42 @@ export function initWindowStash(opts: {
 
   ipcMain.on('window-stash:handle:nudge', (_event, payload: unknown) => {
     if (!payload || typeof payload !== 'object') return
-    const p = payload as { hwnd?: unknown; dx?: unknown; dy?: unknown }
+    const p = payload as { hwnd?: unknown; dx?: unknown; dy?: unknown; reset?: unknown }
     const hwnd = typeof p.hwnd === 'string' ? p.hwnd.trim() : ''
     if (!hwnd) return
     const s = stashed.get(hwnd)
     if (!s) return
     if (s.handle.isDestroyed()) return
+    if (p.reset) {
+      handleNudgeRemainders.set(hwnd, { dx: 0, dy: 0 })
+      return
+    }
     const dx = typeof p.dx === 'number' ? p.dx : Number(p.dx)
     const dy = typeof p.dy === 'number' ? p.dy : Number(p.dy)
-    const ddx = Number.isFinite(dx) ? Math.round(dx) : 0
-    const ddy = Number.isFinite(dy) ? Math.round(dy) : 0
-    if (!ddx && !ddy) return
+    const fdx = Number.isFinite(dx) ? dx : 0
+    const fdy = Number.isFinite(dy) ? dy : 0
+    if (!fdx && !fdy) return
+
+    const rem = handleNudgeRemainders.get(hwnd) ?? { dx: 0, dy: 0 }
+    rem.dx += fdx
+    rem.dy += fdy
 
     const b = s.handle.getBounds()
     const vertical = s.edge === 'left' || s.edge === 'right'
+    const delta = vertical ? rem.dy : rem.dx
+    const move = Math.trunc(delta)
+    if (!move) {
+      handleNudgeRemainders.set(hwnd, rem)
+      return
+    }
+    if (vertical) rem.dy -= move
+    else rem.dx -= move
+    handleNudgeRemainders.set(hwnd, rem)
+
     let x = b.x
     let y = b.y
-    if (vertical) y += ddy
-    else x += ddx
+    if (vertical) y += move
+    else x += move
 
     const cx = Math.round(x + b.width / 2)
     const cy = Math.round(y + b.height / 2)
@@ -644,6 +703,8 @@ export async function stashForegroundToEdge(edge: ExternalWindowEdge): Promise<v
     originalRect: rect,
     handle,
     hoverTimer: null,
+    hoverBusy: false,
+    lastRectPollAtMs: 0,
     peeking: false,
     peekGraceUntilMs: 0,
     handleAlias: undefined,
@@ -670,10 +731,17 @@ export async function stashForegroundToEdge(edge: ExternalWindowEdge): Promise<v
 export async function restore(hwnd: string, activate: boolean): Promise<void> {
   const s = stashed.get(hwnd)
   if (!s) return
+  const wasPeeking = s.peeking
   if (s.hoverTimer) clearInterval(s.hoverTimer)
   s.hoverTimer = null
+  s.hoverBusy = false
   s.peeking = false
   s.peekGraceUntilMs = 0
+
+  if (wasPeeking) {
+    const rect = await getExternalWindowRect(hwnd)
+    if (rect) s.originalRect = rect
+  }
 
   const cfg = getStashSettings()
   const ret = await restoreExternalWindow({
@@ -782,6 +850,8 @@ export async function rehydrateWindowStashFromDisk(): Promise<number> {
         originalRect: rect,
         handle,
         hoverTimer: null,
+        hoverBusy: false,
+        lastRectPollAtMs: 0,
         peeking: false,
         peekGraceUntilMs: 0,
         handleAlias: it.handleAlias,
