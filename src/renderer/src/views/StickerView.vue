@@ -333,16 +333,20 @@ onBeforeUnmount(() => {
     <div v-if="payload?.kind === 'image'" class="content">
       <div class="stage">
         <div class="img-wrap" :style="stageStyle">
+          <img
+            style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1"
+            :src="payload.data"
+          />
           <!-- <div class="img-wrap-tips">{{ svgBase.w }} x {{ svgBase.h }}</div> -->
-          <svg class="img-svg" :viewBox="svgViewBox" preserveAspectRatio="xMidYMid meet">
-            <image
+          <svg class="img-svg" :viewBox="svgViewBox">
+            <!-- <image
               x="0"
               y="0"
               :width="svgBase.w"
               :height="svgBase.h"
               preserveAspectRatio="xMidYMid meet"
               :href="payload.data"
-            />
+            /> -->
             <g v-if="ocr" class="ocr-group">
               <text
                 v-for="(line, idx) in ocr.lines"
@@ -413,7 +417,7 @@ onBeforeUnmount(() => {
   height: 100%;
   display: grid;
   place-items: stretch;
-  padding: 12px;
+  /* padding: 12px; */
   box-sizing: border-box;
 }
 
@@ -432,13 +436,14 @@ onBeforeUnmount(() => {
   transform-origin: center;
   display: grid;
   place-items: center;
-  border-radius: 14px;
-  box-shadow:
+  border-radius: 6px;
+  /* box-shadow:
     0 12px 32px rgba(0, 0, 0, 0.35),
-    0 0 28px color-mix(in srgb, var(--ev-c-theme) 42%, transparent);
+    0 0 28px color-mix(in srgb, var(--ev-c-theme) 42%, transparent); */
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 2px solid var(--ev-c-theme);
   transition: transform 0.2s ease-in-out;
+  background: black;
 }
 
 .img-wrap-tips {
@@ -454,6 +459,10 @@ onBeforeUnmount(() => {
   height: 100%;
   display: block;
   user-select: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
 }
 
 .img-svg image {
