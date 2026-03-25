@@ -1711,8 +1711,8 @@ function ensureTranslatorPopupWindow(): BrowserWindow {
   if (translatorPopupWindow && !translatorPopupWindow.isDestroyed()) return translatorPopupWindow
 
   const display = screen.getPrimaryDisplay()
-  const w = 520
-  const h = 260
+  const w = 360
+  const h = 160
   const x = display.workArea.x + display.workArea.width - w - 20
   const y = display.workArea.y + 80
   const win = new BrowserWindow({
@@ -1727,7 +1727,7 @@ function ensureTranslatorPopupWindow(): BrowserWindow {
     fullscreen: false,
     skipTaskbar: true,
     alwaysOnTop: false,
-    backgroundColor: '#0b0b0c',
+    backgroundColor: 'transparent',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false
@@ -1773,6 +1773,29 @@ function showTranslatorPopupWindow(win: BrowserWindow, activate: boolean): void 
   }
 }
 
+function positionTranslatorPopupNearCursor(win: BrowserWindow): void {
+  const cursor = screen.getCursorScreenPoint()
+  const display = screen.getDisplayNearestPoint(cursor)
+  const area = display.workArea
+  const b = win.getBounds()
+  const w = b.width
+  const h = b.height
+  const margin = 8
+  let x = cursor.x + 12
+  let y = cursor.y + 12
+  const maxX = area.x + area.width - w - margin
+  const maxY = area.y + area.height - h - margin
+  if (x > maxX) x = maxX
+  if (y > maxY) y = maxY
+  if (x < area.x + margin) x = area.x + margin
+  if (y < area.y + margin) y = area.y + margin
+  try {
+    win.setBounds({ x: Math.round(x), y: Math.round(y), width: w, height: h }, false)
+  } catch (e) {
+    console.error(e)
+  }
+}
+
 type TranslatorPopupOpenPayload = {
   text: string
   source?: string
@@ -1796,6 +1819,7 @@ async function openTranslatorPopupFromSelection(): Promise<void> {
     source: settings.translate.defaultSource,
     target: settings.translate.defaultTarget
   }
+  positionTranslatorPopupNearCursor(win)
   showTranslatorPopupWindow(win, false)
   sendTranslatorPopupOpen(win, { text: '', ...base, pendingSelection: true })
   const text = await captureSelectionText()

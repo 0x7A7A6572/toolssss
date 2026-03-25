@@ -17,7 +17,10 @@ const sourceItems: Array<{ title: string; value: string }> = [
   ...Languages
 ]
 
-const targetItems: Array<{ title: string; value: string }> = [...Languages]
+const targetItems: Array<{ title: string; value: string }> = [
+  { title: '自动识别', value: 'auto' },
+  ...Languages
+]
 
 const inputText = ref('')
 const outputText = ref('')

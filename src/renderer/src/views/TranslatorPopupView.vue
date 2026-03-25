@@ -58,6 +58,7 @@ async function copyResult(): Promise<void> {
   if (!text) return
   try {
     await navigator.clipboard.writeText(text)
+    close()
   } catch {
     return
   }
@@ -120,7 +121,7 @@ onBeforeUnmount(() => {
           item-value="value"
         />
         <div class="arrow">
-          <ArrowRight :size="16" />
+          <ArrowRight :size="12" />
         </div>
         <v-select
           v-model="target"
@@ -140,10 +141,10 @@ onBeforeUnmount(() => {
       </div>
       <div class="actions">
         <button class="icon" type="button" :disabled="!outputText" @click="copyResult">
-          <Copy :size="16" />
+          <Copy :size="12" />
         </button>
         <button class="icon" type="button" @click="close">
-          <X :size="16" />
+          <X :size="12" />
         </button>
       </div>
     </header>
@@ -172,15 +173,19 @@ onBeforeUnmount(() => {
   </div>
 </template>
 
-<style scoped>
+<style lang="scss" scoped>
 .wrap {
   width: 100%;
   height: 100vh;
   background: rgba(0, 0, 0, 0.86);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  // border: 1px solid rgba(255, 255, 255, 0.1);
   color: rgba(235, 235, 245, 0.9);
   display: flex;
   flex-direction: column;
+}
+
+.v-list-item--density-default.v-list-item--one-line {
+  min-height: auto !important;
 }
 
 .header {
@@ -194,6 +199,8 @@ onBeforeUnmount(() => {
 }
 
 .title {
+  flex: auto;
+  white-space: nowrap;
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -215,11 +222,11 @@ onBeforeUnmount(() => {
 }
 
 .icon {
-  height: 30px;
-  width: 30px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.03);
+  /* height: 20; */
+  width: 20px;
+  /* border-radius: 10px; */
+  /* border: 1px solid rgba(255, 255, 255, 0.1); */
+  /* background: rgba(255, 255, 255, 0.03); */
   color: rgba(235, 235, 245, 0.9);
   cursor: pointer;
   display: inline-flex;
@@ -238,24 +245,30 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
-  padding: 12px;
+  background-color: #1a1a19;
+  /* padding: 12px; */
 }
 
 .panel {
+  position: relative;
   min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
+  /* border: 1px solid rgba(255, 255, 255, 0.08); */
+  // border-radius: 12px;
   background: rgba(255, 255, 255, 0.03);
   padding: 10px;
 }
 
 .panel-title {
-  font-size: 12px;
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  font-size: 20px;
   font-weight: 800;
-  opacity: 0.8;
+  opacity: 0.3;
+  color: rgba(126, 126, 132, 0.92);
 }
 
 .textarea {
@@ -265,8 +278,8 @@ onBeforeUnmount(() => {
   width: 100%;
   border-radius: 12px;
   padding: 10px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(0, 0, 0, 0.35);
+  // border: 1px solid rgba(255, 255, 255, 0.08);
+  // background: rgba(0, 0, 0, 0.35);
   color: rgba(235, 235, 245, 0.92);
   outline: none;
   font-size: 13px;
@@ -280,7 +293,7 @@ onBeforeUnmount(() => {
 }
 
 .select {
-  width: 92px;
+  width: 70px;
   flex: none;
 }
 
@@ -293,12 +306,13 @@ onBeforeUnmount(() => {
 }
 
 .btn {
-  height: 32px;
-  padding: 0 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(59, 130, 246, 0.45);
-  background: rgba(59, 130, 246, 0.12);
-  color: rgba(235, 235, 245, 0.92);
+  /* height: 32px; */
+  white-space: nowrap;
+  padding: 0 6px;
+  border-radius: 4px;
+  /* border: 1px solid rgba(59, 130, 246, 0.45); */
+  background: rgba(59, 131, 246, 0.534);
+  color: rgba(97, 158, 255, 0.877);
   cursor: pointer;
   font-weight: 800;
   font-size: 12px;
