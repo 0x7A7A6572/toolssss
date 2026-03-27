@@ -111,7 +111,7 @@ function createStickyEditorWindow(noteId: string): void {
     backgroundColor: '#111827',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
+      sandbox: true
       // devTools: false
     }
   })

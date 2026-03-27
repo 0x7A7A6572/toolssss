@@ -39,21 +39,27 @@ export interface ScreenshotsOpts {
   lang?: Lang
   logger?: Logger
   singleWindow?: boolean
+  sandbox?: boolean
 }
 
 export type { Bounds }
+
+function normalizeIpcBinary(raw: unknown): Buffer | null {
+  if (Buffer.isBuffer(raw)) return raw
+  if (raw instanceof Uint8Array) return Buffer.from(raw)
+  if (raw instanceof ArrayBuffer) return Buffer.from(new Uint8Array(raw))
+  if (ArrayBuffer.isView(raw)) {
+    const v = raw as ArrayBufferView
+    return Buffer.from(v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength))
+  }
+  return null
+}
 
 export default class Screenshots extends Events {
   // 截图窗口对象
   public $win: BrowserWindow | null = null
 
-  public $view: BrowserView = new BrowserView({
-    webPreferences: {
-      preload: join(__dirname, '../preload/screenshots.js'),
-      nodeIntegration: false,
-      contextIsolation: true
-    }
-  })
+  public $view: BrowserView
 
   private logger: Logger
 
@@ -71,6 +77,15 @@ export default class Screenshots extends Events {
     super()
     this.logger = opts?.logger || (() => undefined)
     this.singleWindow = opts?.singleWindow || false
+    const sandbox = Boolean(opts?.sandbox)
+    this.$view = new BrowserView({
+      webPreferences: {
+        preload: join(__dirname, '../preload/screenshots.js'),
+        nodeIntegration: false,
+        contextIsolation: true,
+        sandbox
+      }
+    })
     this.listenIpc()
     void this.loadUI()
     if (opts?.lang) {
@@ -398,8 +413,14 @@ export default class Screenshots extends Events {
     /**
      * OK事件
      */
-    ipcMain.on('SCREENSHOTS:ok', (_event, buffer: Buffer, data: ScreenshotsData) => {
-      ack('ok', { bufferLength: buffer.length, data })
+    ipcMain.on('SCREENSHOTS:ok', (_event, raw: unknown, data: ScreenshotsData) => {
+      const buffer = normalizeIpcBinary(raw)
+      ack('ok', { bufferLength: buffer?.length ?? null, data })
+      if (!buffer) {
+        this.logger('SCREENSHOTS:ok invalid buffer, data: %o', data)
+        this.endCapture()
+        return
+      }
       this.logger('SCREENSHOTS:ok buffer.length %d, data: %o', buffer.length, data)
 
       const event = new Event()
@@ -428,8 +449,13 @@ export default class Screenshots extends Events {
     /**
      * SAVE事件
      */
-    ipcMain.on('SCREENSHOTS:save', async (_event, buffer: Buffer, data: ScreenshotsData) => {
-      ack('save', { bufferLength: buffer.length, data })
+    ipcMain.on('SCREENSHOTS:save', async (_event, raw: unknown, data: ScreenshotsData) => {
+      const buffer = normalizeIpcBinary(raw)
+      ack('save', { bufferLength: buffer?.length ?? null, data })
+      if (!buffer) {
+        this.logger('SCREENSHOTS:save invalid buffer, data: %o', data)
+        return
+      }
       this.logger('SCREENSHOTS:save buffer.length %d, data: %o', buffer.length, data)
 
       const event = new Event()

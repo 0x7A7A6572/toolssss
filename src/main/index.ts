@@ -826,7 +826,7 @@ function createStickerWindow(payload: StickerPayload): BrowserWindow {
       : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
+      sandbox: true
     }
   })
 
@@ -1076,7 +1076,8 @@ function startAppSnip(): void {
     // 如果设置为 true 则会在第一次调用截图窗口时创建，后续调用时直接使用
     // 且由于窗口不会 close，所以不会触发 app 的 `window-all-closed` 事件
     screenshots = new Screenshots({
-      singleWindow: true
+      singleWindow: true,
+      sandbox: process.env.SCREENSHOTS_VIEW_SANDBOX === '1'
     })
     isScreenshotsHooked = false
   }
@@ -1350,7 +1351,7 @@ function createOverlayWindow(display: Electron.Display): BrowserWindow {
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
+      sandbox: true
     }
   })
 
@@ -1654,7 +1655,7 @@ function createAlarmWindow(display: Electron.Display): BrowserWindow {
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
+      sandbox: true
     }
   })
 
@@ -1730,7 +1731,7 @@ function ensureTranslatorPopupWindow(): BrowserWindow {
     backgroundColor: 'transparent',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
+      sandbox: true
     }
   })
 
@@ -2662,7 +2663,7 @@ function createWindow(): void {
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
+      sandbox: true
     }
   })
 

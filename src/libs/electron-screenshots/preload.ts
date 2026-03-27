@@ -35,7 +35,7 @@ contextBridge.exposeInMainWorld('screenshots', {
   save: (arrayBuffer: ArrayBuffer, data: ScreenshotsData) => {
     console.log('contextBridge save', arrayBuffer, data)
 
-    ipcRenderer.send('SCREENSHOTS:save', Buffer.from(arrayBuffer), data)
+    ipcRenderer.send('SCREENSHOTS:save', new Uint8Array(arrayBuffer), data)
   },
   cancel: () => {
     console.log('contextBridge cancel')
@@ -45,7 +45,7 @@ contextBridge.exposeInMainWorld('screenshots', {
   ok: (arrayBuffer: ArrayBuffer, data: ScreenshotsData) => {
     console.log('contextBridge ok', arrayBuffer, data)
 
-    ipcRenderer.send('SCREENSHOTS:ok', Buffer.from(arrayBuffer), data)
+    ipcRenderer.send('SCREENSHOTS:ok', new Uint8Array(arrayBuffer), data)
   },
   on: (channel: string, fn: ScreenshotsListener) => {
     console.log('contextBridge on', fn)
