@@ -212,8 +212,9 @@ function startDragging(ev: PointerEvent): void {
 }
 
 function restore(): void {
-  if (!hwnd.trim()) return
-  window.electron.ipcRenderer.send('window-stash:toggle', { hwnd, activate: true })
+  // TODO 有bug
+  // if (!hwnd.trim()) return
+  // window.electron.ipcRenderer.send('window-stash:toggle', { hwnd, activate: true })
 }
 </script>
 

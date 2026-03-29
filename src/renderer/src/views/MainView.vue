@@ -14,7 +14,7 @@ const tabs = [
   { id: 'Translator', label: '快捷翻译', path: '/translator' },
   { id: 'SnipPaste', label: '截屏贴图', path: '/snip-paste' },
   { id: 'WindowStash', label: '窗口收纳', path: '/window-stash' },
-  { id: 'ScriptLibrary', label: '脚本库', path: '/script-library' },
+  // { id: 'ScriptLibrary', label: '脚本库', path: '/script-library' },
   { id: 'Landing', label: '关于', path: '/landing' }
 ]
 

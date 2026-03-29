@@ -581,13 +581,19 @@ export function initWindowStash(opts: {
   })
 
   ipcMain.on('window-stash:toggle', async (_event, payload: unknown) => {
+    console.log('window-stash:toggle', payload)
     if (!payload || typeof payload !== 'object') return
     const p = payload as { hwnd?: unknown; activate?: unknown }
     const hwnd = typeof p.hwnd === 'string' ? p.hwnd.trim() : ''
     if (!hwnd) return
     const activate = Boolean(p.activate)
     if (stashed.has(hwnd)) {
-      await restore(hwnd, activate)
+      try {
+        await restore(hwnd, activate)
+      } catch (error) {
+        console.error('window-stash:toggle error', error)
+      }
+
       return
     }
   })
