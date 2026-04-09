@@ -5,6 +5,7 @@ import { Pencil } from 'lucide-vue-next'
 const props = defineProps<{
   modelValue: string
   placeholder?: string
+  disabled?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -40,6 +41,11 @@ const currentShortcutDisplay = computed(() => {
   if (!props.modelValue) return []
   return props.modelValue.split('+')
 })
+
+function onDisplayClick(): void {
+  if (props.disabled) return
+  startRecording()
+}
 
 function startRecording(): void {
   isRecording.value = true
@@ -139,7 +145,7 @@ function clear(): void {
 
 <template>
   <div class="shortcut-input">
-    <div class="display" @click="startRecording">
+    <div class="display" :class="{ disabled: props.disabled }" @click="onDisplayClick">
       <template v-if="currentShortcutDisplay.length > 0">
         <span v-for="k in currentShortcutDisplay" :key="k" class="key-badge small">{{ k }}</span>
       </template>
@@ -198,6 +204,16 @@ function clear(): void {
 .display:hover {
   border-color: rgba(59, 130, 246, 0.5);
   background: rgba(255, 255, 255, 0.04);
+}
+
+.display.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.display.disabled:hover {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.2);
 }
 
 .placeholder {

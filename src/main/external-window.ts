@@ -1,6 +1,7 @@
 import { exec, spawn, type ChildProcessWithoutNullStreams } from 'child_process'
 import { createInterface } from 'readline'
 import { promisify } from 'util'
+import { WINDOW_RECT_EVENT_RUNNER_PS } from '../libs/win32/powershellRunners'
 
 const execAsync = promisify(exec)
 
@@ -8,6 +9,7 @@ export type ExternalWindowEdge = 'left' | 'right' | 'top' | 'bottom'
 export type ExternalWindowMatch = 'contains' | 'equals'
 export type ExternalWindowRect = { left: number; top: number; right: number; bottom: number }
 export type ExternalWindowMatchEntry = { hwnd: string; title: string }
+export type ExternalWindowRectChange = { hwnd: string; rect: ExternalWindowRect }
 
 function clampNumber(value: number, min: number, max: number): number {
   if (Number.isNaN(value) || !Number.isFinite(value)) return min
@@ -136,6 +138,123 @@ export function disposeExternalWindowPowerShell(): void {
   psBridgeSta?.dispose()
   psBridgeMta = null
   psBridgeSta = null
+}
+
+class ExternalWindowRectEventBridge {
+  private proc: ChildProcessWithoutNullStreams
+  private closed = false
+  private onChange: (evt: ExternalWindowRectChange) => void
+
+  constructor(onChange: (evt: ExternalWindowRectChange) => void) {
+    this.onChange = onChange
+
+    const runner = WINDOW_RECT_EVENT_RUNNER_PS
+
+    const encoded = encodePowerShellCommand(runner)
+    const args: string[] = [
+      '-NoLogo',
+      '-NoProfile',
+      '-NonInteractive',
+      '-NoExit',
+      '-EncodedCommand',
+      encoded
+    ]
+    this.proc = spawn('powershell', args, {
+      windowsHide: true,
+      stdio: ['pipe', 'pipe', 'pipe']
+    }) as ChildProcessWithoutNullStreams
+
+    const rl = createInterface({ input: this.proc.stdout })
+    rl.on('line', (line) => this.onLine(line))
+    this.proc.on('exit', () => this.dispose())
+    this.proc.on('error', () => this.dispose())
+  }
+
+  add(hwnd: string): void {
+    const id = typeof hwnd === 'string' ? hwnd.trim() : ''
+    if (!id) return
+    if (this.closed) return
+    try {
+      this.proc.stdin.write(`ADD|${id}\n`)
+    } catch {
+      void 0
+    }
+  }
+
+  remove(hwnd: string): void {
+    const id = typeof hwnd === 'string' ? hwnd.trim() : ''
+    if (!id) return
+    if (this.closed) return
+    try {
+      this.proc.stdin.write(`DEL|${id}\n`)
+    } catch {
+      void 0
+    }
+  }
+
+  dispose(): void {
+    if (this.closed) return
+    this.closed = true
+    try {
+      this.proc.stdin.write(`__EXIT__\n`)
+    } catch {
+      void 0
+    }
+    try {
+      this.proc.stdin.end()
+    } catch {
+      void 0
+    }
+  }
+
+  private onLine(line: string): void {
+    const s = typeof line === 'string' ? line.trim() : ''
+    if (!s) return
+    if (!s.startsWith('EVT|')) return
+    const b64 = s.slice(4)
+    if (!b64) return
+    try {
+      const json = Buffer.from(b64, 'base64').toString('utf8')
+      const parsed = JSON.parse(json) as unknown
+      if (!parsed || typeof parsed !== 'object') return
+      const p = parsed as { hwnd?: unknown; rect?: unknown }
+      const hwnd = typeof p.hwnd === 'string' ? p.hwnd : ''
+      if (!hwnd) return
+      const rectRaw =
+        p.rect && typeof p.rect === 'object' ? (p.rect as Record<string, unknown>) : null
+      if (!rectRaw) return
+      const left = Number(rectRaw['left'])
+      const top = Number(rectRaw['top'])
+      const right = Number(rectRaw['right'])
+      const bottom = Number(rectRaw['bottom'])
+      if (![left, top, right, bottom].every((n) => Number.isFinite(n))) return
+      this.onChange({ hwnd, rect: { left, top, right, bottom } })
+    } catch {
+      void 0
+    }
+  }
+}
+
+let rectEventBridge: ExternalWindowRectEventBridge | null = null
+
+export function ensureExternalWindowRectEvents(
+  onChange: (evt: ExternalWindowRectChange) => void
+): void {
+  if (process.platform !== 'win32') return
+  if (rectEventBridge) return
+  rectEventBridge = new ExternalWindowRectEventBridge(onChange)
+}
+
+export function watchExternalWindowRect(hwnd: string, watch: boolean): void {
+  if (process.platform !== 'win32') return
+  if (!rectEventBridge) return
+  if (watch) rectEventBridge.add(hwnd)
+  else rectEventBridge.remove(hwnd)
+}
+
+export function disposeExternalWindowRectEvents(): void {
+  rectEventBridge?.dispose()
+  rectEventBridge = null
 }
 
 async function runPowerShellOneShot(script: string, opts?: { sta?: boolean }): Promise<string> {
@@ -548,6 +667,40 @@ export async function raiseExternalWindow(hwnd: string): Promise<boolean> {
     } catch { }
     [Win32]::SetWindowPos($root, $HWND_TOPMOST, 0, 0, 0, 0, [uint32]$flags) | Out-Null
     [Win32]::SetWindowPos($root, $HWND_NOTOPMOST, 0, 0, 0, 0, [uint32]$flags) | Out-Null
+    $true
+  `
+  try {
+    await runPowerShell(script)
+    return true
+  } catch {
+    return false
+  }
+}
+
+export async function setExternalWindowTopmost(hwnd: string, topmost: boolean): Promise<boolean> {
+  if (process.platform !== 'win32') return false
+  const h = typeof hwnd === 'string' ? hwnd.trim() : ''
+  if (!h) return false
+  const b64 = psJsonB64({ hwnd: h, topmost: Boolean(topmost) })
+  const script = `
+    $p = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${b64}')) | ConvertFrom-Json
+    ${getExternalWindowPreamblePs()}
+    $h = [IntPtr]([Int64]([string]$p.hwnd))
+    $GA_ROOTOWNER = 3
+    $root = [Win32]::GetAncestor($h, [uint32]$GA_ROOTOWNER)
+    if ($root -eq [IntPtr]::Zero) { $root = $h }
+    $SWP_NOSIZE = 0x0001
+    $SWP_NOMOVE = 0x0002
+    $SWP_NOACTIVATE = 0x0010
+    $SWP_SHOWWINDOW = 0x0040
+    $flags = $SWP_NOSIZE -bor $SWP_NOMOVE -bor $SWP_NOACTIVATE -bor $SWP_SHOWWINDOW
+    $HWND_TOPMOST = [IntPtr](-1)
+    $HWND_NOTOPMOST = [IntPtr](-2)
+    $after = if ([bool]$p.topmost) { $HWND_TOPMOST } else { $HWND_NOTOPMOST }
+    try {
+      [Win32]::ShowWindow($root, 4) | Out-Null # SW_SHOWNOACTIVATE
+    } catch { }
+    [Win32]::SetWindowPos($root, $after, 0, 0, 0, 0, [uint32]$flags) | Out-Null
     $true
   `
   try {

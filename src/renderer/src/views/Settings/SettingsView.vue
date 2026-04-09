@@ -12,6 +12,30 @@ const appPaths = ref<{ userData: string; pictures: string } | null>(null)
 const aiApiKeyDraft = ref('')
 const version = ref('')
 
+const shortcutLabels: Record<string, string> = {
+  toggleEye: '开启/关闭护眼模式',
+  translateSelection: '划词翻译弹窗',
+  toggleTopmost: '窗口置顶',
+  stickyNotesPopup: '弹出快捷便签',
+  snipStart: '开始截图',
+  stickerPaste: '剪贴板贴图',
+  stickersToggleHidden: '隐藏/显示所有贴图',
+  stashLeft: '收纳到左侧',
+  stashTop: '收纳到上侧',
+  stashRight: '收纳到右侧',
+  stashBottom: '收纳到下侧'
+}
+
+type ShortcutConflictItem = { key: string; label: string }
+type ShortcutConflictState = {
+  targetKey: string
+  targetLabel: string
+  value: string
+  conflicts: ShortcutConflictItem[]
+}
+
+const shortcutConflict = ref<ShortcutConflictState | null>(null)
+
 const translateProviderItems: Array<{
   title: string
   value: AppSettings['translate']['provider']
@@ -35,6 +59,112 @@ const aiProviderItems: Array<{ title: string; value: AppSettings['ai']['provider
   { title: '阿里通义（DashScope）', value: 'qwen' },
   { title: 'Custom', value: 'custom' }
 ]
+
+function getShortcutLabel(key: string): string {
+  return shortcutLabels[key] ?? key
+}
+
+function isShortcutEnabled(key: string): boolean {
+  const se = (settings.value as unknown as { shortcutsEnabled?: unknown }).shortcutsEnabled
+  if (!se || typeof se !== 'object') return true
+  const v = (se as Record<string, unknown>)[key]
+  return typeof v === 'boolean' ? v : true
+}
+
+async function onShortcutEnabledChange(key: string, enabled: boolean): Promise<void> {
+  await update({ shortcutsEnabled: { [key]: enabled } }).catch(() => null)
+}
+
+function findShortcutConflicts(targetKey: string, value: string): ShortcutConflictItem[] {
+  const shortcuts = settings.value.shortcuts ?? {}
+  const conflicts: ShortcutConflictItem[] = []
+  for (const [k, v] of Object.entries(shortcuts)) {
+    if (k === targetKey) continue
+    if (!isShortcutEnabled(k)) continue
+    if (v !== value) continue
+    conflicts.push({ key: k, label: getShortcutLabel(k) })
+  }
+  return conflicts
+}
+
+function closeShortcutConflict(): void {
+  shortcutConflict.value = null
+}
+
+async function applyShortcutReplace(): Promise<void> {
+  const state = shortcutConflict.value
+  if (!state) return
+  const patch: Record<string, string> = { [state.targetKey]: state.value }
+  for (const c of state.conflicts) patch[c.key] = ''
+  shortcutConflict.value = null
+  await update({ shortcuts: patch }).catch(() => null)
+}
+
+async function onShortcutChange(targetKey: string, nextValue: string): Promise<void> {
+  const v = nextValue.trim()
+  const current = (settings.value.shortcuts?.[targetKey] ?? '').trim()
+  if (v === current) return
+
+  if (!v) {
+    await update({ shortcuts: { [targetKey]: '' } }).catch(() => null)
+    return
+  }
+
+  const conflicts = findShortcutConflicts(targetKey, v)
+  if (!conflicts.length) {
+    await update({ shortcuts: { [targetKey]: v } }).catch(() => null)
+    return
+  }
+
+  shortcutConflict.value = {
+    targetKey,
+    targetLabel: getShortcutLabel(targetKey),
+    value: v,
+    conflicts
+  }
+}
+
+type ShortcutConflictGroup = {
+  value: string
+  items: ShortcutConflictItem[]
+}
+
+const shortcutConflictGroups = computed<ShortcutConflictGroup[]>(() => {
+  const shortcuts = settings.value.shortcuts ?? {}
+  const accToKeys = new Map<string, string[]>()
+  for (const [k, v] of Object.entries(shortcuts)) {
+    if (!isShortcutEnabled(k)) continue
+    const acc = v.trim()
+    if (!acc) continue
+    const list = accToKeys.get(acc)
+    if (list) list.push(k)
+    else accToKeys.set(acc, [k])
+  }
+
+  const groups: ShortcutConflictGroup[] = []
+  for (const [acc, keys] of accToKeys.entries()) {
+    if (keys.length <= 1) continue
+    groups.push({
+      value: acc,
+      items: keys.map((k) => ({ key: k, label: getShortcutLabel(k) }))
+    })
+  }
+
+  groups.sort((a, b) => a.value.localeCompare(b.value))
+  return groups
+})
+
+const shortcutConflictKeySet = computed(() => {
+  const set = new Set<string>()
+  for (const g of shortcutConflictGroups.value) {
+    for (const it of g.items) set.add(it.key)
+  }
+  return set
+})
+
+function hasExistingShortcutConflict(key: string): boolean {
+  return shortcutConflictKeySet.value.has(key)
+}
 
 function joinPath(base: string, tail: string): string {
   const b = base.trim().replace(/[\\/]+$/, '')
@@ -317,137 +447,323 @@ onMounted(() => {
         <div class="card-title">全局快捷键</div>
       </div>
 
-      <div class="row">
-        <div class="label">开启/关闭护眼模式</div>
-        <ShortcutInput
-          :model-value="settings.shortcuts.toggleEye"
-          placeholder="未设置"
-          @update:model-value="
-            update({
-              shortcuts: { toggleEye: $event }
-            })
-          "
-        />
+      <div v-if="shortcutConflictGroups.length" class="conflict-summary">
+        <div class="conflict-summary-title">检测到快捷键冲突</div>
+        <div v-for="g in shortcutConflictGroups" :key="g.value" class="conflict-summary-item">
+          <div class="conflict-summary-key">{{ g.value }}</div>
+          <div class="conflict-summary-actions">
+            <span v-for="it in g.items" :key="it.key" class="conflict-summary-action">
+              {{ it.label }}
+            </span>
+          </div>
+        </div>
       </div>
 
       <div class="row">
-        <div class="label">划词翻译弹窗</div>
-        <ShortcutInput
-          :model-value="settings.shortcuts.translateSelection"
-          placeholder="未设置"
-          @update:model-value="
-            update({
-              shortcuts: { translateSelection: $event }
-            })
-          "
-        />
+        <div class="label shortcut-label">
+          <span>开启/关闭护眼模式</span>
+          <span v-if="hasExistingShortcutConflict('toggleEye')" class="conflict-badge">冲突</span>
+        </div>
+        <div class="shortcut-actions">
+          <ShortcutInput
+            :model-value="settings.shortcuts.toggleEye"
+            :disabled="!isShortcutEnabled('toggleEye')"
+            placeholder="未设置"
+            @update:model-value="onShortcutChange('toggleEye', $event)"
+          />
+          <label class="switch">
+            <input
+              type="checkbox"
+              :checked="isShortcutEnabled('toggleEye')"
+              @change="
+                onShortcutEnabledChange('toggleEye', ($event.target as HTMLInputElement).checked)
+              "
+            />
+            <span class="slider" />
+          </label>
+        </div>
       </div>
 
       <div class="row">
-        <div class="label">弹出快捷便签</div>
-        <ShortcutInput
-          :model-value="settings.shortcuts.stickyNotesPopup"
-          placeholder="未设置"
-          @update:model-value="
-            update({
-              shortcuts: { stickyNotesPopup: $event }
-            })
-          "
-        />
+        <div class="label shortcut-label">
+          <span>划词翻译弹窗</span>
+          <span v-if="hasExistingShortcutConflict('translateSelection')" class="conflict-badge"
+            >冲突</span
+          >
+        </div>
+        <div class="shortcut-actions">
+          <ShortcutInput
+            :model-value="settings.shortcuts.translateSelection"
+            :disabled="!isShortcutEnabled('translateSelection')"
+            placeholder="未设置"
+            @update:model-value="onShortcutChange('translateSelection', $event)"
+          />
+          <label class="switch">
+            <input
+              type="checkbox"
+              :checked="isShortcutEnabled('translateSelection')"
+              @change="
+                onShortcutEnabledChange(
+                  'translateSelection',
+                  ($event.target as HTMLInputElement).checked
+                )
+              "
+            />
+            <span class="slider" />
+          </label>
+        </div>
       </div>
 
       <div class="row">
-        <div class="label">开始截图</div>
-        <ShortcutInput
-          :model-value="settings.shortcuts.snipStart"
-          placeholder="未设置"
-          @update:model-value="
-            update({
-              shortcuts: { snipStart: $event }
-            })
-          "
-        />
+        <div class="label shortcut-label">
+          <span>弹出快捷便签</span>
+          <span v-if="hasExistingShortcutConflict('stickyNotesPopup')" class="conflict-badge"
+            >冲突</span
+          >
+        </div>
+        <div class="shortcut-actions">
+          <ShortcutInput
+            :model-value="settings.shortcuts.stickyNotesPopup"
+            :disabled="!isShortcutEnabled('stickyNotesPopup')"
+            placeholder="未设置"
+            @update:model-value="onShortcutChange('stickyNotesPopup', $event)"
+          />
+          <label class="switch">
+            <input
+              type="checkbox"
+              :checked="isShortcutEnabled('stickyNotesPopup')"
+              @change="
+                onShortcutEnabledChange(
+                  'stickyNotesPopup',
+                  ($event.target as HTMLInputElement).checked
+                )
+              "
+            />
+            <span class="slider" />
+          </label>
+        </div>
       </div>
 
       <div class="row">
-        <div class="label">剪贴板贴图</div>
-        <ShortcutInput
-          :model-value="settings.shortcuts.stickerPaste"
-          placeholder="未设置"
-          @update:model-value="
-            update({
-              shortcuts: { stickerPaste: $event }
-            })
-          "
-        />
+        <div class="label shortcut-label">
+          <span>开始截图</span>
+          <span v-if="hasExistingShortcutConflict('snipStart')" class="conflict-badge">冲突</span>
+        </div>
+        <div class="shortcut-actions">
+          <ShortcutInput
+            :model-value="settings.shortcuts.snipStart"
+            :disabled="!isShortcutEnabled('snipStart')"
+            placeholder="未设置"
+            @update:model-value="onShortcutChange('snipStart', $event)"
+          />
+          <label class="switch">
+            <input
+              type="checkbox"
+              :checked="isShortcutEnabled('snipStart')"
+              @change="
+                onShortcutEnabledChange('snipStart', ($event.target as HTMLInputElement).checked)
+              "
+            />
+            <span class="slider" />
+          </label>
+        </div>
       </div>
 
       <div class="row">
-        <div class="label">隐藏/显示所有贴图</div>
-        <ShortcutInput
-          :model-value="settings.shortcuts.stickersToggleHidden"
-          placeholder="未设置"
-          @update:model-value="
-            update({
-              shortcuts: { stickersToggleHidden: $event }
-            })
-          "
-        />
+        <div class="label shortcut-label">
+          <span>剪贴板贴图</span>
+          <span v-if="hasExistingShortcutConflict('stickerPaste')" class="conflict-badge"
+            >冲突</span
+          >
+        </div>
+        <div class="shortcut-actions">
+          <ShortcutInput
+            :model-value="settings.shortcuts.stickerPaste"
+            :disabled="!isShortcutEnabled('stickerPaste')"
+            placeholder="未设置"
+            @update:model-value="onShortcutChange('stickerPaste', $event)"
+          />
+          <label class="switch">
+            <input
+              type="checkbox"
+              :checked="isShortcutEnabled('stickerPaste')"
+              @change="
+                onShortcutEnabledChange('stickerPaste', ($event.target as HTMLInputElement).checked)
+              "
+            />
+            <span class="slider" />
+          </label>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="label shortcut-label">
+          <span>隐藏/显示所有贴图</span>
+          <span v-if="hasExistingShortcutConflict('stickersToggleHidden')" class="conflict-badge">
+            冲突
+          </span>
+        </div>
+        <div class="shortcut-actions">
+          <ShortcutInput
+            :model-value="settings.shortcuts.stickersToggleHidden"
+            :disabled="!isShortcutEnabled('stickersToggleHidden')"
+            placeholder="未设置"
+            @update:model-value="onShortcutChange('stickersToggleHidden', $event)"
+          />
+          <label class="switch">
+            <input
+              type="checkbox"
+              :checked="isShortcutEnabled('stickersToggleHidden')"
+              @change="
+                onShortcutEnabledChange(
+                  'stickersToggleHidden',
+                  ($event.target as HTMLInputElement).checked
+                )
+              "
+            />
+            <span class="slider" />
+          </label>
+        </div>
       </div>
 
       <div class="shortcut-group">
         <div class="shortcut-group-title">窗口收纳</div>
 
         <div class="row">
-          <div class="label">收纳到左侧</div>
-          <ShortcutInput
-            :model-value="settings.shortcuts.stashLeft"
-            placeholder="未设置"
-            @update:model-value="
-              update({
-                shortcuts: { stashLeft: $event }
-              })
-            "
-          />
+          <div class="label shortcut-label">
+            <span>窗口置顶</span>
+            <span v-if="hasExistingShortcutConflict('toggleTopmost')" class="conflict-badge"
+              >冲突</span
+            >
+          </div>
+          <div class="shortcut-actions">
+            <ShortcutInput
+              :model-value="settings.shortcuts.toggleTopmost"
+              :disabled="!isShortcutEnabled('toggleTopmost')"
+              placeholder="未设置"
+              @update:model-value="onShortcutChange('toggleTopmost', $event)"
+            />
+            <label class="switch">
+              <input
+                type="checkbox"
+                :checked="isShortcutEnabled('toggleTopmost')"
+                @change="
+                  onShortcutEnabledChange(
+                    'toggleTopmost',
+                    ($event.target as HTMLInputElement).checked
+                  )
+                "
+              />
+              <span class="slider" />
+            </label>
+          </div>
         </div>
 
         <div class="row">
-          <div class="label">收纳到上侧</div>
-          <ShortcutInput
-            :model-value="settings.shortcuts.stashTop"
-            placeholder="未设置"
-            @update:model-value="
-              update({
-                shortcuts: { stashTop: $event }
-              })
-            "
-          />
+          <div class="label shortcut-label">
+            <span>收纳到左侧</span>
+            <span v-if="hasExistingShortcutConflict('stashLeft')" class="conflict-badge">冲突</span>
+          </div>
+          <div class="shortcut-actions">
+            <ShortcutInput
+              :model-value="settings.shortcuts.stashLeft"
+              :disabled="!isShortcutEnabled('stashLeft')"
+              placeholder="未设置"
+              @update:model-value="onShortcutChange('stashLeft', $event)"
+            />
+            <label class="switch">
+              <input
+                type="checkbox"
+                :checked="isShortcutEnabled('stashLeft')"
+                @change="
+                  onShortcutEnabledChange('stashLeft', ($event.target as HTMLInputElement).checked)
+                "
+              />
+              <span class="slider" />
+            </label>
+          </div>
         </div>
 
         <div class="row">
-          <div class="label">收纳到右侧</div>
-          <ShortcutInput
-            :model-value="settings.shortcuts.stashRight"
-            placeholder="未设置"
-            @update:model-value="
-              update({
-                shortcuts: { stashRight: $event }
-              })
-            "
-          />
+          <div class="label shortcut-label">
+            <span>收纳到上侧</span>
+            <span v-if="hasExistingShortcutConflict('stashTop')" class="conflict-badge">冲突</span>
+          </div>
+          <div class="shortcut-actions">
+            <ShortcutInput
+              :model-value="settings.shortcuts.stashTop"
+              :disabled="!isShortcutEnabled('stashTop')"
+              placeholder="未设置"
+              @update:model-value="onShortcutChange('stashTop', $event)"
+            />
+            <label class="switch">
+              <input
+                type="checkbox"
+                :checked="isShortcutEnabled('stashTop')"
+                @change="
+                  onShortcutEnabledChange('stashTop', ($event.target as HTMLInputElement).checked)
+                "
+              />
+              <span class="slider" />
+            </label>
+          </div>
         </div>
 
         <div class="row">
-          <div class="label">收纳到下侧</div>
-          <ShortcutInput
-            :model-value="settings.shortcuts.stashBottom"
-            placeholder="未设置"
-            @update:model-value="
-              update({
-                shortcuts: { stashBottom: $event }
-              })
-            "
-          />
+          <div class="label shortcut-label">
+            <span>收纳到右侧</span>
+            <span v-if="hasExistingShortcutConflict('stashRight')" class="conflict-badge"
+              >冲突</span
+            >
+          </div>
+          <div class="shortcut-actions">
+            <ShortcutInput
+              :model-value="settings.shortcuts.stashRight"
+              :disabled="!isShortcutEnabled('stashRight')"
+              placeholder="未设置"
+              @update:model-value="onShortcutChange('stashRight', $event)"
+            />
+            <label class="switch">
+              <input
+                type="checkbox"
+                :checked="isShortcutEnabled('stashRight')"
+                @change="
+                  onShortcutEnabledChange('stashRight', ($event.target as HTMLInputElement).checked)
+                "
+              />
+              <span class="slider" />
+            </label>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="label shortcut-label">
+            <span>收纳到下侧</span>
+            <span v-if="hasExistingShortcutConflict('stashBottom')" class="conflict-badge"
+              >冲突</span
+            >
+          </div>
+          <div class="shortcut-actions">
+            <ShortcutInput
+              :model-value="settings.shortcuts.stashBottom"
+              :disabled="!isShortcutEnabled('stashBottom')"
+              placeholder="未设置"
+              @update:model-value="onShortcutChange('stashBottom', $event)"
+            />
+            <label class="switch">
+              <input
+                type="checkbox"
+                :checked="isShortcutEnabled('stashBottom')"
+                @change="
+                  onShortcutEnabledChange(
+                    'stashBottom',
+                    ($event.target as HTMLInputElement).checked
+                  )
+                "
+              />
+              <span class="slider" />
+            </label>
+          </div>
         </div>
       </div>
 
@@ -726,6 +1042,35 @@ onMounted(() => {
       <!-- <div class="version">{{ version }}</div>
       <div class="status">{{ saving ? '保存中…' : '已保存' }}</div> -->
     </footer>
+
+    <Teleport to="body">
+      <div v-if="shortcutConflict" class="conflict-overlay" @click.self="closeShortcutConflict">
+        <div class="conflict-modal">
+          <div class="conflict-header">
+            <div class="conflict-title">快捷键冲突</div>
+            <div class="conflict-subtitle">{{ shortcutConflict.value }} 已被占用</div>
+          </div>
+
+          <div class="conflict-body">
+            <div class="conflict-section-title">当前占用</div>
+            <div class="conflict-list">
+              <div v-for="c in shortcutConflict.conflicts" :key="c.key" class="conflict-item">
+                {{ c.label }}
+              </div>
+            </div>
+
+            <div class="conflict-section-title">将要设置为</div>
+            <div class="conflict-target">{{ shortcutConflict.targetLabel }}</div>
+            <div class="conflict-hint">选择「替换」会清除上面所有占用项的绑定。</div>
+          </div>
+
+          <div class="conflict-footer">
+            <button class="btn primary" type="button" @click="applyShortcutReplace">替换</button>
+            <button class="btn" type="button" @click="closeShortcutConflict">取消</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -789,6 +1134,79 @@ onMounted(() => {
   font-size: 13px;
   color: var(--ev-c-text-2);
   flex: 1;
+}
+
+.shortcut-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.conflict-badge {
+  font-size: 12px;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.14);
+  color: rgba(255, 255, 245, 0.92);
+}
+
+.conflict-summary {
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  background: rgba(239, 68, 68, 0.08);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.conflict-summary-title {
+  font-size: 12px;
+  font-weight: 900;
+  color: rgba(255, 255, 245, 0.92);
+}
+
+.conflict-summary-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.conflict-summary-key {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 900;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.12);
+  color: rgba(255, 255, 245, 0.92);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.conflict-summary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.conflict-summary-action {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.12);
+  color: rgba(255, 255, 245, 0.9);
+}
+
+.shortcut-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
 }
 
 .switch {
@@ -1001,5 +1419,104 @@ onMounted(() => {
 .status {
   font-size: 12px;
   color: var(--ev-c-text-3);
+}
+
+.conflict-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.conflict-modal {
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  width: 520px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+}
+
+.conflict-header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.conflict-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: rgba(255, 255, 245, 0.92);
+}
+
+.conflict-subtitle {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.conflict-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.conflict-section-title {
+  font-size: 12px;
+  font-weight: 800;
+  color: rgba(235, 235, 245, 0.82);
+}
+
+.conflict-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.conflict-item {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.18);
+  font-size: 13px;
+  color: rgba(255, 255, 245, 0.9);
+}
+
+.conflict-target {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(34, 230, 234, 0.25);
+  background: rgba(34, 230, 234, 0.08);
+  font-size: 13px;
+  font-weight: 800;
+  color: rgba(255, 255, 245, 0.92);
+}
+
+.conflict-hint {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.conflict-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.btn.primary {
+  background: var(--color-text);
+  color: #000;
+  border-color: transparent;
+}
+
+.btn.primary:hover {
+  background: #22e6ea;
 }
 </style>

@@ -24,6 +24,9 @@ const colorMenus = ref<Record<Edge, boolean>>({
   right: false,
   bottom: false
 })
+const pinnedBorderColorDraft = ref(stashSettings.value.pinnedBorderColor)
+const pinnedBorderColorMenu = ref(false)
+const pinnedBorderWidthDraft = ref(stashSettings.value.pinnedBorderWidth)
 
 const itemAliasDrafts = ref<Record<string, string>>({})
 const itemColorDrafts = ref<Record<string, string>>({})
@@ -47,6 +50,20 @@ watch(
   () => stashSettings.value.handleColors,
   (v) => {
     colorDrafts.value = { ...v }
+  }
+)
+
+watch(
+  () => stashSettings.value.pinnedBorderColor,
+  (v) => {
+    pinnedBorderColorDraft.value = v
+  }
+)
+
+watch(
+  () => stashSettings.value.pinnedBorderWidth,
+  (v) => {
+    pinnedBorderWidthDraft.value = v
   }
 )
 
@@ -130,6 +147,87 @@ function cancelColor(edge: Edge): void {
 function applyColor(edge: Edge): void {
   setColor(edge, colorDrafts.value[edge])
   colorMenus.value[edge] = false
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  if (Number.isNaN(value) || !Number.isFinite(value)) return min
+  return Math.min(max, Math.max(min, value))
+}
+
+function normalizePinnedBorderColor(input: unknown): string | null {
+  const hex = (s: string): string | null => {
+    const v = s.trim()
+    const m = v.match(/^#?([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i)
+    if (!m) return null
+    return `#${m[1]}`
+  }
+
+  const fromRgbaParts = (r: number, g: number, b: number, a: number): string => {
+    const toByte = (n: number): string =>
+      Math.max(0, Math.min(255, Math.round(n)))
+        .toString(16)
+        .padStart(2, '0')
+    const aa = clampNumber(a, 0, 1) * 255
+    return `#${toByte(r)}${toByte(g)}${toByte(b)}${toByte(aa)}`
+  }
+
+  if (typeof input === 'string') {
+    const v = input.trim()
+    if (!v) return null
+    const h = hex(v)
+    if (h) return h
+    const m = v.match(
+      /^rgba?\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)(?:\s*,\s*([0-9.]+)\s*)?\)$/i
+    )
+    if (!m) return null
+    const r = Number(m[1])
+    const g = Number(m[2])
+    const b = Number(m[3])
+    const a = m[4] === undefined ? 1 : Number(m[4])
+    if (!Number.isFinite(r) || !Number.isFinite(g) || !Number.isFinite(b) || !Number.isFinite(a))
+      return null
+    return fromRgbaParts(r, g, b, a)
+  }
+
+  if (input && typeof input === 'object') {
+    const p = input as Record<string, unknown>
+    const r = typeof p.r === 'number' ? p.r : Number(p.r)
+    const g = typeof p.g === 'number' ? p.g : Number(p.g)
+    const b = typeof p.b === 'number' ? p.b : Number(p.b)
+    const a = p.a === undefined ? 1 : typeof p.a === 'number' ? p.a : Number(p.a)
+    if (!Number.isFinite(r) || !Number.isFinite(g) || !Number.isFinite(b) || !Number.isFinite(a))
+      return null
+    return fromRgbaParts(r, g, b, a)
+  }
+
+  return null
+}
+
+function setPinnedBorderColor(color: string): void {
+  const normalized = normalizePinnedBorderColor(color) ?? normalizePinnedBorderColor(color.trim())
+  if (!normalized) return
+  stashSettings.value = { ...stashSettings.value, pinnedBorderColor: normalized }
+  update({ windowStash: { pinnedBorderColor: normalized } }).catch(() => null)
+}
+
+function onPinnedBorderColorMenuChange(open: boolean): void {
+  if (open) pinnedBorderColorDraft.value = stashSettings.value.pinnedBorderColor
+}
+
+function cancelPinnedBorderColor(): void {
+  pinnedBorderColorDraft.value = stashSettings.value.pinnedBorderColor
+  pinnedBorderColorMenu.value = false
+}
+
+function applyPinnedBorderColor(): void {
+  setPinnedBorderColor(pinnedBorderColorDraft.value)
+  pinnedBorderColorMenu.value = false
+}
+
+function setPinnedBorderWidth(v: number): void {
+  const n = clampNumber(Number(v), 1, 16)
+  stashSettings.value = { ...stashSettings.value, pinnedBorderWidth: n }
+  update({ windowStash: { pinnedBorderWidth: n } }).catch(() => null)
 }
 
 function setAnimate(v: boolean | null): void {
@@ -353,6 +451,67 @@ onBeforeUnmount(() => {
             />
             <span class="slider" />
           </label>
+        </div>
+
+        <div class="row">
+          <div class="label">置顶边框颜色</div>
+          <div />
+          <v-menu
+            v-model="pinnedBorderColorMenu"
+            :close-on-content-click="false"
+            :offset="8"
+            location="bottom"
+            @update:model-value="onPinnedBorderColorMenuChange"
+          >
+            <template #activator="{ props }">
+              <button
+                v-bind="props"
+                class="color-btn only"
+                type="button"
+                :style="{ backgroundColor: stashSettings.pinnedBorderColor }"
+                :title="stashSettings.pinnedBorderColor"
+                aria-label="选择置顶边框颜色"
+              />
+            </template>
+
+            <v-card class="color-pop">
+              <v-color-picker
+                v-model="pinnedBorderColorDraft"
+                :modes="['rgba']"
+                show-swatches
+                hide-inputs
+              />
+              <div class="color-actions">
+                <v-btn variant="text" density="compact" @click="cancelPinnedBorderColor"
+                  >取消</v-btn
+                >
+                <v-btn
+                  color="primary"
+                  variant="flat"
+                  density="compact"
+                  @click="applyPinnedBorderColor"
+                >
+                  应用
+                </v-btn>
+              </div>
+            </v-card>
+          </v-menu>
+        </div>
+
+        <div class="row">
+          <div class="label">置顶边框粗细</div>
+          <div class="slider-wrap">
+            <v-slider
+              v-model="pinnedBorderWidthDraft"
+              min="1"
+              max="16"
+              step="1"
+              hide-details
+              density="compact"
+              @end="setPinnedBorderWidth(pinnedBorderWidthDraft)"
+            />
+          </div>
+          <div class="value">{{ pinnedBorderWidthDraft }}px</div>
         </div>
       </section>
     </div>

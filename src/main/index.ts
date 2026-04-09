@@ -45,10 +45,12 @@ import {
   initWindowStash,
   markWindowStashSessionClean,
   markWindowStashSessionRunning,
+  refreshPinnedBorderWindows,
   restoreAndClearPersistedWindowStash,
   restoreAllWindowStash,
   rehydrateWindowStashFromDisk,
-  stashForegroundToEdge
+  stashForegroundToEdge,
+  togglePinForegroundWindow
 } from './window-stash'
 import { TRANSLATOR_EVENTS, type TranslatePayload, type TranslateResult } from '@shared/translator'
 import Screenshots from '../libs/electron-screenshots/index'
@@ -199,6 +201,8 @@ function normalizeSettings(input: unknown): AppSettings {
       base.shortcuts.translateSelection = (
         obj.shortcuts as Record<string, string>
       ).translateSelection
+    if (typeof (obj.shortcuts as Record<string, unknown>).toggleTopmost === 'string')
+      base.shortcuts.toggleTopmost = (obj.shortcuts as Record<string, string>).toggleTopmost
     if (typeof (obj.shortcuts as Record<string, unknown>).stickyNotesPopup === 'string')
       base.shortcuts.stickyNotesPopup = (obj.shortcuts as Record<string, string>).stickyNotesPopup
     if (typeof (obj.shortcuts as Record<string, unknown>).snipStart === 'string')
@@ -217,6 +221,33 @@ function normalizeSettings(input: unknown): AppSettings {
       base.shortcuts.stashRight = (obj.shortcuts as Record<string, string>).stashRight
     if (typeof (obj.shortcuts as Record<string, unknown>).stashBottom === 'string')
       base.shortcuts.stashBottom = (obj.shortcuts as Record<string, string>).stashBottom
+  }
+
+  const se = (obj as { shortcutsEnabled?: unknown }).shortcutsEnabled
+  if (se && typeof se === 'object') {
+    const m = se as Record<string, unknown>
+    if (typeof m['toggleEye'] === 'boolean')
+      base.shortcutsEnabled.toggleEye = m['toggleEye'] as boolean
+    if (typeof m['translateSelection'] === 'boolean')
+      base.shortcutsEnabled.translateSelection = m['translateSelection'] as boolean
+    if (typeof m['toggleTopmost'] === 'boolean')
+      base.shortcutsEnabled.toggleTopmost = m['toggleTopmost'] as boolean
+    if (typeof m['stickyNotesPopup'] === 'boolean')
+      base.shortcutsEnabled.stickyNotesPopup = m['stickyNotesPopup'] as boolean
+    if (typeof m['snipStart'] === 'boolean')
+      base.shortcutsEnabled.snipStart = m['snipStart'] as boolean
+    if (typeof m['stickerPaste'] === 'boolean')
+      base.shortcutsEnabled.stickerPaste = m['stickerPaste'] as boolean
+    if (typeof m['stickersToggleHidden'] === 'boolean')
+      base.shortcutsEnabled.stickersToggleHidden = m['stickersToggleHidden'] as boolean
+    if (typeof m['stashLeft'] === 'boolean')
+      base.shortcutsEnabled.stashLeft = m['stashLeft'] as boolean
+    if (typeof m['stashTop'] === 'boolean')
+      base.shortcutsEnabled.stashTop = m['stashTop'] as boolean
+    if (typeof m['stashRight'] === 'boolean')
+      base.shortcutsEnabled.stashRight = m['stashRight'] as boolean
+    if (typeof m['stashBottom'] === 'boolean')
+      base.shortcutsEnabled.stashBottom = m['stashBottom'] as boolean
   }
 
   if (
@@ -329,6 +360,14 @@ function normalizeSettings(input: unknown): AppSettings {
     if (typeof ws['animate'] === 'boolean') base.windowStash.animate = ws['animate'] as boolean
     if (typeof ws['durationMs'] === 'number')
       base.windowStash.durationMs = clampNumber(Number(ws['durationMs']), 60, 1200)
+    if (typeof ws['pinnedBorderColor'] === 'string' && ws['pinnedBorderColor'].trim()) {
+      const v = ws['pinnedBorderColor'].trim()
+      if (/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(v)) {
+        base.windowStash.pinnedBorderColor = v
+      }
+    }
+    if (typeof ws['pinnedBorderWidth'] === 'number')
+      base.windowStash.pinnedBorderWidth = clampNumber(Number(ws['pinnedBorderWidth']), 1, 16)
   }
 
   return base
@@ -365,6 +404,8 @@ function applySettingsPatch(patch: unknown): AppSettings {
     if (typeof p.shortcuts.toggleEye === 'string') next.shortcuts.toggleEye = p.shortcuts.toggleEye
     if (typeof (p.shortcuts as Record<string, unknown>).translateSelection === 'string')
       next.shortcuts.translateSelection = (p.shortcuts as Record<string, string>).translateSelection
+    if (typeof (p.shortcuts as Record<string, unknown>).toggleTopmost === 'string')
+      next.shortcuts.toggleTopmost = (p.shortcuts as Record<string, string>).toggleTopmost
     if (typeof (p.shortcuts as Record<string, unknown>).stickyNotesPopup === 'string')
       next.shortcuts.stickyNotesPopup = (p.shortcuts as Record<string, string>).stickyNotesPopup
     if (typeof (p.shortcuts as Record<string, unknown>).snipStart === 'string')
@@ -383,6 +424,32 @@ function applySettingsPatch(patch: unknown): AppSettings {
       next.shortcuts.stashRight = (p.shortcuts as Record<string, string>).stashRight
     if (typeof (p.shortcuts as Record<string, unknown>).stashBottom === 'string')
       next.shortcuts.stashBottom = (p.shortcuts as Record<string, string>).stashBottom
+  }
+
+  if ((p as { shortcutsEnabled?: unknown }).shortcutsEnabled) {
+    const se = (p as { shortcutsEnabled: Record<string, unknown> }).shortcutsEnabled
+    if (typeof se['toggleEye'] === 'boolean')
+      next.shortcutsEnabled.toggleEye = se['toggleEye'] as boolean
+    if (typeof se['translateSelection'] === 'boolean')
+      next.shortcutsEnabled.translateSelection = se['translateSelection'] as boolean
+    if (typeof se['toggleTopmost'] === 'boolean')
+      next.shortcutsEnabled.toggleTopmost = se['toggleTopmost'] as boolean
+    if (typeof se['stickyNotesPopup'] === 'boolean')
+      next.shortcutsEnabled.stickyNotesPopup = se['stickyNotesPopup'] as boolean
+    if (typeof se['snipStart'] === 'boolean')
+      next.shortcutsEnabled.snipStart = se['snipStart'] as boolean
+    if (typeof se['stickerPaste'] === 'boolean')
+      next.shortcutsEnabled.stickerPaste = se['stickerPaste'] as boolean
+    if (typeof se['stickersToggleHidden'] === 'boolean')
+      next.shortcutsEnabled.stickersToggleHidden = se['stickersToggleHidden'] as boolean
+    if (typeof se['stashLeft'] === 'boolean')
+      next.shortcutsEnabled.stashLeft = se['stashLeft'] as boolean
+    if (typeof se['stashTop'] === 'boolean')
+      next.shortcutsEnabled.stashTop = se['stashTop'] as boolean
+    if (typeof se['stashRight'] === 'boolean')
+      next.shortcutsEnabled.stashRight = se['stashRight'] as boolean
+    if (typeof se['stashBottom'] === 'boolean')
+      next.shortcutsEnabled.stashBottom = se['stashBottom'] as boolean
   }
 
   if (
@@ -474,6 +541,10 @@ function applySettingsPatch(patch: unknown): AppSettings {
     if (typeof ws['animate'] === 'boolean') next.windowStash.animate = ws['animate'] as boolean
     if (typeof ws['durationMs'] === 'number')
       next.windowStash.durationMs = ws['durationMs'] as number
+    if (typeof ws['pinnedBorderColor'] === 'string')
+      next.windowStash.pinnedBorderColor = ws['pinnedBorderColor'] as string
+    if (typeof ws['pinnedBorderWidth'] === 'number')
+      next.windowStash.pinnedBorderWidth = ws['pinnedBorderWidth'] as number
   }
   {
     const rsv = (p as { reminderSeconds?: unknown }).reminderSeconds
@@ -2424,9 +2495,17 @@ function ensureAutoStart(): void {
 function ensureShortcuts(): void {
   globalShortcut.unregisterAll()
 
+  const isEnabled = (name: string): boolean => {
+    const se = (settings as { shortcutsEnabled?: unknown }).shortcutsEnabled
+    if (!se || typeof se !== 'object') return true
+    const v = (se as Record<string, unknown>)[name]
+    return typeof v === 'boolean' ? v : true
+  }
+
   const conflicts: Record<string, string[]> = {}
   const entries: Array<{ name: string; acc: string }> = []
   for (const [name, raw] of Object.entries(settings.shortcuts ?? ({} as Record<string, unknown>))) {
+    if (!isEnabled(name)) continue
     if (typeof raw !== 'string') continue
     const acc = raw.trim()
     if (!acc) continue
@@ -2445,7 +2524,7 @@ function ensureShortcuts(): void {
     )
   }
 
-  if (settings.shortcuts.toggleEye) {
+  if (isEnabled('toggleEye') && settings.shortcuts.toggleEye) {
     try {
       globalShortcut.register(settings.shortcuts.toggleEye, () => {
         settings.eye.enabled = !settings.eye.enabled
@@ -2462,7 +2541,10 @@ function ensureShortcuts(): void {
     }
   }
 
-  if ((settings.shortcuts as Record<string, unknown>).translateSelection) {
+  if (
+    isEnabled('translateSelection') &&
+    (settings.shortcuts as Record<string, unknown>).translateSelection
+  ) {
     const acc = (settings.shortcuts as Record<string, string>).translateSelection
     if (acc) {
       try {
@@ -2475,7 +2557,23 @@ function ensureShortcuts(): void {
     }
   }
 
-  if ((settings.shortcuts as Record<string, unknown>).stickyNotesPopup) {
+  if (isEnabled('toggleTopmost') && (settings.shortcuts as Record<string, unknown>).toggleTopmost) {
+    const acc = (settings.shortcuts as Record<string, string>).toggleTopmost
+    if (acc) {
+      try {
+        globalShortcut.register(acc, () => {
+          void togglePinForegroundWindow().catch(() => null)
+        })
+      } catch (e) {
+        console.error('Failed to register shortcut:', acc, e)
+      }
+    }
+  }
+
+  if (
+    isEnabled('stickyNotesPopup') &&
+    (settings.shortcuts as Record<string, unknown>).stickyNotesPopup
+  ) {
     const acc = (settings.shortcuts as Record<string, string>).stickyNotesPopup
     if (acc) {
       try {
@@ -2487,7 +2585,7 @@ function ensureShortcuts(): void {
   }
 
   if (settings.snip.enabled) {
-    if ((settings.shortcuts as Record<string, unknown>).snipStart) {
+    if (isEnabled('snipStart') && (settings.shortcuts as Record<string, unknown>).snipStart) {
       const acc = (settings.shortcuts as Record<string, string>).snipStart
       if (acc) {
         try {
@@ -2498,7 +2596,7 @@ function ensureShortcuts(): void {
       }
     }
 
-    if ((settings.shortcuts as Record<string, unknown>).stickerPaste) {
+    if (isEnabled('stickerPaste') && (settings.shortcuts as Record<string, unknown>).stickerPaste) {
       const acc = (settings.shortcuts as Record<string, string>).stickerPaste
       if (acc) {
         try {
@@ -2513,7 +2611,10 @@ function ensureShortcuts(): void {
       }
     }
 
-    if ((settings.shortcuts as Record<string, unknown>).stickersToggleHidden) {
+    if (
+      isEnabled('stickersToggleHidden') &&
+      (settings.shortcuts as Record<string, unknown>).stickersToggleHidden
+    ) {
       const acc = (settings.shortcuts as Record<string, string>).stickersToggleHidden
       if (acc) {
         try {
@@ -2530,12 +2631,29 @@ function ensureShortcuts(): void {
   }
 
   const stashShortcuts = [
-    { acc: (settings.shortcuts as Record<string, string>).stashLeft, edge: 'left' as const },
-    { acc: (settings.shortcuts as Record<string, string>).stashTop, edge: 'top' as const },
-    { acc: (settings.shortcuts as Record<string, string>).stashRight, edge: 'right' as const },
-    { acc: (settings.shortcuts as Record<string, string>).stashBottom, edge: 'bottom' as const }
+    {
+      name: 'stashLeft',
+      acc: (settings.shortcuts as Record<string, string>).stashLeft,
+      edge: 'left' as const
+    },
+    {
+      name: 'stashTop',
+      acc: (settings.shortcuts as Record<string, string>).stashTop,
+      edge: 'top' as const
+    },
+    {
+      name: 'stashRight',
+      acc: (settings.shortcuts as Record<string, string>).stashRight,
+      edge: 'right' as const
+    },
+    {
+      name: 'stashBottom',
+      acc: (settings.shortcuts as Record<string, string>).stashBottom,
+      edge: 'bottom' as const
+    }
   ]
   for (const it of stashShortcuts) {
+    if (!isEnabled(it.name)) continue
     const acc = typeof it.acc === 'string' ? it.acc.trim() : ''
     if (!acc) continue
     try {
@@ -3255,6 +3373,7 @@ app.whenReady().then(async () => {
     settings = applySettingsPatch(patch)
     saveSettingsToDisk(settings)
     applySettingsToRuntime()
+    refreshPinnedBorderWindows()
     broadcastBreakStatus()
     for (const win of BrowserWindow.getAllWindows()) {
       if (win.isDestroyed()) continue

@@ -15,6 +15,7 @@ export interface AppSettings {
     saveDir: string
   }
   shortcuts: Record<string, string>
+  shortcutsEnabled: Record<string, boolean>
   translate: {
     provider: 'baidu' | 'bing' | 'ai'
     defaultSource: string
@@ -61,6 +62,8 @@ export interface AppSettings {
     showHandleDrag: boolean
     animate: boolean
     durationMs: number
+    pinnedBorderColor: string
+    pinnedBorderWidth: number
   }
 }
 
@@ -69,6 +72,7 @@ export type SettingsPatch = Partial<{
   snip: Partial<AppSettings['snip']>
   stickyNotes: Partial<AppSettings['stickyNotes']>
   shortcuts: Partial<AppSettings['shortcuts']>
+  shortcutsEnabled: Partial<AppSettings['shortcutsEnabled']>
   translate: Partial<Omit<AppSettings['translate'], 'baidu' | 'bing'>> & {
     baidu?: Partial<AppSettings['translate']['baidu']>
     bing?: Partial<AppSettings['translate']['bing']>
@@ -98,6 +102,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   shortcuts: {
     toggleEye: 'Ctrl+Shift+E',
     translateSelection: 'Ctrl+Shift+T',
+    toggleTopmost: 'Ctrl+Alt+T',
     snipStart: 'F1',
     stickerPaste: 'F3',
     stickersToggleHidden: 'Shift+F3',
@@ -106,6 +111,19 @@ export const DEFAULT_SETTINGS: AppSettings = {
     stashTop: 'Ctrl+Shift+2',
     stashRight: 'Ctrl+Shift+3',
     stashBottom: 'Ctrl+Shift+4'
+  },
+  shortcutsEnabled: {
+    toggleEye: false,
+    translateSelection: true,
+    toggleTopmost: true,
+    snipStart: true,
+    stickerPaste: true,
+    stickersToggleHidden: true,
+    stickyNotesPopup: false,
+    stashLeft: true,
+    stashTop: true,
+    stashRight: true,
+    stashBottom: true
   },
   translate: {
     provider: 'baidu',
@@ -157,6 +175,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
     showHandleTitle: true,
     showHandleDrag: true,
     animate: true,
-    durationMs: 180
+    durationMs: 180,
+    pinnedBorderColor: '#3b83f6db',
+    pinnedBorderWidth: 3
   }
 }

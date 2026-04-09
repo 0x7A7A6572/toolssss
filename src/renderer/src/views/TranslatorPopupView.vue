@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
-import { Copy, X, ArrowRight } from 'lucide-vue-next'
+import { ArrowLeftRight, Copy, X } from 'lucide-vue-next'
 import { TRANSLATOR_EVENTS } from '@shared/translator'
 import { appendTranslationHistory } from '@renderer/utils/translationHistory'
 
@@ -51,6 +51,26 @@ async function translate(): Promise<void> {
   } finally {
     loading.value = false
   }
+}
+
+async function swapAndTranslate(): Promise<void> {
+  if (loading.value) return
+
+  const a = source.value
+  source.value = target.value
+  target.value = a
+
+  const out = outputText.value.trim()
+  if (out) {
+    const oldInput = inputText.value
+    inputText.value = outputText.value
+    outputText.value = oldInput
+  } else {
+    outputText.value = ''
+  }
+
+  errorText.value = ''
+  await translate()
 }
 
 async function copyResult(): Promise<void> {
@@ -120,9 +140,14 @@ onBeforeUnmount(() => {
           item-title="title"
           item-value="value"
         />
-        <div class="arrow">
-          <ArrowRight :size="12" />
-        </div>
+        <button
+          class="swap"
+          type="button"
+          :disabled="loading || (!inputText.trim() && !outputText.trim())"
+          @click="swapAndTranslate"
+        >
+          <ArrowLeftRight :size="12" />
+        </button>
         <v-select
           v-model="target"
           class="select"
@@ -297,8 +322,27 @@ onBeforeUnmount(() => {
   flex: none;
 }
 
-.arrow {
+.swap {
+  height: 20px;
+  width: 20px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(235, 235, 245, 0.9);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   opacity: 0.7;
+}
+
+.swap:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.swap:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .spacer {

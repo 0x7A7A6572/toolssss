@@ -7,9 +7,14 @@ import {
   getExternalWindowRect,
   hideExternalWindowToEdge,
   raiseExternalWindow,
+  ensureExternalWindowRectEvents,
+  setExternalWindowTopmost,
+  watchExternalWindowRect,
+  disposeExternalWindowRectEvents,
   restoreExternalWindow,
   type ExternalWindowEdge,
-  type ExternalWindowRect
+  type ExternalWindowRect,
+  type ExternalWindowRectChange
 } from './external-window'
 import { DEFAULT_SETTINGS, type AppSettings } from '@shared/settings'
 
@@ -39,6 +44,17 @@ type WindowStashListItem = {
 const stashed = new Map<string, StashedWindow>()
 const handleNudgeRemainders = new Map<string, { dx: number; dy: number }>()
 
+type PinnedWindow = {
+  hwnd: string
+  title: string
+  border: BrowserWindow
+  validateTimer: NodeJS.Timeout | null
+  lastColor: string
+  lastWidth: number
+}
+
+const pinned = new Map<string, PinnedWindow>()
+
 type PersistedStashItem = {
   hwnd: string
   title?: string
@@ -60,6 +76,7 @@ const LEAVE_MARGIN_PX = 6
 const HANDLE_GAP_PX = 8
 const HANDLE_TITLE_MAX_CHARS = 10
 const RECT_POLL_MS = 320
+const PIN_VALIDATE_MS = 1200
 
 let loadWindowFn: ((win: BrowserWindow, query: Record<string, string>) => Promise<void>) | null =
   null
@@ -208,6 +225,24 @@ function normalizeHexColor(s: string): string | null {
   const v = typeof s === 'string' ? s.trim() : ''
   if (!v) return null
   return /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(v) ? v : null
+}
+
+function getPinnedBorderColor(): string {
+  const cfg = getStashSettings() as unknown as { pinnedBorderColor?: unknown }
+  const c = typeof cfg.pinnedBorderColor === 'string' ? cfg.pinnedBorderColor : ''
+  return (
+    normalizeHexColor(c) ??
+    normalizeHexColor(DEFAULT_SETTINGS.windowStash.pinnedBorderColor) ??
+    '#3b83f6db'
+  )
+}
+
+function getPinnedBorderWidth(): number {
+  const cfg = getStashSettings() as unknown as { pinnedBorderWidth?: unknown }
+  const raw = (cfg.pinnedBorderWidth ?? DEFAULT_SETTINGS.windowStash.pinnedBorderWidth) as unknown
+  const n = typeof raw === 'number' ? raw : Number(raw)
+  if (!Number.isFinite(n)) return 3
+  return Math.max(1, Math.min(16, Math.round(n)))
 }
 
 function clampNumber(value: number, min: number, max: number): number {
@@ -668,6 +703,224 @@ export function initWindowStash(opts: {
   })
 }
 
+function rectToBounds(rect: ExternalWindowRect): {
+  x: number
+  y: number
+  width: number
+  height: number
+} {
+  const cx = (rect.left + rect.right) / 2
+  const cy = (rect.top + rect.bottom) / 2
+
+  let scaleFactor = 1
+  try {
+    const primary = screen.getPrimaryDisplay()
+    const sf = Number(primary?.scaleFactor)
+    if (Number.isFinite(sf) && sf > 0) scaleFactor = sf
+  } catch {
+    void 0
+  }
+
+  try {
+    for (const d of screen.getAllDisplays()) {
+      const sf = Number(d.scaleFactor)
+      if (!Number.isFinite(sf) || sf <= 0) continue
+      const physLeft = d.bounds.x * sf
+      const physTop = d.bounds.y * sf
+      const physRight = physLeft + d.bounds.width * sf
+      const physBottom = physTop + d.bounds.height * sf
+      if (cx >= physLeft && cx <= physRight && cy >= physTop && cy <= physBottom) {
+        scaleFactor = sf
+        break
+      }
+    }
+  } catch {
+    void 0
+  }
+
+  const x = Math.round(rect.left / scaleFactor)
+  const y = Math.round(rect.top / scaleFactor)
+  const width = Math.max(1, Math.round((rect.right - rect.left) / scaleFactor))
+  const height = Math.max(1, Math.round((rect.bottom - rect.top) / scaleFactor))
+  return { x, y, width, height }
+}
+
+function sendPinnedBorderSettings(
+  win: BrowserWindow,
+  settings: { color: string; width: number }
+): void {
+  if (win.isDestroyed()) return
+  if (win.webContents.isLoading()) return
+  try {
+    win.webContents.send('pin-border:settings', settings)
+  } catch {
+    void 0
+  }
+}
+
+let pinnedRectEventsReady = false
+function ensurePinnedRectEvents(): void {
+  if (process.platform !== 'win32') return
+  if (pinnedRectEventsReady) return
+  pinnedRectEventsReady = true
+  ensureExternalWindowRectEvents((evt: ExternalWindowRectChange) => {
+    const cur = pinned.get(evt.hwnd)
+    if (!cur) return
+    if (cur.border.isDestroyed()) return
+    try {
+      cur.border.setBounds(rectToBounds(evt.rect), false)
+    } catch {
+      void 0
+    }
+  })
+}
+
+async function unpin(hwnd: string, setNotTopmost: boolean): Promise<void> {
+  const id = typeof hwnd === 'string' ? hwnd.trim() : ''
+  if (!id) return
+  const cur = pinned.get(id)
+  if (!cur) return
+  pinned.delete(id)
+  watchExternalWindowRect(id, false)
+  if (cur.validateTimer) clearInterval(cur.validateTimer)
+  cur.validateTimer = null
+  try {
+    if (!cur.border.isDestroyed()) cur.border.close()
+  } catch {
+    void 0
+  }
+  if (setNotTopmost) await setExternalWindowTopmost(id, false).catch(() => false)
+  if (pinned.size === 0) {
+    disposeExternalWindowRectEvents()
+    pinnedRectEventsReady = false
+  }
+}
+
+async function pin(hwnd: string, title: string): Promise<void> {
+  const id = typeof hwnd === 'string' ? hwnd.trim() : ''
+  if (!id) return
+  if (pinned.has(id)) return
+  const rect = await getExternalWindowRect(id)
+  if (!rect) return
+
+  const ok = await setExternalWindowTopmost(id, true)
+  if (!ok) return
+
+  if (!loadWindowFn) return
+  ensurePinnedRectEvents()
+  watchExternalWindowRect(id, true)
+
+  const pinSettings = { color: getPinnedBorderColor(), width: getPinnedBorderWidth() }
+  const bounds = rectToBounds(rect)
+  const border = new BrowserWindow({
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+    show: false,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: false,
+    focusable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    hasShadow: false,
+    backgroundColor: '#00000000',
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: true
+    }
+  })
+
+  try {
+    border.setIgnoreMouseEvents(true, { forward: true })
+  } catch {
+    void 0
+  }
+  border.setAlwaysOnTop(true, 'screen-saver', 30)
+  border.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  try {
+    border.setBounds(bounds, false)
+  } catch {
+    void 0
+  }
+
+  loadWindowFn(border, {
+    mode: 'pin-border',
+    color: pinSettings.color,
+    width: String(pinSettings.width)
+  }).catch(() => null)
+
+  const item: PinnedWindow = {
+    hwnd: id,
+    title,
+    border,
+    validateTimer: null,
+    lastColor: pinSettings.color,
+    lastWidth: pinSettings.width
+  }
+  pinned.set(id, item)
+
+  border.webContents.once('did-finish-load', () => {
+    sendPinnedBorderSettings(border, { color: item.lastColor, width: item.lastWidth })
+    try {
+      border.showInactive()
+    } catch {
+      void 0
+    }
+  })
+
+  border.on('closed', () => {
+    const cur = pinned.get(id)
+    if (!cur) return
+    if (cur.border !== border) return
+    void unpin(id, false)
+  })
+
+  item.validateTimer = setInterval(async () => {
+    const cur = pinned.get(id)
+    if (!cur) return
+
+    const r = await getExternalWindowRect(id)
+    if (!r) {
+      await unpin(id, false)
+      return
+    }
+
+    const color = getPinnedBorderColor()
+    const width = getPinnedBorderWidth()
+    if (color !== cur.lastColor || width !== cur.lastWidth) {
+      cur.lastColor = color
+      cur.lastWidth = width
+      sendPinnedBorderSettings(cur.border, { color: cur.lastColor, width: cur.lastWidth })
+    }
+  }, PIN_VALIDATE_MS)
+}
+
+export async function togglePinForegroundWindow(): Promise<void> {
+  const fg = await getForegroundExternalWindow()
+  if (!fg) return
+  const hwnd = fg.hwnd
+  const title = fg.title
+  if (pinned.has(hwnd)) {
+    await unpin(hwnd, true)
+    return
+  }
+  await pin(hwnd, title)
+}
+
+export function refreshPinnedBorderWindows(): void {
+  for (const cur of pinned.values()) {
+    if (cur.border.isDestroyed()) continue
+    const color = getPinnedBorderColor()
+    const width = getPinnedBorderWidth()
+    cur.lastColor = color
+    cur.lastWidth = width
+    sendPinnedBorderSettings(cur.border, { color, width })
+  }
+}
+
 export async function stashForegroundToEdge(edge: ExternalWindowEdge): Promise<void> {
   const fg = await getForegroundExternalWindow()
   if (!fg) return
@@ -788,6 +1041,21 @@ export async function restoreAllWindowStash(): Promise<void> {
 }
 
 export function disposeAllWindowStash(): void {
+  for (const p of pinned.values()) {
+    watchExternalWindowRect(p.hwnd, false)
+    if (p.validateTimer) clearInterval(p.validateTimer)
+    p.validateTimer = null
+    try {
+      if (!p.border.isDestroyed()) p.border.close()
+    } catch {
+      void 0
+    }
+    void setExternalWindowTopmost(p.hwnd, false).catch(() => false)
+  }
+  pinned.clear()
+  disposeExternalWindowRectEvents()
+  pinnedRectEventsReady = false
+
   for (const s of stashed.values()) {
     if (s.hoverTimer) clearInterval(s.hoverTimer)
     s.hoverTimer = null

@@ -145,3 +145,23 @@ select option {
 .v-list-item-title {
   font-size: 13px !important;
 }
+
+.switch input + .slider{
+  border-radius: 15% !important;
+  background: linear-gradient(90deg, #8989898e 30%, transparent) !important;
+  
+}
+.switch input + .slider::before {
+  border-radius: 15% !important;
+  background: #d5d5d5 !important;
+}
+
+.switch input:checked + .slider::before {
+  background: white !important;
+}
+
+
+.switch input:checked + .slider{
+  background: linear-gradient(267deg, var(--ev-c-theme) 30%, transparent) !important;
+}
+
