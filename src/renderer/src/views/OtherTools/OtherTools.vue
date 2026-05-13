@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { WeatherTool } from '../../utils/weather'
 import type { WeatherDashboard } from '@shared/weather'
 import { DEFAULT_SETTINGS, type AppSettings } from '@shared/settings'
-import { RefreshCw, Settings, Sparkles } from 'lucide-vue-next'
+import { PencilLine, RefreshCw, Settings, Sparkles } from 'lucide-vue-next'
 import LazyCascader from '../../components/LazyCascader.vue'
 import SevenDayTempChart from '../../components/SevenDayTempChart.vue'
 import { LegalHoliday, SolarDay } from 'tyme4ts'
@@ -133,6 +133,58 @@ const aiReady = computed(() => {
   return Boolean(ai.enabled && ai.apiKeySet && ai.baseUrl.trim() && ai.model.trim())
 })
 
+const funFactTitle = computed(() => {
+  const v = settings.value.funFact?.title
+  return (typeof v === 'string' ? v.trim() : '') || DEFAULT_SETTINGS.funFact.title
+})
+
+const funFactEditOpen = ref(false)
+const funFactTitleDraft = ref('')
+const funFactPromptDraft = ref('')
+const funFactEditSaving = ref(false)
+const funFactEditErrorText = ref('')
+
+function openFunFactEditor(): void {
+  funFactEditErrorText.value = ''
+  funFactTitleDraft.value =
+    (typeof settings.value.funFact?.title === 'string'
+      ? settings.value.funFact.title
+      : ''
+    ).trim() || DEFAULT_SETTINGS.funFact.title
+  funFactPromptDraft.value =
+    typeof settings.value.funFact?.prompt === 'string'
+      ? settings.value.funFact.prompt
+      : DEFAULT_SETTINGS.funFact.prompt
+  funFactEditOpen.value = true
+}
+
+function closeFunFactEditor(): void {
+  funFactEditOpen.value = false
+  funFactEditSaving.value = false
+  funFactEditErrorText.value = ''
+}
+
+async function saveFunFactEditor(): Promise<void> {
+  funFactEditSaving.value = true
+  funFactEditErrorText.value = ''
+  try {
+    const title = funFactTitleDraft.value.trim()
+    const prompt = funFactPromptDraft.value.replace(/\r\n/g, '\n')
+    const ret = (await window.electron.ipcRenderer.invoke('settings:update', {
+      funFact: {
+        title,
+        prompt
+      }
+    })) as AppSettings
+    settings.value = ret
+    closeFunFactEditor()
+  } catch (e) {
+    funFactEditErrorText.value = e instanceof Error ? e.message : '保存失败'
+  } finally {
+    funFactEditSaving.value = false
+  }
+}
+
 function normalizeCachedFunFact(): void {
   if (!funFactYmd.value) return
   if (funFactYmd.value === funFactTodayYmd.value) return
@@ -254,6 +306,7 @@ function onKeydown(e: KeyboardEvent): void {
   if (e.key !== 'Escape') return
   closeCityPicker()
   closePaydayDialog()
+  closeFunFactEditor()
 }
 
 const provinceOptions = computed(() =>
@@ -816,7 +869,17 @@ onUnmounted(() => {
             :disabled="stackActive === 'funFact'"
             @click="setStackActive('funFact')"
           >
-            <div class="fun-fact-title">每日冷知识</div>
+            <div class="fun-fact-title">
+              {{ funFactTitle }}
+              <button
+                class="btn no-bg"
+                type="button"
+                :disabled="funFactLoading"
+                @click.stop="openFunFactEditor"
+              >
+                <PencilLine :size="14" />
+              </button>
+            </div>
             <div v-if="stackActive === 'funFact'" class="actions">
               <button
                 class="btn no-bg"
@@ -887,6 +950,53 @@ onUnmounted(() => {
         </div>
       </div>
       <div v-if="paydayDialogOpen" class="picker-backdrop" />
+
+      <div v-if="funFactEditOpen" class="picker-overlay" @click.self="closeFunFactEditor">
+        <div class="picker-card funfact-editor-card">
+          <div class="picker-title">编辑冷知识</div>
+          <div class="funfact-form">
+            <div class="funfact-field">
+              <div class="funfact-label">标题</div>
+              <input
+                v-model="funFactTitleDraft"
+                class="input"
+                type="text"
+                placeholder="例如：每日冷知识"
+              />
+            </div>
+            <div class="funfact-field">
+              <div class="funfact-label">提示词</div>
+              <textarea
+                v-model="funFactPromptDraft"
+                class="input funfact-textarea"
+                rows="6"
+                placeholder="支持变量：{ymd}、{title}"
+              />
+              <div class="hint">支持变量：{ymd}（日期）、{title}（标题）。</div>
+            </div>
+            <div v-if="funFactEditErrorText" class="error">{{ funFactEditErrorText }}</div>
+          </div>
+          <div class="picker-actions">
+            <button
+              class="btn"
+              type="button"
+              :disabled="funFactEditSaving"
+              @click="closeFunFactEditor"
+            >
+              取消
+            </button>
+            <button
+              class="btn"
+              type="button"
+              :disabled="funFactEditSaving"
+              @click="saveFunFactEditor"
+            >
+              保存
+            </button>
+          </div>
+        </div>
+      </div>
+      <div v-if="funFactEditOpen" class="picker-backdrop" />
     </Teleport>
   </div>
 </template>
@@ -1094,6 +1204,34 @@ onUnmounted(() => {
   position: absolute;
 }
 
+.funfact-editor-card {
+  width: min(560px, calc(100vw - 64px));
+}
+
+.funfact-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.funfact-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.funfact-label {
+  font-size: 13px;
+  color: rgba(235, 235, 245, 0.72);
+  font-weight: 700;
+}
+
+.funfact-textarea {
+  min-height: 140px;
+  resize: vertical;
+  line-height: 18px;
+}
+
 .picker-title {
   font-size: 14px;
   font-weight: 700;
@@ -1260,6 +1398,8 @@ onUnmounted(() => {
 }
 
 .fun-fact-title {
+  display: flex;
+  align-items: center;
   font-size: 14px;
   font-weight: 800;
   color: rgba(235, 235, 245, 0.92);

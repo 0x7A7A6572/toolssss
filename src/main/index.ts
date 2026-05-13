@@ -45,12 +45,10 @@ import {
   initWindowStash,
   markWindowStashSessionClean,
   markWindowStashSessionRunning,
-  refreshPinnedBorderWindows,
   restoreAndClearPersistedWindowStash,
   restoreAllWindowStash,
   rehydrateWindowStashFromDisk,
-  stashForegroundToEdge,
-  togglePinForegroundWindow
+  stashForegroundToEdge
 } from './window-stash'
 import { TRANSLATOR_EVENTS, type TranslatePayload, type TranslateResult } from '@shared/translator'
 import Screenshots from '../libs/electron-screenshots/index'
@@ -201,8 +199,6 @@ function normalizeSettings(input: unknown): AppSettings {
       base.shortcuts.translateSelection = (
         obj.shortcuts as Record<string, string>
       ).translateSelection
-    if (typeof (obj.shortcuts as Record<string, unknown>).toggleTopmost === 'string')
-      base.shortcuts.toggleTopmost = (obj.shortcuts as Record<string, string>).toggleTopmost
     if (typeof (obj.shortcuts as Record<string, unknown>).stickyNotesPopup === 'string')
       base.shortcuts.stickyNotesPopup = (obj.shortcuts as Record<string, string>).stickyNotesPopup
     if (typeof (obj.shortcuts as Record<string, unknown>).snipStart === 'string')
@@ -230,8 +226,6 @@ function normalizeSettings(input: unknown): AppSettings {
       base.shortcutsEnabled.toggleEye = m['toggleEye'] as boolean
     if (typeof m['translateSelection'] === 'boolean')
       base.shortcutsEnabled.translateSelection = m['translateSelection'] as boolean
-    if (typeof m['toggleTopmost'] === 'boolean')
-      base.shortcutsEnabled.toggleTopmost = m['toggleTopmost'] as boolean
     if (typeof m['stickyNotesPopup'] === 'boolean')
       base.shortcutsEnabled.stickyNotesPopup = m['stickyNotesPopup'] as boolean
     if (typeof m['snipStart'] === 'boolean')
@@ -305,6 +299,16 @@ function normalizeSettings(input: unknown): AppSettings {
     if (typeof ai['apiKeySet'] === 'boolean') base.ai.apiKeySet = ai['apiKeySet'] as boolean
   }
 
+  if (
+    (obj as { funFact?: unknown }).funFact &&
+    typeof (obj as { funFact?: unknown }).funFact === 'object'
+  ) {
+    const ff = (obj as { funFact: Record<string, unknown> }).funFact
+    if (typeof ff['title'] === 'string' && ff['title'].trim())
+      base.funFact.title = ff['title'].trim()
+    if (typeof ff['prompt'] === 'string' && ff['prompt'].trim()) base.funFact.prompt = ff['prompt']
+  }
+
   base.eye.enabled = Boolean(obj.eye?.enabled)
   base.eye.opacity = clampNumber(Number(obj.eye?.opacity), 0, 0.7)
   if (typeof obj.eye?.color === 'string' && obj.eye.color.trim()) {
@@ -360,14 +364,6 @@ function normalizeSettings(input: unknown): AppSettings {
     if (typeof ws['animate'] === 'boolean') base.windowStash.animate = ws['animate'] as boolean
     if (typeof ws['durationMs'] === 'number')
       base.windowStash.durationMs = clampNumber(Number(ws['durationMs']), 60, 1200)
-    if (typeof ws['pinnedBorderColor'] === 'string' && ws['pinnedBorderColor'].trim()) {
-      const v = ws['pinnedBorderColor'].trim()
-      if (/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(v)) {
-        base.windowStash.pinnedBorderColor = v
-      }
-    }
-    if (typeof ws['pinnedBorderWidth'] === 'number')
-      base.windowStash.pinnedBorderWidth = clampNumber(Number(ws['pinnedBorderWidth']), 1, 16)
   }
 
   return base
@@ -404,8 +400,6 @@ function applySettingsPatch(patch: unknown): AppSettings {
     if (typeof p.shortcuts.toggleEye === 'string') next.shortcuts.toggleEye = p.shortcuts.toggleEye
     if (typeof (p.shortcuts as Record<string, unknown>).translateSelection === 'string')
       next.shortcuts.translateSelection = (p.shortcuts as Record<string, string>).translateSelection
-    if (typeof (p.shortcuts as Record<string, unknown>).toggleTopmost === 'string')
-      next.shortcuts.toggleTopmost = (p.shortcuts as Record<string, string>).toggleTopmost
     if (typeof (p.shortcuts as Record<string, unknown>).stickyNotesPopup === 'string')
       next.shortcuts.stickyNotesPopup = (p.shortcuts as Record<string, string>).stickyNotesPopup
     if (typeof (p.shortcuts as Record<string, unknown>).snipStart === 'string')
@@ -432,8 +426,6 @@ function applySettingsPatch(patch: unknown): AppSettings {
       next.shortcutsEnabled.toggleEye = se['toggleEye'] as boolean
     if (typeof se['translateSelection'] === 'boolean')
       next.shortcutsEnabled.translateSelection = se['translateSelection'] as boolean
-    if (typeof se['toggleTopmost'] === 'boolean')
-      next.shortcutsEnabled.toggleTopmost = se['toggleTopmost'] as boolean
     if (typeof se['stickyNotesPopup'] === 'boolean')
       next.shortcutsEnabled.stickyNotesPopup = se['stickyNotesPopup'] as boolean
     if (typeof se['snipStart'] === 'boolean')
@@ -497,6 +489,15 @@ function applySettingsPatch(patch: unknown): AppSettings {
     if (typeof ai['apiKeySet'] === 'boolean') next.ai.apiKeySet = ai['apiKeySet'] as boolean
   }
 
+  if (
+    (p as { funFact?: unknown }).funFact &&
+    typeof (p as { funFact?: unknown }).funFact === 'object'
+  ) {
+    const ff = (p as { funFact: Record<string, unknown> }).funFact
+    if (typeof ff['title'] === 'string') next.funFact.title = ff['title'] as string
+    if (typeof ff['prompt'] === 'string') next.funFact.prompt = ff['prompt'] as string
+  }
+
   if (p.eye) {
     if (typeof p.eye.enabled === 'boolean') next.eye.enabled = p.eye.enabled
     if (typeof p.eye.opacity === 'number') next.eye.opacity = p.eye.opacity
@@ -541,10 +542,6 @@ function applySettingsPatch(patch: unknown): AppSettings {
     if (typeof ws['animate'] === 'boolean') next.windowStash.animate = ws['animate'] as boolean
     if (typeof ws['durationMs'] === 'number')
       next.windowStash.durationMs = ws['durationMs'] as number
-    if (typeof ws['pinnedBorderColor'] === 'string')
-      next.windowStash.pinnedBorderColor = ws['pinnedBorderColor'] as string
-    if (typeof ws['pinnedBorderWidth'] === 'number')
-      next.windowStash.pinnedBorderWidth = ws['pinnedBorderWidth'] as number
   }
   {
     const rsv = (p as { reminderSeconds?: unknown }).reminderSeconds
@@ -2245,6 +2242,30 @@ function tryParseAiSseDelta(jsonText: string): string {
   }
 }
 
+function getDailyFunFactTitle(): string {
+  const title = typeof settings.funFact?.title === 'string' ? settings.funFact.title.trim() : ''
+  return title || DEFAULT_SETTINGS.funFact.title
+}
+
+function getDailyFunFactPromptTemplate(): string {
+  const prompt = typeof settings.funFact?.prompt === 'string' ? settings.funFact.prompt : ''
+  const v = prompt.replace(/\r\n/g, '\n').trim()
+  if (v) return v
+  return DEFAULT_SETTINGS.funFact.prompt
+}
+
+function buildDailyFunFactUserPrompt(ymd: string): string {
+  const title = getDailyFunFactTitle()
+  const tpl = getDailyFunFactPromptTemplate()
+  const out = tpl
+    .replace(/\{ymd\}/g, ymd)
+    .replace(/\{title\}/g, title)
+    .replace(/\r\n/g, '\n')
+    .trim()
+  if (out.length <= 2000) return out
+  return out.slice(0, 2000).trimEnd()
+}
+
 async function requestDailyFunFactFromAiStreamed(
   ymd: string,
   signal: AbortSignal,
@@ -2279,7 +2300,7 @@ async function requestDailyFunFactFromAiStreamed(
         },
         {
           role: 'user',
-          content: `给我一条“每日冷知识”，日期：${ymd}。\n要求：1) 1-3 句；2) 不要列表；3) 不要标题符号；4) 不要输出多余解释。`
+          content: buildDailyFunFactUserPrompt(ymd)
         }
       ]
     }),
@@ -2368,7 +2389,7 @@ async function requestDailyFunFactFromAi(ymd: string): Promise<string> {
             },
             {
               role: 'user',
-              content: `给我一条“每日冷知识”，日期：${ymd}。\n要求：1) 1-3 句；2) 不要列表；3) 不要标题符号；4) 不要输出多余解释。`
+              content: buildDailyFunFactUserPrompt(ymd)
             }
           ]
         }),
@@ -2550,19 +2571,6 @@ function ensureShortcuts(): void {
       try {
         globalShortcut.register(acc, async () => {
           await openTranslatorPopupFromSelection()
-        })
-      } catch (e) {
-        console.error('Failed to register shortcut:', acc, e)
-      }
-    }
-  }
-
-  if (isEnabled('toggleTopmost') && (settings.shortcuts as Record<string, unknown>).toggleTopmost) {
-    const acc = (settings.shortcuts as Record<string, string>).toggleTopmost
-    if (acc) {
-      try {
-        globalShortcut.register(acc, () => {
-          void togglePinForegroundWindow().catch(() => null)
         })
       } catch (e) {
         console.error('Failed to register shortcut:', acc, e)
@@ -3373,7 +3381,6 @@ app.whenReady().then(async () => {
     settings = applySettingsPatch(patch)
     saveSettingsToDisk(settings)
     applySettingsToRuntime()
-    refreshPinnedBorderWindows()
     broadcastBreakStatus()
     for (const win of BrowserWindow.getAllWindows()) {
       if (win.isDestroyed()) continue

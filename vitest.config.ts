@@ -8,7 +8,7 @@ export default defineConfig({
     }
   },
   plugins: [vue()],
-  test: {
-    environment: 'node'
+  server: {
+    port: 65015
   }
 })

@@ -38,6 +38,10 @@ export interface AppSettings {
     model: string
     apiKeySet: boolean
   }
+  funFact: {
+    title: string
+    prompt: string
+  }
   eye: {
     enabled: boolean
     opacity: number
@@ -62,8 +66,6 @@ export interface AppSettings {
     showHandleDrag: boolean
     animate: boolean
     durationMs: number
-    pinnedBorderColor: string
-    pinnedBorderWidth: number
   }
 }
 
@@ -78,6 +80,7 @@ export type SettingsPatch = Partial<{
     bing?: Partial<AppSettings['translate']['bing']>
   }
   ai: Partial<AppSettings['ai']>
+  funFact: Partial<AppSettings['funFact']>
   eye: Partial<AppSettings['eye']>
   reminderSeconds: number
   alarm: Partial<AppSettings['alarm']>
@@ -102,7 +105,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   shortcuts: {
     toggleEye: 'Ctrl+Shift+E',
     translateSelection: 'Ctrl+Shift+T',
-    toggleTopmost: 'Ctrl+Alt+T',
     snipStart: 'F1',
     stickerPaste: 'F3',
     stickersToggleHidden: 'Shift+F3',
@@ -115,7 +117,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   shortcutsEnabled: {
     toggleEye: false,
     translateSelection: true,
-    toggleTopmost: true,
     snipStart: true,
     stickerPaste: true,
     stickersToggleHidden: true,
@@ -147,6 +148,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
     model: 'gpt-4o-mini',
     apiKeySet: false
   },
+  funFact: {
+    title: '每日冷知识',
+    prompt:
+      '给我一条“{title}”，日期：{ymd}。\n要求：1) 1-3 句；2) 不要列表；3) 不要标题符号；4) 不要输出多余解释。'
+  },
   eye: {
     enabled: false,
     opacity: 0.18,
@@ -175,8 +181,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
     showHandleTitle: true,
     showHandleDrag: true,
     animate: true,
-    durationMs: 180,
-    pinnedBorderColor: '#3b83f6db',
-    pinnedBorderWidth: 3
+    durationMs: 180
   }
 }

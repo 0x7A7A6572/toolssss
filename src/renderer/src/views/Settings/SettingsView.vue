@@ -15,7 +15,6 @@ const version = ref('')
 const shortcutLabels: Record<string, string> = {
   toggleEye: '开启/关闭护眼模式',
   translateSelection: '划词翻译弹窗',
-  toggleTopmost: '窗口置顶',
   stickyNotesPopup: '弹出快捷便签',
   snipStart: '开始截图',
   stickerPaste: '剪贴板贴图',
@@ -631,36 +630,6 @@ onMounted(() => {
 
         <div class="row">
           <div class="label shortcut-label">
-            <span>窗口置顶</span>
-            <span v-if="hasExistingShortcutConflict('toggleTopmost')" class="conflict-badge"
-              >冲突</span
-            >
-          </div>
-          <div class="shortcut-actions">
-            <ShortcutInput
-              :model-value="settings.shortcuts.toggleTopmost"
-              :disabled="!isShortcutEnabled('toggleTopmost')"
-              placeholder="未设置"
-              @update:model-value="onShortcutChange('toggleTopmost', $event)"
-            />
-            <label class="switch">
-              <input
-                type="checkbox"
-                :checked="isShortcutEnabled('toggleTopmost')"
-                @change="
-                  onShortcutEnabledChange(
-                    'toggleTopmost',
-                    ($event.target as HTMLInputElement).checked
-                  )
-                "
-              />
-              <span class="slider" />
-            </label>
-          </div>
-        </div>
-
-        <div class="row">
-          <div class="label shortcut-label">
             <span>收纳到左侧</span>
             <span v-if="hasExistingShortcutConflict('stashLeft')" class="conflict-badge">冲突</span>
           </div>
@@ -1034,8 +1003,6 @@ onMounted(() => {
           "
         />
       </div>
-
-      <div class="hint">预留配置：后续 AI 能力工具将复用此处设置</div>
     </section>
 
     <footer class="footer">

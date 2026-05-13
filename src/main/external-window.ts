@@ -1,7 +1,10 @@
 import { exec, spawn, type ChildProcessWithoutNullStreams } from 'child_process'
 import { createInterface } from 'readline'
 import { promisify } from 'util'
-import { WINDOW_RECT_EVENT_RUNNER_PS } from '../libs/win32/powershellRunners'
+import {
+  PINNED_BORDER_RUNNER_PS,
+  WINDOW_RECT_EVENT_RUNNER_PS
+} from '../libs/win32/powershellRunners'
 
 const execAsync = promisify(exec)
 
@@ -10,6 +13,7 @@ export type ExternalWindowMatch = 'contains' | 'equals'
 export type ExternalWindowRect = { left: number; top: number; right: number; bottom: number }
 export type ExternalWindowMatchEntry = { hwnd: string; title: string }
 export type ExternalWindowRectChange = { hwnd: string; rect: ExternalWindowRect }
+export type ExternalWindowPinnedBorderSettings = { color: string; width: number }
 
 function clampNumber(value: number, min: number, max: number): number {
   if (Number.isNaN(value) || !Number.isFinite(value)) return min
@@ -255,6 +259,135 @@ export function watchExternalWindowRect(hwnd: string, watch: boolean): void {
 export function disposeExternalWindowRectEvents(): void {
   rectEventBridge?.dispose()
   rectEventBridge = null
+}
+
+class ExternalWindowPinnedBorderBridge {
+  private proc: ChildProcessWithoutNullStreams
+  private closed = false
+  private onClosed: (() => void) | null
+
+  constructor(onClosed: () => void) {
+    this.onClosed = onClosed
+    const runner = PINNED_BORDER_RUNNER_PS
+
+    const encoded = encodePowerShellCommand(runner)
+    const args: string[] = [
+      '-STA',
+      '-NoLogo',
+      '-NoProfile',
+      '-NonInteractive',
+      '-EncodedCommand',
+      encoded
+    ]
+    this.proc = spawn('powershell', args, {
+      windowsHide: true,
+      stdio: ['pipe', 'pipe', 'pipe']
+    }) as ChildProcessWithoutNullStreams
+    this.proc.stdout.on('data', () => void 0)
+    this.proc.stderr.on('data', (d: Buffer) => {
+      const msg = d.toString('utf8').trim()
+      if (msg) console.error('[pinned-border]', msg)
+    })
+    this.proc.on('exit', () => {
+      this.onClosed?.()
+      this.onClosed = null
+      this.dispose()
+    })
+    this.proc.on('error', (e) => {
+      console.error('[pinned-border] process error', e)
+      this.onClosed?.()
+      this.onClosed = null
+      this.dispose()
+    })
+  }
+
+  add(hwnd: string, settings: ExternalWindowPinnedBorderSettings): void {
+    const id = typeof hwnd === 'string' ? hwnd.trim() : ''
+    if (!id) return
+    if (this.closed) return
+    try {
+      this.proc.stdin.write(`ADD|${id}|${settings.color}|${settings.width}\n`)
+    } catch {
+      void 0
+    }
+  }
+
+  remove(hwnd: string): void {
+    const id = typeof hwnd === 'string' ? hwnd.trim() : ''
+    if (!id) return
+    if (this.closed) return
+    try {
+      this.proc.stdin.write(`DEL|${id}\n`)
+    } catch {
+      void 0
+    }
+  }
+
+  update(hwnd: string, settings: ExternalWindowPinnedBorderSettings): void {
+    const id = typeof hwnd === 'string' ? hwnd.trim() : ''
+    if (!id) return
+    if (this.closed) return
+    try {
+      this.proc.stdin.write(`SET|${id}|${settings.color}|${settings.width}\n`)
+    } catch {
+      void 0
+    }
+  }
+
+  dispose(): void {
+    if (this.closed) return
+    this.closed = true
+    try {
+      this.proc.stdin.write(`__EXIT__\n`)
+    } catch {
+      void 0
+    }
+    try {
+      this.proc.stdin.end()
+    } catch {
+      void 0
+    }
+  }
+}
+
+let pinnedBorderBridge: ExternalWindowPinnedBorderBridge | null = null
+
+export function ensureExternalWindowPinnedBorders(): void {
+  if (process.platform !== 'win32') return
+  if (pinnedBorderBridge) return
+  pinnedBorderBridge = new ExternalWindowPinnedBorderBridge(() => {
+    pinnedBorderBridge = null
+  })
+}
+
+export function pinExternalWindowBorder(
+  hwnd: string,
+  settings: ExternalWindowPinnedBorderSettings
+): void {
+  if (process.platform !== 'win32') return
+  ensureExternalWindowPinnedBorders()
+  pinnedBorderBridge?.add(hwnd, settings)
+  setTimeout(() => {
+    pinnedBorderBridge?.add(hwnd, settings)
+  }, 300)
+}
+
+export function unpinExternalWindowBorder(hwnd: string): void {
+  if (process.platform !== 'win32') return
+  pinnedBorderBridge?.remove(hwnd)
+}
+
+export function updateExternalWindowBorder(
+  hwnd: string,
+  settings: ExternalWindowPinnedBorderSettings
+): void {
+  if (process.platform !== 'win32') return
+  pinnedBorderBridge?.update(hwnd, settings)
+}
+
+export function disposeExternalWindowPinnedBorders(): void {
+  pinnedBorderBridge?.dispose()
+  pinnedBorderBridge = null
 }
 
 async function runPowerShellOneShot(script: string, opts?: { sta?: boolean }): Promise<string> {

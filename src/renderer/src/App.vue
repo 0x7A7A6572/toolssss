@@ -2,7 +2,6 @@
 import AlarmView from './views/AlarmView.vue'
 import MainView from './views/MainView.vue'
 import OverlayView from './views/OverlayView.vue'
-import PinBorderView from './views/PinBorderView.vue'
 import StashHandleView from './views/StashHandleView.vue'
 import StickerView from './views/StickerView.vue'
 import StickyEditorView from './views/StickyEditorView.vue'
@@ -17,7 +16,6 @@ const mode = params.get('mode') ?? 'main'
   <OverlayView v-else-if="mode === 'overlay'" />
   <AlarmView v-else-if="mode === 'alarm'" />
   <StashHandleView v-else-if="mode === 'stash-handle'" />
-  <PinBorderView v-else-if="mode === 'pin-border'" />
   <StickerView v-else-if="mode === 'sticker'" />
   <StickyEditorView v-else-if="mode === 'note-editor'" />
   <TranslatorPopupView v-else-if="mode === 'translator-popup'" />
