@@ -34,7 +34,7 @@
   --ev-control-border: rgba(255, 255, 255, 0.12);
   --ev-control-bg: rgba(0, 0, 0, 0.2);
   --ev-control-text: var(--ev-c-text-1);
-  --ev-control-radius: 10px;
+  --ev-control-radius: 8px;
   --ev-control-font-size: 13px;
   --ev-control-focus-border: rgba(59, 130, 246, 0.5);
   --ev-control-disabled-opacity: 0.6;
@@ -144,6 +144,52 @@ select option {
 
 .v-list-item-title {
   font-size: 13px !important;
+}
+
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 46px;
+  height: 26px;
+  justify-self: end;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(255, 255, 255, 0.12);
+  transition: 0.2s;
+  border-radius: 999px;
+}
+
+.slider:before {
+  position: absolute;
+  content: '';
+  height: 20px;
+  width: 20px;
+  left: 3px;
+  bottom: 3px;
+  background-color: rgba(255, 255, 255, 0.9);
+  transition: 0.2s;
+  border-radius: 50%;
+}
+
+.switch input:checked + .slider {
+  background-color: rgba(59, 130, 246, 0.65);
+}
+
+.switch input:checked + .slider:before {
+  transform: translateX(20px);
 }
 
 .switch input + .slider{

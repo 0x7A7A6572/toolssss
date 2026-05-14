@@ -6,7 +6,7 @@ import {
   Circle,
   Grid3X3,
   X,
-  MousePointer2,
+  SquareDashedMousePointer,
   PaintBucket,
   Palette,
   Slash,
@@ -1611,7 +1611,7 @@ onBeforeUnmount(() => {
             aria-label="选择/移动"
             @click="setTool('select')"
           >
-            <MousePointer2 :size="iconSize" />
+            <SquareDashedMousePointer :size="iconSize" />
           </button>
           <button
             class="icon-btn"
@@ -1848,9 +1848,9 @@ onBeforeUnmount(() => {
   gap: 8px;
   padding: 10px;
   border-radius: 10px;
-  background: rgba(20, 20, 20, 0.6);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  background: rgb(54, 54, 54);
+  /* backdrop-filter: blur(6px); */
+  /* -webkit-backdrop-filter: blur(6px); */
   z-index: 3;
   pointer-events: auto;
 }
@@ -1881,7 +1881,8 @@ onBeforeUnmount(() => {
   height: 30px;
   padding: 0;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: none;
+  /* border: 1px solid rgba(255, 255, 255, 0.14); */
   background: rgba(255, 255, 255, 0.06);
   color: rgba(255, 255, 245, 0.92);
   cursor: pointer;
@@ -1926,7 +1927,8 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   border-radius: 6px;
-  border: 1px solid rgba(0, 0, 0, 0.35);
+  border: none;
+  /* border: 1px solid rgba(0, 0, 0, 0.35); */
   z-index: -1;
 }
 
@@ -1944,7 +1946,8 @@ onBeforeUnmount(() => {
   gap: 6px;
   padding: 6px;
   border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: none;
+  /* border: 1px solid rgba(255, 255, 255, 0.14); */
   background: rgba(17, 17, 17, 0.92);
 }
 
@@ -1952,7 +1955,8 @@ onBeforeUnmount(() => {
   width: 18px;
   height: 18px;
   border-radius: 5px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: none;
+  /* border: 1px solid rgba(255, 255, 255, 0.18); */
   padding: 0;
   cursor: pointer;
 }
@@ -1964,7 +1968,8 @@ onBeforeUnmount(() => {
 
 .stroke {
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: none;
+  /* border: 1px solid rgba(255, 255, 255, 0.14); */
   background: rgba(255, 255, 255, 0.06);
   display: flex;
   align-items: center;
@@ -2030,7 +2035,7 @@ onBeforeUnmount(() => {
   min-height: 34px;
   max-width: 420px;
   padding: 6px 8px;
-  border-radius: 8px;
+  border-radius: 4px;
   border: 1px solid rgba(255, 255, 255, 0.18);
   background: rgba(0, 0, 0, 0.35);
   color: rgba(255, 255, 255, 0.95);

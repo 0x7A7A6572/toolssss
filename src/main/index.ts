@@ -38,6 +38,7 @@ import {
 } from './sticky-notes'
 import { registerWeatherHandlers } from './weather'
 import { registerScriptLibraryHandlers } from './script-library'
+import { applyScheduledTasks, registerScheduledTasksHandlers } from './scheduled-tasks'
 import { disposeExternalWindowPowerShell, warmupExternalWindowPowerShell } from './external-window'
 import {
   disposeAllWindowStash,
@@ -139,6 +140,18 @@ function broadcastBreakStatus(): void {
   if (!mainWindow || mainWindow.isDestroyed()) return
   if (mainWindow.webContents.isLoading()) return
   mainWindow.webContents.send('break:status', getBreakStatus())
+}
+
+function broadcastSettingsChanged(next: AppSettings): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue
+    if (win.webContents.isLoading()) continue
+    try {
+      win.webContents.send('settings:changed', next)
+    } catch {
+      void 0
+    }
+  }
 }
 
 function clampNumber(value: number, min: number, max: number): number {
@@ -339,6 +352,25 @@ function normalizeSettings(input: unknown): AppSettings {
       : base.break.closeOnEnd
 
   if (
+    (obj as { scheduledTasks?: unknown }).scheduledTasks &&
+    typeof (obj as { scheduledTasks?: unknown }).scheduledTasks === 'object'
+  ) {
+    const st = (obj as { scheduledTasks: Record<string, unknown> }).scheduledTasks
+    const shutdown = st['shutdown']
+    if (shutdown && typeof shutdown === 'object') {
+      const sd = shutdown as Record<string, unknown>
+      if (typeof sd['enabled'] === 'boolean')
+        base.scheduledTasks.shutdown.enabled = sd['enabled'] as boolean
+      const mode = sd['mode']
+      if (mode === 'once' || mode === 'daily') base.scheduledTasks.shutdown.mode = mode
+      const time = normalizeTimeString(sd['time'])
+      if (time) base.scheduledTasks.shutdown.time = time
+      const dayOffset = sd['onceDayOffset']
+      if (dayOffset === 0 || dayOffset === 1) base.scheduledTasks.shutdown.onceDayOffset = dayOffset
+    }
+  }
+
+  if (
     (obj as { windowStash?: unknown }).windowStash &&
     typeof (obj as { windowStash?: unknown }).windowStash === 'object'
   ) {
@@ -518,6 +550,23 @@ function applySettingsPatch(patch: unknown): AppSettings {
       next.break.disableInFullscreen = p.break.disableInFullscreen
     if (typeof (p.break as Record<string, unknown>).closeOnEnd === 'boolean')
       next.break.closeOnEnd = (p.break as Record<string, boolean>).closeOnEnd
+  }
+  if (
+    (p as { scheduledTasks?: unknown }).scheduledTasks &&
+    typeof (p as { scheduledTasks?: unknown }).scheduledTasks === 'object'
+  ) {
+    const st = (p as { scheduledTasks: Record<string, unknown> }).scheduledTasks
+    const shutdown = st['shutdown']
+    if (shutdown && typeof shutdown === 'object') {
+      const sd = shutdown as Record<string, unknown>
+      if (typeof sd['enabled'] === 'boolean')
+        next.scheduledTasks.shutdown.enabled = sd['enabled'] as boolean
+      const mode = sd['mode']
+      if (mode === 'once' || mode === 'daily') next.scheduledTasks.shutdown.mode = mode
+      if (typeof sd['time'] === 'string') next.scheduledTasks.shutdown.time = sd['time'] as string
+      const dayOffset = sd['onceDayOffset']
+      if (dayOffset === 0 || dayOffset === 1) next.scheduledTasks.shutdown.onceDayOffset = dayOffset
+    }
   }
   if (
     (p as { windowStash?: unknown }).windowStash &&
@@ -2679,6 +2728,7 @@ function applySettingsToRuntime(): void {
   ensureOverlayWindows()
   ensureDailyAlarmTimer()
   ensureBreakTimer()
+  applyScheduledTasks(settings).catch(() => null)
   ensureTray()
   ensureAutoStart()
   ensureShortcuts()
@@ -2940,6 +2990,14 @@ app.whenReady().then(async () => {
   registerStickyNotesHandlers()
   registerWeatherHandlers()
   registerScriptLibraryHandlers()
+  registerScheduledTasksHandlers({
+    getSettings: () => settings,
+    setSettings: (next) => {
+      settings = next
+    },
+    saveSettingsToDisk,
+    broadcastSettingsChanged
+  })
 
   ipcMain.handle('app:paths', () => {
     return {
@@ -3382,15 +3440,7 @@ app.whenReady().then(async () => {
     saveSettingsToDisk(settings)
     applySettingsToRuntime()
     broadcastBreakStatus()
-    for (const win of BrowserWindow.getAllWindows()) {
-      if (win.isDestroyed()) continue
-      if (win.webContents.isLoading()) continue
-      try {
-        win.webContents.send('settings:changed', settings)
-      } catch {
-        void 0
-      }
-    }
+    broadcastSettingsChanged(settings)
     return settings
   })
 

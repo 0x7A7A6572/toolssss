@@ -8,6 +8,7 @@ import SnipPaste from '../views/SnipPaste/SnipPaste.vue'
 import StickyNotes from '../views/StickyNotes/StickyNotes.vue'
 import TranslatorView from '../views/Translator/TranslatorView.vue'
 import WindowStashView from '../views/WindowStash/WindowStashView.vue'
+import ScheduledTasks from '../views/ScheduledTasks/ScheduledTasks.vue'
 
 const routes = [
   {
@@ -53,6 +54,11 @@ const routes = [
     path: '/window-stash',
     name: 'WindowStash',
     component: WindowStashView
+  },
+  {
+    path: '/scheduled-tasks',
+    name: 'ScheduledTasks',
+    component: ScheduledTasks
   },
   {
     path: '/settings',

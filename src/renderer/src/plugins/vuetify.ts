@@ -1,6 +1,16 @@
 import { createVuetify } from 'vuetify'
 import { aliases, mdi } from 'vuetify/iconsets/mdi'
-import { VBtn, VCard, VColorPicker, VMenu, VSelect, VSlider, VSwitch } from 'vuetify/components'
+import {
+  VBtn,
+  VCard,
+  VColorPicker,
+  VMenu,
+  VSelect,
+  VSlider,
+  VSwitch,
+  VTextField,
+  VTimePicker
+} from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 
 const vuetify = createVuetify({
@@ -11,7 +21,9 @@ const vuetify = createVuetify({
     VMenu,
     VSelect,
     VSlider,
-    VSwitch
+    VSwitch,
+    VTextField,
+    VTimePicker
   },
   defaults: {
     VSelect: {

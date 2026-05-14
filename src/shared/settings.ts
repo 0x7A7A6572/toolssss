@@ -59,6 +59,14 @@ export interface AppSettings {
     disableInFullscreen: boolean
     closeOnEnd: boolean
   }
+  scheduledTasks: {
+    shutdown: {
+      enabled: boolean
+      mode: 'once' | 'daily'
+      time: string
+      onceDayOffset: 0 | 1
+    }
+  }
   windowStash: {
     handleColors: Record<'left' | 'top' | 'right' | 'bottom', string>
     handleOpacity: number
@@ -85,6 +93,7 @@ export type SettingsPatch = Partial<{
   reminderSeconds: number
   alarm: Partial<AppSettings['alarm']>
   break: Partial<AppSettings['break']>
+  scheduledTasks: Partial<AppSettings['scheduledTasks']>
   windowStash: Partial<AppSettings['windowStash']>
 }>
 
@@ -169,6 +178,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
     intervalMinutes: 45,
     disableInFullscreen: true,
     closeOnEnd: true
+  },
+  scheduledTasks: {
+    shutdown: {
+      enabled: false,
+      mode: 'once',
+      time: '23:30',
+      onceDayOffset: 0
+    }
   },
   windowStash: {
     handleColors: {
