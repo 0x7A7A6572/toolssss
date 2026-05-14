@@ -119,7 +119,7 @@ onBeforeUnmount(() => {
         <component :is="tab.type === 'icon' ? tab.label : 'div'" />
         <div v-if="tab.type !== 'icon'" style="display: flex; align-items: center">
           <div class="pre-icon" :class="{ active: route.path === tab.path }"></div>
-          <span>{{ tab.label }}</span>
+          <span class="section-title">{{ tab.label }}</span>
           <span v-if="tab.id === 'Landing' && hasUpdate" class="dot" />
         </div>
       </button>
@@ -147,8 +147,10 @@ onBeforeUnmount(() => {
   height: 100vh;
   width: 100%;
   display: grid;
-  grid-template-columns: 170px 1fr;
+  grid-template-columns: 60px 1fr;
   background-color: black;
+  white-space: nowrap;
+  position: relative;
 }
 
 .window-titlebar {
@@ -162,13 +164,13 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   -webkit-app-region: drag;
   z-index: 1000;
-  background: linear-gradient(
+  /* background: linear-gradient(
     270deg,
-    /* black 100px, */ #3370d32e 50px,
+    #3370d32e 50px,
     #5957dc4a 100px,
     black 250px,
     transparent 50%
-  );
+  ); */
 }
 .titlebar-drag {
   flex: 1;
@@ -201,7 +203,7 @@ onBeforeUnmount(() => {
 
 .sidebar {
   height: 100vh;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  /* border-right: 1px solid rgba(255, 255, 255, 0.08); */
   padding: 18px 12px 18px;
   display: flex;
   flex-direction: column;
@@ -254,9 +256,33 @@ onBeforeUnmount(() => {
 .tab .pre-icon {
   width: 16px;
   height: 16px;
-  margin-right: 6px;
+  /* margin-right: 6px; */
   background-color: rgba(235, 235, 245, 0.24);
   border-radius: 4px;
+}
+
+.sidebar {
+  &:hover {
+    .section-title {
+      width: auto;
+      opacity: 1;
+      z-index: 1000;
+    }
+  }
+  .section-title {
+    position: absolute;
+    opacity: 0;
+    /* width: 0px; */
+    margin-left: 20px;
+    transition: all 0.7s;
+    padding: 4px 8px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    background: linear-gradient(270deg, rgba(83, 83, 83, 0.616) 0%, rgba(255, 255, 255, 0.04) 100%);
+  }
 }
 
 .tab .pre-icon.active {
@@ -273,32 +299,41 @@ onBeforeUnmount(() => {
 }
 
 .settings-tab {
-  width: 50px;
-  height: 50px;
+  width: 40px;
+  height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .tab:hover {
-  background: rgba(255, 255, 255, 0.04);
+  /* background: rgba(255, 255, 255, 0.04); */
+  color: rgba(255, 255, 252, 0.92);
 }
 
 .tab.active {
-  border-color: rgba(59, 130, 246, 0.5);
+  /* border-color: rgba(59, 130, 246, 0.5); */
   background: rgba(59, 130, 246, 0.12);
   color: rgba(255, 255, 245, 0.92);
+  .section-title {
+    background: linear-gradient(270deg, rgba(35, 145, 255, 0.616), transparent);
+    font-weight: 700;
+  }
 }
 
 .page {
-  height: 100vh;
+  /* min-height: 100vh; */
   width: 100%;
-  padding: 60px 24px 24px;
+  padding: 24px 24px;
   display: flex;
   flex-direction: column;
   overflow-y: scroll;
   /* 隐藏滚动条 */
   scrollbar-width: none; /* Firefox */
   -ms-overflow-style: none; /* IE/Edge */
+  background: #222222;
+  border-top-left-radius: 15px;
+  border-top-right-radius: 15px;
+  margin-top: 35px;
 }
 </style>

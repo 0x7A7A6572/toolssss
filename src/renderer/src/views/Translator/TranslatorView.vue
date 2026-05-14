@@ -276,7 +276,7 @@ onMounted(() => {
 }
 
 .card {
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  /* border: 1px solid rgba(255, 255, 255, 0.08); */
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.04);
   padding: 12px;
@@ -323,8 +323,8 @@ onMounted(() => {
 .btn {
   height: 34px;
   padding: 0 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  /* border: 1px solid rgba(255, 255, 255, 0.1); */
   background: rgba(255, 255, 255, 0.03);
   color: rgba(235, 235, 245, 0.88);
   cursor: pointer;
@@ -354,7 +354,7 @@ onMounted(() => {
 }
 
 .panel {
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  /* border: 1px solid rgba(255, 255, 255, 0.08); */
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.04);
   padding: 12px;
@@ -427,7 +427,7 @@ onMounted(() => {
 }
 
 .history {
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  /* border: 1px solid rgba(255, 255, 255, 0.08); */
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.04);
   padding: 12px;
@@ -492,8 +492,8 @@ onMounted(() => {
 .mini-btn {
   height: 28px;
   padding: 0 10px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  /* border: 1px solid rgba(255, 255, 255, 0.1); */
   background: rgba(255, 255, 255, 0.03);
   color: rgba(235, 235, 245, 0.88);
   cursor: pointer;

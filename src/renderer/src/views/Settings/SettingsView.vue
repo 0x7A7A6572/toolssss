@@ -1046,7 +1046,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  height: 100%;
+  /* height: 100%; */
 }
 
 .header {

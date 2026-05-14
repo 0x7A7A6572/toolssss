@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { WeatherTool } from '../../utils/weather'
 import type { WeatherDashboard } from '@shared/weather'
 import { DEFAULT_SETTINGS, type AppSettings } from '@shared/settings'
-import { PencilLine, RefreshCw, Settings, Sparkles } from 'lucide-vue-next'
+import { PencilLine, Settings, Sparkles, Plus } from 'lucide-vue-next'
 import LazyCascader from '../../components/LazyCascader.vue'
 import SevenDayTempChart from '../../components/SevenDayTempChart.vue'
 import { LegalHoliday, SolarDay } from 'tyme4ts'
@@ -62,7 +62,6 @@ const citiesLoading = ref(false)
 const citiesErrorText = ref<string | null>(null)
 const lastRefreshMs = ref<number>(0)
 const lastRefreshKey = ref<string>('')
-const MIN_INTERVAL_MS = 60 * 1000
 const cascValue = ref<Array<string | number>>([])
 const cityPickerOpen = ref(false)
 const paydayDialogOpen = ref(false)
@@ -256,7 +255,7 @@ function onFunFactCancelled(_event: unknown, payload: unknown): void {
 
 async function refreshDailyFunFact(force: boolean): Promise<void> {
   loadingSate.daily = true
-  normalizeCachedFunFact()
+  // normalizeCachedFunFact()
   if (!aiReady.value) {
     funFactErrorText.value = '请到「全局设置」启用 AI 并配置 Base URL / Key / Model'
     endFunFactLoading()
@@ -387,6 +386,72 @@ const todayWeatherEmoji = computed(() => {
   if (text.includes('晴')) return '☀️'
   return '🌤️'
 })
+
+const emojiPullY = ref(0)
+const emojiPulling = ref(false)
+const emojiPointerId = ref<number | null>(null)
+const emojiStartClientY = ref(0)
+const EMOJI_PULL_MAX_PX = 84
+const EMOJI_PULL_TRIGGER_PX = 52
+
+const emojiPullReady = computed(() => emojiPullY.value >= EMOJI_PULL_TRIGGER_PX)
+
+function onEmojiPointerDown(e: PointerEvent): void {
+  if (!dashboard.value) return
+  if (loadingSate.weather) return
+  if (e.pointerType === 'mouse' && e.button !== 0) return
+  const el = e.currentTarget as HTMLElement | null
+  if (!el) return
+  emojiPointerId.value = e.pointerId
+  emojiStartClientY.value = e.clientY
+  emojiPulling.value = true
+  try {
+    el.setPointerCapture(e.pointerId)
+  } catch {
+    emojiPointerId.value = null
+    emojiPulling.value = false
+    emojiPullY.value = 0
+  }
+}
+
+function onEmojiPointerMove(e: PointerEvent): void {
+  if (!emojiPulling.value) return
+  if (emojiPointerId.value !== e.pointerId) return
+  const dy = e.clientY - emojiStartClientY.value
+  if (dy <= 0) {
+    emojiPullY.value = 0
+    return
+  }
+  const dampened = dy * 0.58
+  emojiPullY.value = Math.min(EMOJI_PULL_MAX_PX, dampened)
+}
+
+function endEmojiPull(triggerRefresh: boolean): void {
+  const shouldRefresh =
+    triggerRefresh &&
+    emojiPullY.value >= EMOJI_PULL_TRIGGER_PX &&
+    dashboard.value !== null &&
+    !loadingSate.weather
+  emojiPulling.value = false
+  emojiPointerId.value = null
+  emojiPullY.value = 0
+  if (shouldRefresh) refresh().catch(() => null)
+}
+
+function onEmojiPointerUp(e: PointerEvent): void {
+  if (emojiPointerId.value !== e.pointerId) return
+  endEmojiPull(true)
+}
+
+function onEmojiPointerCancel(e: PointerEvent): void {
+  if (emojiPointerId.value !== e.pointerId) return
+  endEmojiPull(false)
+}
+
+function onEmojiPointerLostCapture(e: PointerEvent): void {
+  if (emojiPointerId.value !== e.pointerId) return
+  endEmojiPull(false)
+}
 
 function normalizePaydayDay(raw: unknown): number {
   const n = Number.parseInt(String(raw ?? ''), 10)
@@ -541,13 +606,13 @@ const nextHoliday = computed(() => {
 })
 
 async function refresh(): Promise<void> {
-  if (
-    lastRefreshKey.value === stationId.value &&
-    Date.now() - lastRefreshMs.value < MIN_INTERVAL_MS
-  ) {
-    errorText.value = '刷新过于频繁，请稍后再试'
-    return
-  }
+  // if (
+  //   lastRefreshKey.value === stationId.value &&
+  //   Date.now() - lastRefreshMs.value < MIN_INTERVAL_MS
+  // ) {
+  //   errorText.value = '刷新过于频繁，请稍后再试'
+  //   return
+  // }
   loadingSate.weather = true
   errorText.value = null
   try {
@@ -624,104 +689,110 @@ onUnmounted(() => {
 <template>
   <div class="page-content">
     <header class="header">
-      <!-- <div class="title">工具首页</div>
-      <div class="subtitle">天气（今日 / 近7日 / 3小时降雨预警）</div> -->
+      <div class="flex flex-col">
+        <div class="title">Hello</div>
+        <div class="subtitle">...</div>
+      </div>
+      <div class="ctrl-btns">
+        <!-- <img src="/avatar.png" alt="avatar" /> -->
+        <!-- <div class="avatar-box">
+          <User class="text-#666666" :size="24" />
+        </div> -->
+      </div>
     </header>
 
     <section class="card">
-      <div class="card-head">
-        <div class="actions">
-          <button
-            v-if="!dashboard"
-            class="btn"
-            type="button"
-            :disabled="citiesLoading || loadingSate.weather"
-            title="选择城市"
-            @click="openCityPicker"
-          >
-            城市
-          </button>
-          <button class="btn" :disabled="loadingSate.weather" title="刷新" @click="refresh">
-            <RefreshCw v-if="!loadingSate.weather" :size="16" />
-            <div v-else class="loading-spinner"></div>
-          </button>
-        </div>
-      </div>
-
-      <div v-if="citiesErrorText" class="hint">{{ citiesErrorText }}</div>
-      <div v-if="errorText" class="error">{{ errorText }}</div>
-
       <div v-if="dashboard" class="weather-layout">
         <div class="left-col">
           <div class="block has-emoji">
-            <div v-if="dashboard" class="weather-emoji" aria-hidden="true">
-              {{ todayWeatherEmoji }}
+            <div
+              v-if="dashboard"
+              class="weather-emoji"
+              :class="{
+                'is-dragging': emojiPulling,
+                'is-ready': emojiPullReady,
+                'is-loading': loadingSate.weather
+              }"
+              :style="{ transform: `translate(-50%, ${emojiPullY}px)` }"
+              aria-hidden="true"
+              @pointerdown.prevent="onEmojiPointerDown"
+              @pointermove.prevent="onEmojiPointerMove"
+              @pointerup.prevent="onEmojiPointerUp"
+              @pointercancel.prevent="onEmojiPointerCancel"
+              @lostpointercapture="onEmojiPointerLostCapture"
+            >
+              <div v-if="loadingSate.weather" class="weather-emoji-spinner" />
+              <template v-else>{{ todayWeatherEmoji }}</template>
             </div>
 
-            <div class="block-title">今日</div>
-            <div class="now-main">
-              <button class="location location-btn" type="button" @click="openCityPicker">
-                <span>{{ dashboard.now.locationName }}</span>
-                <span class="location-caret">▾</span>
-              </button>
-              <div class="temp">
-                <span class="temp-value">{{
-                  dashboard.now.temperatureC === null ? '—' : Math.round(dashboard.now.temperatureC)
-                }}</span>
-                <span class="temp-unit">℃</span>
+            <div class="weather-content">
+              <div class="block-title">今日</div>
+              <div class="now-main">
+                <button class="location location-btn" type="button" @click="openCityPicker">
+                  <span>{{ dashboard.now.locationName }}</span>
+                  <span class="location-caret">▾</span>
+                </button>
+                <div class="temp">
+                  <span class="temp-value">{{
+                    dashboard.now.temperatureC === null
+                      ? '—'
+                      : Math.round(dashboard.now.temperatureC)
+                  }}</span>
+                  <span class="temp-unit">℃</span>
+                </div>
               </div>
-            </div>
-            <div class="meta">
-              <div class="meta-row">
-                <span class="meta-k">体感</span>
-                <span class="meta-v">{{
-                  dashboard.now.feelsLikeC === null
-                    ? '—'
-                    : `${Math.round(dashboard.now.feelsLikeC)}℃`
-                }}</span>
-              </div>
-              <div class="meta-row">
-                <span class="meta-k">湿度</span>
-                <span class="meta-v">{{
-                  dashboard.now.humidityPercent === null
-                    ? '—'
-                    : `${Math.round(dashboard.now.humidityPercent)}%`
-                }}</span>
-              </div>
-              <div class="meta-row">
-                <span class="meta-k">气压</span>
-                <span class="meta-v">{{
-                  dashboard.now.pressureHpa === null
-                    ? '—'
-                    : `${Math.round(dashboard.now.pressureHpa)}hPa`
-                }}</span>
-              </div>
-              <div class="meta-row">
-                <span class="meta-k">降水</span>
-                <span class="meta-v">{{
-                  dashboard.now.precipitationMm === null
-                    ? '—'
-                    : `${dashboard.now.precipitationMm}mm`
-                }}</span>
-              </div>
-              <div class="meta-row">
-                <span class="meta-k">风</span>
-                <span class="meta-v">{{
-                  dashboard.now.windDirectionText && dashboard.now.windScaleText
-                    ? `${dashboard.now.windDirectionText} ${dashboard.now.windScaleText}`
-                    : '—'
-                }}</span>
-              </div>
-              <div class="meta-row">
-                <span class="meta-k">更新</span>
-                <span class="meta-v">{{ dashboard.now.lastUpdateText ?? '—' }}</span>
+              <div class="meta">
+                <div class="meta-row">
+                  <span class="meta-k">体感</span>
+                  <span class="meta-v">{{
+                    dashboard.now.feelsLikeC === null
+                      ? '—'
+                      : `${Math.round(dashboard.now.feelsLikeC)}℃`
+                  }}</span>
+                </div>
+                <div class="meta-row">
+                  <span class="meta-k">湿度</span>
+                  <span class="meta-v">{{
+                    dashboard.now.humidityPercent === null
+                      ? '—'
+                      : `${Math.round(dashboard.now.humidityPercent)}%`
+                  }}</span>
+                </div>
+                <div class="meta-row">
+                  <span class="meta-k">气压</span>
+                  <span class="meta-v">{{
+                    dashboard.now.pressureHpa === null
+                      ? '—'
+                      : `${Math.round(dashboard.now.pressureHpa)}hPa`
+                  }}</span>
+                </div>
+                <div class="meta-row">
+                  <span class="meta-k">降水</span>
+                  <span class="meta-v">{{
+                    dashboard.now.precipitationMm === null
+                      ? '—'
+                      : `${dashboard.now.precipitationMm}mm`
+                  }}</span>
+                </div>
+                <div class="meta-row">
+                  <span class="meta-k">风</span>
+                  <span class="meta-v">{{
+                    dashboard.now.windDirectionText && dashboard.now.windScaleText
+                      ? `${dashboard.now.windDirectionText} ${dashboard.now.windScaleText}`
+                      : '—'
+                  }}</span>
+                </div>
+                <div class="meta-row">
+                  <span class="meta-k">更新</span>
+                  <span class="meta-v">{{ dashboard.now.lastUpdateText ?? '—' }}</span>
+                </div>
               </div>
             </div>
           </div>
         </div>
 
         <div class="right-col">
-          <div class="block">
+          <div class="block border-none">
             <div class="block-title">
               <span>3小时降雨预警</span>
               <div class="warning-line">
@@ -742,7 +813,7 @@ onUnmounted(() => {
             </div>
             <div v-else class="empty">未解析到未来3小时数据</div> -->
           </div>
-          <div class="block">
+          <div class="block border-none">
             <div class="block-title">
               <span>近7日天气</span>
               <span class="legend">
@@ -904,6 +975,22 @@ onUnmounted(() => {
       </div>
     </div>
 
+    <div>
+      <section class="disabled card work-calendar-card border-dashed border-color-[#660000]">
+        <div class="work-calendar-head">
+          <div class="work-calendar-title">自定义模块</div>
+          <div class="work-calendar-btn" type="button" @click="openPaydayDialog">
+            <!-- 每月{{ paydayDay }}日 -->
+            <!-- <Settings :size="18" /> -->
+          </div>
+        </div>
+
+        <div class="flex-auto w-fill h-fill flex items-center justify-center">
+          <Plus :size="60" />
+        </div>
+      </section>
+    </div>
+
     <Teleport to="body">
       <div v-if="cityPickerOpen" class="picker-overlay" @click.self="closeCityPicker">
         <div class="picker-card">
@@ -1002,12 +1089,16 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.border-none {
+  border: none;
+}
+
 .page-content {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  height: 100%;
-  overflow-y: auto;
+  /* height: 100%; */
+  overflow-y: visible;
   /* 隐藏滚动条 */
   scrollbar-width: none; /* Firefox */
   -ms-overflow-style: none; /* IE/Edge */
@@ -1015,12 +1106,25 @@ onUnmounted(() => {
 
 .header {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  justify-content: space-between;
   gap: 4px;
 }
 
+.ctrl-btns {
+  .avatar-box {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background-color: #f5f5f5bb;
+  }
+}
+
 .title {
-  font-size: 24px;
+  font-size: 28px;
   font-weight: 700;
   line-height: 28px;
 }
@@ -1049,7 +1153,7 @@ onUnmounted(() => {
 }
 
 .card {
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  /* border: 1px solid rgba(255, 255, 255, 0.08); */
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.04);
   padding: 16px;
@@ -1058,6 +1162,11 @@ onUnmounted(() => {
   gap: 12px;
   position: relative;
   z-index: 1;
+
+  &.disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
 }
 
 @keyframes emoji-bounce {
@@ -1075,15 +1184,45 @@ onUnmounted(() => {
 .weather-emoji {
   position: absolute;
   left: 50%;
-  transform: translateX(-50%);
   top: -7rem;
   font-size: 10rem;
-  z-index: 0;
+  z-index: 2;
+  /* line-height: 1; */
+  display: flex;
+  align-items: center;
+  justify-content: center;
   /* opacity: 1; */
-  pointer-events: none;
+  pointer-events: auto;
   user-select: none;
   animation: emoji-bounce 5.5s infinite;
-  transition: transform 0.3s ease-in-out;
+  transition: transform 0.26s cubic-bezier(0.2, 0.7, 0.2, 1);
+  touch-action: none;
+  cursor: grab;
+}
+
+.weather-emoji.is-dragging {
+  animation-play-state: paused;
+  transition: none;
+  cursor: grabbing;
+}
+
+.weather-emoji.is-loading {
+  animation-play-state: paused;
+  cursor: default;
+}
+
+.weather-emoji-spinner {
+  width: 50px;
+  height: 50px;
+  border: 8px solid rgba(255, 255, 255, 0.22);
+  border-top-color: rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+.weather-content {
+  position: relative;
+  z-index: 1;
 }
 
 .card-head {
@@ -1130,11 +1269,10 @@ onUnmounted(() => {
 }
 
 .btn {
-  border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.06);
   color: var(--ev-c-text-1);
   padding: 6px 10px;
-  border-radius: 8px;
+  border-radius: 6px;
   font-size: 12px;
   cursor: pointer;
   display: flex;
@@ -1268,7 +1406,7 @@ onUnmounted(() => {
 
 .work-calendar-card {
   width: min(360px, 100%);
-  /* height: 240px; */
+  height: 230px;
   align-self: flex-start;
   padding: 14px;
   gap: 12px;
@@ -1423,6 +1561,10 @@ onUnmounted(() => {
   color: rgba(235, 235, 245, 0.92);
   white-space: pre-wrap;
   line-height: 1.35;
+  max-height: 86px;
+  overflow-y: scroll;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
 }
 
 .tips {
@@ -1562,7 +1704,7 @@ onUnmounted(() => {
 }
 
 .work-calendar-row {
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  /* border: 1px solid rgba(255, 255, 255, 0.08); */
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.03);
   padding: 10px 12px;
@@ -1744,7 +1886,7 @@ onUnmounted(() => {
   font-size: 12px;
   font-weight: 700;
   background: rgba(144, 238, 144, 0.15);
-  border: 1px solid rgba(144, 238, 144, 0.25);
+  /* border: 1px solid rgba(144, 238, 144, 0.25); */
   color: rgba(144, 238, 144, 0.95);
 }
 

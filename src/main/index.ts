@@ -2780,11 +2780,11 @@ function installUpdate(): boolean {
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
-    width: 900,
+    width: 800,
     height: 670,
     show: false,
     frame: false,
-    resizable: false,
+    resizable: true,
     autoHideMenuBar: true,
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
