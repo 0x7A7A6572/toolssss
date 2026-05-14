@@ -490,7 +490,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(18, 18, 20, 0.96);
+  background: rgb(0 0 0 / 58%);
   box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5);
   display: flex;
   flex-direction: column;

@@ -285,9 +285,12 @@ function cleanupOne(hwnd: string): void {
   if (s.hoverTimer) clearInterval(s.hoverTimer)
   s.hoverTimer = null
   try {
-    if (!s.handle.isDestroyed()) s.handle.close()
-  } catch {
-    void 0
+    if (!s.handle.isDestroyed()) {
+      // BUG: 必须等待窗口销毁完成，否则整个程序直接崩溃
+      setTimeout(() => s.handle.close(), 500)
+    }
+  } catch (e) {
+    console.error('Error closing window', hwnd, e)
   }
   stashed.delete(hwnd)
   broadcastChanged()
@@ -735,31 +738,35 @@ export async function stashForegroundToEdge(edge: ExternalWindowEdge): Promise<v
 }
 
 export async function restore(hwnd: string, activate: boolean): Promise<void> {
-  const s = stashed.get(hwnd)
-  if (!s) return
-  const wasPeeking = s.peeking
-  if (s.hoverTimer) clearInterval(s.hoverTimer)
-  s.hoverTimer = null
-  s.hoverBusy = false
-  s.peeking = false
-  s.peekGraceUntilMs = 0
+  try {
+    const s = stashed.get(hwnd)
+    if (!s) return
+    const wasPeeking = s.peeking
+    if (s.hoverTimer) clearInterval(s.hoverTimer)
+    s.hoverTimer = null
+    s.hoverBusy = false
+    s.peeking = false
+    s.peekGraceUntilMs = 0
 
-  if (wasPeeking) {
-    const rect = await getExternalWindowRect(hwnd)
-    if (rect) s.originalRect = rect
-  }
+    if (wasPeeking) {
+      const rect = await getExternalWindowRect(hwnd)
+      if (rect) s.originalRect = rect
+    }
 
-  const cfg = getStashSettings()
-  const ret = await restoreExternalWindow({
-    hwnd,
-    rect: s.originalRect,
-    animate: Boolean(cfg.animate),
-    durationMs: cfg.durationMs
-  })
-  cleanupOne(hwnd)
-  await persistMutate((items) => items.filter((it) => it.hwnd !== hwnd))
-  if (activate && ret.ok) {
-    await activateExternalWindow(hwnd)
+    const cfg = getStashSettings()
+    const ret = await restoreExternalWindow({
+      hwnd,
+      rect: s.originalRect,
+      animate: Boolean(cfg.animate),
+      durationMs: cfg.durationMs
+    })
+    cleanupOne(hwnd)
+    await persistMutate((items) => items.filter((it) => it.hwnd !== hwnd))
+    if (activate && ret.ok) {
+      await activateExternalWindow(hwnd)
+    }
+  } catch (error) {
+    console.error('restore failed', error)
   }
 }
 

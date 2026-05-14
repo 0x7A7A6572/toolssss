@@ -265,7 +265,7 @@ function clear(): void {
 }
 
 .modal {
-  background: #1e293b;
+  background: rgb(0 0 0 / 58%);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
   width: 480px;

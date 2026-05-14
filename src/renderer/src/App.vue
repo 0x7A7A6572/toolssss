@@ -6,7 +6,6 @@ import StashHandleView from './views/StashHandleView.vue'
 import StickerView from './views/StickerView.vue'
 import StickyEditorView from './views/StickyEditorView.vue'
 import TranslatorPopupView from './views/TranslatorPopupView.vue'
-
 const params = new URLSearchParams(window.location.search)
 const mode = params.get('mode') ?? 'main'
 </script>

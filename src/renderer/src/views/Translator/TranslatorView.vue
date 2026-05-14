@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { ArrowLeftRight, Copy, Wand2 } from 'lucide-vue-next'
+import { ArrowLeftRight, Copy, Wand2, X } from 'lucide-vue-next'
 import { TRANSLATOR_EVENTS } from '@shared/translator'
 import type { AppSettings } from '@shared/settings'
 import confirm from '@renderer/utils/confirm'
@@ -69,15 +69,15 @@ function formatTime(ts: number): string {
   }
 }
 
-async function copyText(text: string): Promise<void> {
-  const t = text.trim()
-  if (!t) return
-  try {
-    await navigator.clipboard.writeText(t)
-  } catch {
-    return
-  }
-}
+// async function copyText(text: string): Promise<void> {
+//   const t = text.trim()
+//   if (!t) return
+//   try {
+//     await navigator.clipboard.writeText(t)
+//   } catch {
+//     return
+//   }
+// }
 
 async function deleteHistoryItem(id: string): Promise<void> {
   historyItems.value = removeTranslationHistoryItem(id)
@@ -233,15 +233,15 @@ onMounted(() => {
             <div class="history-time">{{ formatTime(item.createdAt) }}</div>
             <div class="history-lang">{{ item.source || 'auto' }} → {{ item.target }}</div>
             <div class="spacer" />
-            <button class="mini-btn" type="button" @click="copyText(item.output)">复制</button>
-            <button class="mini-btn danger" type="button" @click="deleteHistoryItem(item.id)">
-              删除
+            <!-- <button class="mini-btn" type="button" @click="copyText(item.output)">复制</button> -->
+            <button class="mini-btn" type="button" @click="deleteHistoryItem(item.id)">
+              <X :size="18" />
             </button>
           </div>
           <div class="history-text">
-            <div class="history-label">原文</div>
+            <div class="history-label">原</div>
             <div class="history-content">{{ item.input }}</div>
-            <div class="history-label">译文</div>
+            <div class="history-label">译</div>
             <div class="history-content">{{ item.output }}</div>
           </div>
         </div>
@@ -462,7 +462,7 @@ onMounted(() => {
 }
 
 .history-item {
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  /* border: 1px solid rgba(255, 255, 255, 0.08); */
   border-radius: 12px;
   background: rgba(0, 0, 0, 0.15);
   padding: 10px;
@@ -490,12 +490,12 @@ onMounted(() => {
 }
 
 .mini-btn {
-  height: 28px;
-  padding: 0 10px;
+  font-weight: bold;
+  padding: 2px;
   border-radius: 6px;
-  /* border: 1px solid rgba(255, 255, 255, 0.1); */
-  background: rgba(255, 255, 255, 0.03);
-  color: rgba(235, 235, 245, 0.88);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
   font-weight: 700;
   font-size: 12px;
@@ -512,24 +512,32 @@ onMounted(() => {
 
 .history-text {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  flex-direction: row;
+  /* gap: 6px; */
 }
 
 .history-label {
-  font-size: 12px;
-  color: rgba(235, 235, 245, 0.62);
+  font-weight: bold;
+  font-size: 16px;
+  background: #ffffff40;
+  display: flex;
+  /* align-items: center; */
+  padding: 3px 6px;
+  border-top-left-radius: 8px;
+  border-bottom-left-radius: 8px;
 }
 
 .history-content {
   white-space: pre-wrap;
   word-break: break-word;
   padding: 10px;
-  border-radius: 10px;
+  border-top-right-radius: 8px;
+  border-bottom-right-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.06);
   background: rgba(0, 0, 0, 0.18);
   color: rgba(235, 235, 245, 0.9);
   font-size: 13px;
   line-height: 18px;
+  margin-right: 10px;
 }
 </style>

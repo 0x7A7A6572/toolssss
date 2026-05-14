@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { DEFAULT_SETTINGS, type AppSettings, type SettingsPatch } from '@shared/settings'
-import { PencilLine } from 'lucide-vue-next'
+import { PencilLine, X } from 'lucide-vue-next'
 
 type Edge = 'left' | 'right' | 'top' | 'bottom'
 type StashedItem = {
@@ -139,8 +139,6 @@ function applyColor(edge: Edge): void {
   colorMenus.value[edge] = false
 }
 
- 
-
 function setAnimate(v: boolean | null): void {
   const next = Boolean(v)
   stashSettings.value = { ...stashSettings.value, animate: next }
@@ -169,6 +167,7 @@ function setShowHandleDrag(v: boolean): void {
 
 function restore(hwnd: string): void {
   if (!hwnd.trim()) return
+  console.log('hwnd:', hwnd)
   window.electron.ipcRenderer.send('window-stash:toggle', { hwnd, activate: true })
 }
 
@@ -246,17 +245,6 @@ onBeforeUnmount(() => {
       <section class="card">
         <div class="card-head">
           <div class="card-title">外露标签样式</div>
-          <div class="card-actions">
-            <div class="head-action-label">动画</div>
-            <label class="switch">
-              <input
-                type="checkbox"
-                :checked="stashSettings.animate"
-                @change="setAnimate(($event.target as HTMLInputElement).checked)"
-              />
-              <span class="slider" />
-            </label>
-          </div>
         </div>
 
         <div class="row colors">
@@ -301,6 +289,18 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
+        <div class="flex justify-between">
+          <div class="label">动画</div>
+          <label class="switch">
+            <input
+              type="checkbox"
+              :checked="stashSettings.animate"
+              @change="setAnimate(($event.target as HTMLInputElement).checked)"
+            />
+            <span class="slider" />
+          </label>
+        </div>
+
         <div class="row">
           <div class="label">动画时长</div>
           <div class="slider-wrap">
@@ -332,12 +332,6 @@ onBeforeUnmount(() => {
           </div>
           <div class="value">{{ Math.round(opacityDraft * 100) }}%</div>
         </div>
-      </section>
-      <section class="card">
-        <div class="card-head">
-          <div class="card-title">外露标签内容</div>
-        </div>
-
         <div class="row">
           <div class="label">显示标题</div>
           <div />
@@ -363,90 +357,106 @@ onBeforeUnmount(() => {
             <span class="slider" />
           </label>
         </div>
+
+        <div class="row">
+          <div class="label">双击标签关闭收纳</div>
+          <div />
+          <label class="switch">
+            <input
+              type="checkbox"
+              :disabled="true"
+              :checked="true /* stashSettings.showHandleDrag */"
+            />
+            <span class="slider" />
+          </label>
+        </div>
+      </section>
+      <section class="card">
+        <div class="card-head">
+          <div class="card-title">已收纳窗口</div>
+        </div>
+
+        <div v-if="!items.length" class="empty">暂无收纳窗口</div>
+
+        <div v-for="it in items" :key="it.hwnd" class="stash-item">
+          <div class="stash-left">
+            <div class="name">
+              <PencilLine :size="13"></PencilLine>
+              <input
+                class="text alias"
+                type="text"
+                :value="itemAliasDrafts[it.hwnd] ?? ''"
+                :placeholder="it.title"
+                @input="onAliasInput(it.hwnd, ($event.target as HTMLInputElement).value)"
+                @change="applyAlias(it.hwnd)"
+                @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
+              />
+              <!-- {{ it.handleAlias?.trim() ? it.handleAlias : it.title || it.hwnd }} -->
+            </div>
+            <div class="meta">
+              <span>贴边：{{ edgeLabel(it.edge) }}</span>
+              <span v-if="it.handleAlias?.trim() && it.title?.trim()">
+                · 原标题：{{ it.title }}</span
+              >
+            </div>
+          </div>
+
+          <div class="stash-controls">
+            <v-menu
+              v-model="itemColorMenus[it.hwnd]"
+              :close-on-content-click="false"
+              :offset="8"
+              location="bottom"
+              @update:model-value="(open) => onItemColorMenuChange(it, open)"
+            >
+              <template #activator="{ props }">
+                <button
+                  v-bind="props"
+                  class="color-btn only"
+                  type="button"
+                  :style="{
+                    backgroundColor: it.handleColor?.trim()
+                      ? it.handleColor
+                      : stashSettings.handleColors[it.edge]
+                  }"
+                  :title="it.handleColor?.trim() ? `独立颜色：${it.handleColor}` : '跟随贴边颜色'"
+                  aria-label="设置外露标签颜色"
+                />
+              </template>
+
+              <v-card class="color-pop">
+                <v-color-picker
+                  v-model="itemColorDrafts[it.hwnd]"
+                  :modes="['rgba']"
+                  show-swatches
+                  hide-inputs
+                />
+                <div class="color-actions">
+                  <v-btn variant="text" density="compact" @click="clearItemColor(it.hwnd)"
+                    >跟随</v-btn
+                  >
+                  <v-btn variant="text" density="compact" @click="cancelItemColor(it.hwnd)"
+                    >取消</v-btn
+                  >
+                  <v-btn
+                    color="primary"
+                    variant="text"
+                    density="compact"
+                    @click="applyItemColor(it.hwnd)"
+                  >
+                    应用
+                  </v-btn>
+                </div>
+              </v-card>
+            </v-menu>
+
+            <X :size="18" @click="restore(it.hwnd)"></X>
+          </div>
+        </div>
       </section>
     </div>
 
-    <section class="card">
-      <div class="card-head">
-        <div class="card-title">已收纳窗口</div>
-      </div>
-
-      <div v-if="!items.length" class="empty">暂无收纳窗口</div>
-
-      <div v-for="it in items" :key="it.hwnd" class="stash-item">
-        <div class="stash-left">
-          <div class="name">
-            <PencilLine :size="13"></PencilLine>
-            <input
-              class="text alias"
-              type="text"
-              :value="itemAliasDrafts[it.hwnd] ?? ''"
-              :placeholder="it.title"
-              @input="onAliasInput(it.hwnd, ($event.target as HTMLInputElement).value)"
-              @change="applyAlias(it.hwnd)"
-              @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
-            />
-            <!-- {{ it.handleAlias?.trim() ? it.handleAlias : it.title || it.hwnd }} -->
-          </div>
-          <div class="meta">
-            贴边：{{ edgeLabel(it.edge) }}
-            <span v-if="it.handleAlias?.trim() && it.title?.trim()"> · 原标题：{{ it.title }}</span>
-          </div>
-        </div>
-
-        <div class="stash-controls">
-          <v-menu
-            v-model="itemColorMenus[it.hwnd]"
-            :close-on-content-click="false"
-            :offset="8"
-            location="bottom"
-            @update:model-value="(open) => onItemColorMenuChange(it, open)"
-          >
-            <template #activator="{ props }">
-              <button
-                v-bind="props"
-                class="color-btn only"
-                type="button"
-                :style="{
-                  backgroundColor: it.handleColor?.trim()
-                    ? it.handleColor
-                    : stashSettings.handleColors[it.edge]
-                }"
-                :title="it.handleColor?.trim() ? `独立颜色：${it.handleColor}` : '跟随贴边颜色'"
-                aria-label="设置外露标签颜色"
-              />
-            </template>
-
-            <v-card class="color-pop">
-              <v-color-picker
-                v-model="itemColorDrafts[it.hwnd]"
-                :modes="['rgba']"
-                show-swatches
-                hide-inputs
-              />
-              <div class="color-actions">
-                <v-btn variant="text" density="compact" @click="clearItemColor(it.hwnd)"
-                  >跟随</v-btn
-                >
-                <v-btn variant="text" density="compact" @click="cancelItemColor(it.hwnd)"
-                  >取消</v-btn
-                >
-                <v-btn
-                  color="primary"
-                  variant="text"
-                  density="compact"
-                  @click="applyItemColor(it.hwnd)"
-                >
-                  应用
-                </v-btn>
-              </div>
-            </v-card>
-          </v-menu>
-
-          <button class="btn restore-btn" type="button" @click="restore(it.hwnd)">退出收纳</button>
-        </div>
-      </div>
-    </section>
+    <!-- <section class="card"></section> -->
   </div>
 </template>
 
@@ -693,9 +703,9 @@ onBeforeUnmount(() => {
   font-weight: 800;
   font-size: 13px;
   overflow: hidden;
-  text-overflow: ellipsis;
+  /* text-overflow: ellipsis; */
   white-space: nowrap;
-  max-width: 680px;
+  max-width: 180px;
 }
 
 .meta {
@@ -742,8 +752,8 @@ onBeforeUnmount(() => {
 }
 
 .text.alias {
-  width: 220px;
-  max-width: 40vw;
+  width: 160px;
+  max-width: 160px;
   margin-left: 10px;
 }
 

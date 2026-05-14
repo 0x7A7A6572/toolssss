@@ -1,4 +1,4 @@
-export const WINDOW_RECT_EVENT_HOOK_CS = `
+export const WINDOW_RECT_EVENT_HOOK_CS: string = `
     using System;
     using System.Collections.Generic;
     using System.Runtime.InteropServices;
@@ -103,7 +103,7 @@ export const WINDOW_RECT_EVENT_HOOK_CS = `
     }
 `
 
-export const WINDOW_RECT_EVENT_RUNNER_PS = `
+export const WINDOW_RECT_EVENT_RUNNER_PS: string = `
   $in = [Console]::In
   [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
   $ErrorActionPreference = 'Stop'

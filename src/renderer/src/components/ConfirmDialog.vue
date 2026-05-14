@@ -59,7 +59,7 @@ function onConfirm(): void {
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 12px;
   padding: 18px;
-  background: rgba(17, 24, 39, 0.9);
+  background: rgb(0 0 0 / 58%);
   color: var(--ev-c-text-1);
   z-index: 10001;
   display: flex;

@@ -5,7 +5,7 @@
     "src/main/**/*", 
     "src/preload/**/*",
     "src/shared/**/*",
-    "src/libs/electron-screenshots/**/*",
+    "src/libs/**/*",
     ],
   "compilerOptions": {
     "composite": true,

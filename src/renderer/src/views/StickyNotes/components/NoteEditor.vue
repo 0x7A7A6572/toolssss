@@ -638,7 +638,7 @@ onBeforeUnmount(() => {
 .modal {
   width: min(520px, calc(100vw - 32px));
   border-radius: 12px;
-  background: rgba(17, 24, 39, 0.9);
+  background: rgb(0 0 0 / 58%);
   color: rgba(255, 255, 255, 0.92);
   border: 1px solid rgba(255, 255, 255, 0.12);
   padding: 14px;
