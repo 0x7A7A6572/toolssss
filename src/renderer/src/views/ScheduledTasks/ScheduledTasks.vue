@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { Check } from 'lucide-vue-next'
 
 type ShutdownMode = 'once' | 'daily'
@@ -17,12 +17,14 @@ const timeStr = ref('00:00')
 const statusMsg = ref('')
 const nextAtMs = ref<number | null>(null)
 
-let hasLoaded = false
+const isLoading = ref(false)
 let isSyncing = false
 
 const statusIsError = computed(
   () => statusMsg.value.includes('失败') || statusMsg.value.includes('出错')
 )
+
+const isBusy = computed(() => isLoading.value || isSyncing)
 
 const modeItems: Array<{ title: string; value: ShutdownMode }> = [
   { title: '一次性', value: 'once' },
@@ -46,22 +48,37 @@ const nextAtText = computed(() => {
   return formatNextAt(nextAtMs.value)
 })
 
+async function getState(): Promise<{ config: ShutdownConfig | null; nextAtMs: number | null }> {
+  const res = (await window.electron.ipcRenderer.invoke('scheduled-task:shutdown:get')) as {
+    config?: unknown
+    nextAtMs?: unknown
+  }
+  const cfg = (res?.config ?? null) as ShutdownConfig | null
+  const next = typeof res?.nextAtMs === 'number' ? res.nextAtMs : null
+  return { config: cfg, nextAtMs: next }
+}
+
+function applyState(state: { config: ShutdownConfig | null; nextAtMs: number | null }): void {
+  const cfg = state.config
+  if (cfg) {
+    enabled.value = Boolean(cfg.enabled)
+    mode.value = cfg.mode === 'daily' ? 'daily' : 'once'
+    onceDayOffset.value = cfg.onceDayOffset === 1 ? 1 : 0
+    timeStr.value = typeof cfg.time === 'string' ? cfg.time : timeStr.value
+  }
+  nextAtMs.value = state.nextAtMs
+}
+
 async function refresh(): Promise<void> {
+  if (isLoading.value) return
+  isLoading.value = true
   try {
-    const res = (await window.electron.ipcRenderer.invoke('scheduled-task:shutdown:get')) as {
-      config?: unknown
-      nextAtMs?: unknown
-    }
-    const cfg = (res?.config ?? null) as ShutdownConfig | null
-    if (cfg) {
-      enabled.value = Boolean(cfg.enabled)
-      mode.value = cfg.mode === 'daily' ? 'daily' : 'once'
-      onceDayOffset.value = cfg.onceDayOffset === 1 ? 1 : 0
-      timeStr.value = typeof cfg.time === 'string' ? cfg.time : timeStr.value
-    }
-    nextAtMs.value = typeof res?.nextAtMs === 'number' ? res.nextAtMs : null
+    const state = await getState()
+    applyState(state)
   } catch {
     nextAtMs.value = null
+  } finally {
+    isLoading.value = false
   }
 }
 
@@ -86,9 +103,12 @@ async function scheduleShutdown(): Promise<void> {
       timeStr.value = typeof cfg.time === 'string' ? cfg.time : timeStr.value
     }
     nextAtMs.value = typeof res?.nextAtMs === 'number' ? res.nextAtMs : null
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (!ok) {
+      await refresh()
+    }
   } catch (err: any) {
     statusMsg.value = `请求出错：${err.message}`
+    await refresh()
   } finally {
     isSyncing = false
   }
@@ -115,29 +135,70 @@ async function cancelShutdown(): Promise<void> {
       timeStr.value = typeof cfg.time === 'string' ? cfg.time : timeStr.value
     }
     nextAtMs.value = typeof res?.nextAtMs === 'number' ? res.nextAtMs : null
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (!ok) {
+      await refresh()
+    }
   } catch (err: any) {
     statusMsg.value = `请求出错：${err.message}`
+    await refresh()
   } finally {
     isSyncing = false
   }
 }
 
-watch(enabled, async (newVal, oldVal) => {
-  if (!hasLoaded || isSyncing) return
-  if (newVal === oldVal) return
-  if (newVal) {
-    await scheduleShutdown()
-    return
-  }
-  if (oldVal) {
+function isSameConfig(a: ShutdownConfig | null, b: ShutdownConfig): boolean {
+  if (!a) return false
+  return (
+    Boolean(a.enabled) === Boolean(b.enabled) &&
+    (a.mode === 'daily' ? 'daily' : 'once') === b.mode &&
+    (a.onceDayOffset === 1 ? 1 : 0) === b.onceDayOffset &&
+    a.time === b.time
+  )
+}
+
+async function onEnabledChange(e: Event): Promise<void> {
+  if (isBusy.value) return
+  const checked = (e.target as HTMLInputElement | null)?.checked ?? enabled.value
+
+  isLoading.value = true
+  try {
+    const state = await getState()
+    const desired: ShutdownConfig = {
+      enabled: checked,
+      mode: mode.value,
+      onceDayOffset: onceDayOffset.value,
+      time: timeStr.value
+    }
+
+    if (checked) {
+      if (isSameConfig(state.config, desired) && typeof state.nextAtMs === 'number') {
+        enabled.value = true
+        nextAtMs.value = state.nextAtMs
+        statusMsg.value = '已启用'
+        return
+      }
+      enabled.value = true
+      await scheduleShutdown()
+      return
+    }
+
+    if (!state.config?.enabled && state.nextAtMs === null) {
+      enabled.value = false
+      nextAtMs.value = null
+      statusMsg.value = '已取消'
+      return
+    }
+    enabled.value = false
     await cancelShutdown()
+  } catch {
+    await refresh()
+  } finally {
+    isLoading.value = false
   }
-})
+}
 
 onMounted(async () => {
   await refresh().catch(() => null)
-  hasLoaded = true
 })
 </script>
 
@@ -154,7 +215,7 @@ onMounted(async () => {
       <div class="block-title" style="margin-bottom: 16px">
         <span>定时关机</span>
         <label class="switch">
-          <input v-model="enabled" type="checkbox" />
+          <input v-model="enabled" type="checkbox" :disabled="isBusy" @change="onEnabledChange" />
           <span class="slider" />
         </label>
         <!-- <v-switch

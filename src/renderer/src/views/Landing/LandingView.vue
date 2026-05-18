@@ -70,21 +70,21 @@ async function installUpdate(): Promise<void> {
   }
 }
 
-type Faq = {
-  q: string
-  a: string
-}
+// type Faq = {
+//   q: string
+//   a: string
+// }
 
-const faqs: Faq[] = [
-  {
-    q: 'toolsss 是什么？',
-    a: '一个桌面端工具箱，把常用小工具集中到一个地方，减少你在应用之间来回切换。'
-  },
-  {
-    q: '它会收集我的数据吗？',
-    a: '默认以本地能力为主。涉及网络能力（比如翻译/AI）只在你配置并使用时发生请求。'
-  }
-]
+// const faqs: Faq[] = [
+//   {
+//     q: 'toolsss 是什么？',
+//     a: '一个桌面端工具箱，把常用小工具集中到一个地方，减少你在应用之间来回切换。'
+//   },
+//   {
+//     q: '它会收集我的数据吗？',
+//     a: '默认以本地能力为主。涉及网络能力（比如翻译/AI）只在你配置并使用时发生请求。'
+//   }
+// ]
 
 onMounted(() => {
   window.electron.ipcRenderer
@@ -241,10 +241,16 @@ onBeforeUnmount(() => {
       </header>
 
       <div class="faq">
-        <div v-for="f in faqs" :key="f.q" class="card qa">
+        <v-empty-state
+          headline="Whoops, 404"
+          title="Page not found"
+          text="The page you were looking for does not exist"
+          image="https://vuetifyjs.b-cdn.net/docs/images/logos/v.png"
+        ></v-empty-state>
+        <!-- <div v-for="f in faqs" :key="f.q" class="card qa">
           <div class="q">{{ f.q }}</div>
           <div class="a">{{ f.a }}</div>
-        </div>
+        </div> -->
       </div>
     </section>
   </div>

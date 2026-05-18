@@ -2728,7 +2728,7 @@ function applySettingsToRuntime(): void {
   ensureOverlayWindows()
   ensureDailyAlarmTimer()
   ensureBreakTimer()
-  applyScheduledTasks(settings).catch(() => null)
+  applyScheduledTasks(settings, { startup: true }).catch(() => null)
   ensureTray()
   ensureAutoStart()
   ensureShortcuts()

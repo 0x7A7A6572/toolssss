@@ -58,12 +58,30 @@ async function cancelOsShutdown(): Promise<void> {
   }
 }
 
-async function scheduleOsShutdown(delayMs: number): Promise<void> {
+function isWinShutdownAlreadyScheduledError(err: unknown): boolean {
+  const e = err as { stdout?: unknown; stderr?: unknown; message?: unknown }
+  const text = `${String(e?.stdout ?? '')}\n${String(e?.stderr ?? '')}\n${String(e?.message ?? '')}`
+  if (text.includes('1190')) return true
+  if (/already\s+scheduled/i.test(text)) return true
+  if (/已经.*(计划|安排)/.test(text)) return true
+  return false
+}
+
+async function scheduleOsShutdown(
+  delayMs: number,
+  options?: { replaceExisting?: boolean }
+): Promise<void> {
   const delaySec = Math.max(0, Math.floor(delayMs / 1000))
-  await cancelOsShutdown()
+  const replaceExisting = options?.replaceExisting !== false
+  if (replaceExisting) await cancelOsShutdown()
 
   if (process.platform === 'win32') {
-    await execAsync(`shutdown /s /t ${delaySec}`)
+    try {
+      await execAsync(`shutdown /s /t ${delaySec}`)
+    } catch (e) {
+      if (!replaceExisting && isWinShutdownAlreadyScheduledError(e)) return
+      throw e
+    }
     return
   }
   if (process.platform === 'darwin') {
@@ -76,14 +94,17 @@ async function scheduleOsShutdown(delayMs: number): Promise<void> {
   await execAsync(`shutdown -P +${delayMin}`).catch(() => null)
 }
 
-export async function applyScheduledTasks(settings: AppSettings): Promise<{
+export async function applyScheduledTasks(
+  settings: AppSettings,
+  options?: { startup?: boolean }
+): Promise<{
   ok: boolean
   message: string
   nextAtMs: number | null
 }> {
   const cfg = settings.scheduledTasks.shutdown
   if (!cfg.enabled) {
-    await cancelOsShutdown()
+    if (!options?.startup) await cancelOsShutdown()
     return { ok: true, message: '未启用', nextAtMs: null }
   }
 
@@ -98,7 +119,7 @@ export async function applyScheduledTasks(settings: AppSettings): Promise<{
   }
 
   const delayMs = Math.max(0, next.atMs - Date.now())
-  await scheduleOsShutdown(delayMs)
+  await scheduleOsShutdown(delayMs, { replaceExisting: !options?.startup })
   return { ok: true, message: '已生效', nextAtMs: next.atMs }
 }
 
@@ -123,9 +144,13 @@ export function registerScheduledTasksHandlers(args: {
   ipcMain.handle('scheduled-task:shutdown:set', async (_event, payload: unknown) => {
     const raw = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {}
     const enabled = typeof raw['enabled'] === 'boolean' ? (raw['enabled'] as boolean) : true
-    const mode = raw['mode'] === 'once' || raw['mode'] === 'daily' ? (raw['mode'] as ShutdownMode) : null
+    const mode =
+      raw['mode'] === 'once' || raw['mode'] === 'daily' ? (raw['mode'] as ShutdownMode) : null
     const time = normalizeTimeString(raw['timeStr'] ?? raw['time']) ?? null
-    const onceDayOffset = raw['onceDayOffset'] === 0 || raw['onceDayOffset'] === 1 ? (raw['onceDayOffset'] as 0 | 1) : null
+    const onceDayOffset =
+      raw['onceDayOffset'] === 0 || raw['onceDayOffset'] === 1
+        ? (raw['onceDayOffset'] as 0 | 1)
+        : null
 
     const nextSettings: AppSettings = structuredClone(args.getSettings())
     nextSettings.scheduledTasks.shutdown.enabled = enabled
@@ -153,6 +178,11 @@ export function registerScheduledTasksHandlers(args: {
     args.saveSettingsToDisk(nextSettings)
     args.broadcastSettingsChanged(nextSettings)
     await cancelOsShutdown()
-    return { success: true, message: '已取消', config: nextSettings.scheduledTasks.shutdown, nextAtMs: null }
+    return {
+      success: true,
+      message: '已取消',
+      config: nextSettings.scheduledTasks.shutdown,
+      nextAtMs: null
+    }
   })
 }
