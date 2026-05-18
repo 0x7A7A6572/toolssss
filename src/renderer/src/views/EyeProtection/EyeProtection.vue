@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { DEFAULT_SETTINGS, type AppSettings, type SettingsPatch } from '@shared/settings'
 import { Eye } from 'lucide-vue-next'
+import AppSwitch from '../../components/AppSwitch.vue'
 
 const settings = ref<AppSettings>(structuredClone(DEFAULT_SETTINGS))
 const saving = ref(false)
@@ -114,28 +115,21 @@ onBeforeUnmount(() => {
     <section class="card">
       <div class="card-head">
         <div class="card-title">护眼遮罩</div>
-        <label class="switch">
-          <input
-            type="checkbox"
-            :checked="settings.eye.enabled"
-            @change="
-              update({
-                eye: { enabled: ($event.target as HTMLInputElement).checked }
-              })
-            "
-          />
-          <span class="slider" />
-        </label>
+        <AppSwitch
+          :model-value="settings.eye.enabled"
+          @update:model-value="update({ eye: { enabled: $event } })"
+        />
       </div>
       <div class="row">
         <div class="label">强度</div>
         <v-slider
           v-model="settings.eye.opacity"
-          show-ticks="always"
+          :show-ticks="false"
           thumb-label
           :min="0.04"
           :max="0.3"
           :step="0.02"
+          :tick-size="5"
           @end="
             update({
               eye: { opacity: Number(settings.eye.opacity.toFixed(2)) }
@@ -244,18 +238,10 @@ onBeforeUnmount(() => {
             </div>
           </div>
           <div class="card-actions">
-            <label class="switch">
-              <input
-                type="checkbox"
-                :checked="settings.break.enabled"
-                @change="
-                  update({
-                    break: { enabled: ($event.target as HTMLInputElement).checked }
-                  })
-                "
-              />
-              <span class="slider" />
-            </label>
+            <AppSwitch
+              :model-value="settings.break.enabled"
+              @update:model-value="update({ break: { enabled: $event } })"
+            />
           </div>
         </div>
         <div class="row">
@@ -275,18 +261,10 @@ onBeforeUnmount(() => {
         </div>
         <div class="row">
           <div class="label">全屏时不提醒</div>
-          <label class="switch">
-            <input
-              type="checkbox"
-              :checked="settings.break.disableInFullscreen"
-              @change="
-                update({
-                  break: { disableInFullscreen: ($event.target as HTMLInputElement).checked }
-                })
-              "
-            />
-            <span class="slider" />
-          </label>
+          <AppSwitch
+            :model-value="settings.break.disableInFullscreen"
+            @update:model-value="update({ break: { disableInFullscreen: $event } })"
+          />
         </div>
       </section>
 
@@ -305,18 +283,10 @@ onBeforeUnmount(() => {
         </div>
         <div class="row">
           <div class="label">结束是否关闭</div>
-          <label class="switch">
-            <input
-              type="checkbox"
-              :checked="settings.break.closeOnEnd"
-              @change="
-                update({
-                  break: { closeOnEnd: ($event.target as HTMLInputElement).checked }
-                })
-              "
-            />
-            <span class="slider" />
-          </label>
+          <AppSwitch
+            :model-value="settings.break.closeOnEnd"
+            @update:model-value="update({ break: { closeOnEnd: $event } })"
+          />
         </div>
       </section>
     </div>
@@ -457,7 +427,12 @@ onBeforeUnmount(() => {
 
 .swatch.active {
   outline: 2px solid rgba(255, 255, 255, 0.9);
-  outline-offset: 2px;
+  outline-offset: 1px;
+}
+
+:deep(.v-slider-track__ticks .v-slider-track__ticks--always-show) {
+  /* position: absolute;
+  top: 50%; */
 }
 
 .time,
@@ -493,7 +468,7 @@ onBeforeUnmount(() => {
   height: 0;
 }
 
-.slider {
+/* .slider {
   position: absolute;
   cursor: pointer;
   top: 0;
@@ -503,9 +478,9 @@ onBeforeUnmount(() => {
   background-color: rgba(255, 255, 255, 0.12);
   transition: 0.2s;
   border-radius: 999px;
-}
+} */
 
-.slider:before {
+/* .slider:before {
   position: absolute;
   content: '';
   height: 20px;
@@ -515,14 +490,10 @@ onBeforeUnmount(() => {
   background-color: rgba(255, 255, 255, 0.9);
   transition: 0.2s;
   border-radius: 50%;
-}
+} */
 
 .switch input:checked + .slider {
   background-color: rgba(59, 130, 246, 0.65);
-}
-
-.switch input:checked + .slider:before {
-  transform: translateX(20px);
 }
 
 .footer {

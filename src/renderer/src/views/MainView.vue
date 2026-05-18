@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { House, Settings2 } from 'lucide-vue-next'
 import { Minus, Square, X } from 'lucide-vue-next'
@@ -15,16 +15,75 @@ const tabs = [
   { id: 'SnipPaste', label: '截屏贴图', path: '/snip-paste' },
   { id: 'WindowStash', label: '窗口收纳', path: '/window-stash' },
   { id: 'ScheduledTasks', label: '定时任务', path: '/scheduled-tasks' },
-  // { id: 'ScriptLibrary', label: '脚本库', path: '/script-library' },
   { id: 'Landing', label: '关于', path: '/landing' }
 ]
 
-const hasUpdate = ref(false)
+type UpdateState = {
+  status:
+    | 'idle'
+    | 'checking'
+    | 'available'
+    | 'not-available'
+    | 'downloading'
+    | 'downloaded'
+    | 'error'
+    | 'unsupported'
+  hasUpdate: boolean
+  version: string | null
+  percent: number | null
+  message: string | null
+}
+
+const update = ref<UpdateState | null>(null)
+const hasUpdate = computed(() => Boolean(update.value?.hasUpdate))
 const maximized = ref(false)
 const onUpdateStatus = (_: unknown, payload: unknown): void => {
   if (!payload || typeof payload !== 'object') return
-  const p = payload as { hasUpdate?: unknown }
-  hasUpdate.value = Boolean(p.hasUpdate)
+  const p = payload as Partial<UpdateState>
+  if (typeof p.status !== 'string') return
+  update.value = {
+    status: p.status as UpdateState['status'],
+    hasUpdate: Boolean(p.hasUpdate),
+    version: typeof p.version === 'string' ? p.version : null,
+    percent: typeof p.percent === 'number' ? p.percent : null,
+    message: typeof p.message === 'string' ? p.message : null
+  }
+}
+
+const updateDialogOpen = ref(false)
+const updateDialogDismissed = ref(false)
+const updateIsDownloading = computed(() => update.value?.status === 'downloading')
+const updateIsDownloaded = computed(() => update.value?.status === 'downloaded')
+
+watch(
+  () => update.value?.status,
+  (s) => {
+    if (s === 'available' && !updateDialogDismissed.value) updateDialogOpen.value = true
+    if (s === 'downloading') updateDialogOpen.value = true
+    if (s === 'downloaded') updateDialogOpen.value = true
+  }
+)
+
+function postponeUpdate(): void {
+  if (updateIsDownloading.value) return
+  updateDialogOpen.value = false
+  updateDialogDismissed.value = true
+}
+
+async function startUpdateDownload(): Promise<void> {
+  try {
+    await window.electron.ipcRenderer.invoke('update:download')
+  } catch {
+    void 0
+  }
+}
+
+async function installUpdate(): Promise<void> {
+  try {
+    await window.electron.ipcRenderer.invoke('update:install')
+  } catch {
+    void 0
+  }
 }
 
 function selectTab(path: string): void {
@@ -38,6 +97,7 @@ function toggleMaximize(): void {
   window.electron.ipcRenderer.send('window:control', { action: 'toggleMaximize' })
 }
 function closeWindow(): void {
+  if (updateIsDownloading.value) return
   window.electron.ipcRenderer.send('window:control', { action: 'close' })
 }
 
@@ -68,6 +128,63 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="layout">
+    <v-dialog v-model="updateDialogOpen" :persistent="updateIsDownloading" max-width="320">
+      <v-card class="update-card rounded-[18px]">
+        <v-card-title class="update-title">
+          <div class="update-title-main">
+            <v-icon icon="mdi-tray-arrow-down" :size="24" />
+            <span>发现新版本：{{ update?.version || '' }}</span>
+          </div>
+          <div v-if="update?.status" class="update-sub">
+            <span v-if="update?.status === 'downloading'">
+              正在下载更新…
+              {{ typeof update?.percent === 'number' ? Math.round(update.percent) : 0 }}%
+            </span>
+            <span v-else-if="update?.status === 'downloaded'">下载完成，重启即可安装</span>
+            <span v-else-if="update?.status === 'available'">是否立即更新？</span>
+            <span v-else-if="update?.status === 'error'"
+              >更新失败：{{ update?.message || '未知错误' }}</span
+            >
+          </div>
+        </v-card-title>
+
+        <v-card-text>
+          <v-progress-linear
+            v-if="updateIsDownloading"
+            :model-value="typeof update?.percent === 'number' ? update.percent : 0"
+            height="10"
+            rounded
+          />
+        </v-card-text>
+
+        <v-card-actions class="update-actions">
+          <v-btn variant="outlined" :disabled="updateIsDownloading" @click="postponeUpdate">
+            稍后更新
+          </v-btn>
+          <!-- <v-spacer /> -->
+          <v-btn
+            v-if="updateIsDownloaded"
+            color="primary"
+            variant="elevated"
+            :disabled="updateIsDownloading"
+            @click="installUpdate"
+          >
+            立即重启
+          </v-btn>
+          <v-btn
+            v-else
+            color="primary"
+            variant="elevated"
+            :loading="updateIsDownloading"
+            :disabled="updateIsDownloading"
+            @click="startUpdateDownload"
+          >
+            立即更新
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
     <div class="window-titlebar">
       <div class="titlebar-drag"></div>
       <div class="titlebar-actions">
@@ -94,6 +211,7 @@ onBeforeUnmount(() => {
           type="button"
           aria-label="关闭"
           title="关闭"
+          :disabled="updateIsDownloading"
           @click="closeWindow"
         >
           <X :size="16" />
@@ -193,6 +311,13 @@ onBeforeUnmount(() => {
   background: none;
   color: rgba(235, 235, 245, 0.82);
   cursor: pointer;
+}
+.titlebar-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.titlebar-btn:disabled:hover {
+  background: none;
 }
 .titlebar-btn:hover {
   background: rgba(255, 255, 255, 0.1);
@@ -336,5 +461,28 @@ onBeforeUnmount(() => {
   border-top-left-radius: 15px;
   border-top-right-radius: 15px;
   margin-top: 35px;
+}
+
+.update-card {
+  /* background: rgba(20, 20, 22, 0.96); */
+}
+.update-title {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 0;
+}
+.update-title-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+}
+.update-sub {
+  font-size: 13px;
+  color: rgba(235, 235, 245, 0.72);
+}
+.update-actions {
+  padding: 16px 18px 18px;
 }
 </style>

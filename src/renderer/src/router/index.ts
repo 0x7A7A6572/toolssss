@@ -2,7 +2,6 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 import EyeProtection from '../views/EyeProtection/EyeProtection.vue'
 import LandingView from '../views/Landing/LandingView.vue'
 import OtherTools from '../views/OtherTools/OtherTools.vue'
-import ScriptLibrary from '../views/ScriptLibrary/ScriptLibrary.vue'
 import SettingsView from '../views/Settings/SettingsView.vue'
 import SnipPaste from '../views/SnipPaste/SnipPaste.vue'
 import StickyNotes from '../views/StickyNotes/StickyNotes.vue'
@@ -34,11 +33,6 @@ const routes = [
     path: '/other-tools',
     name: 'OtherTools',
     component: OtherTools
-  },
-  {
-    path: '/script-library',
-    name: 'ScriptLibrary',
-    component: ScriptLibrary
   },
   {
     path: '/snip-paste',

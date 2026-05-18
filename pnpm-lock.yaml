@@ -81,8 +81,8 @@ importers:
         specifier: ^4.6.4
         version: 4.6.4(vue@3.5.30(typescript@5.9.3))
       vuetify:
-        specifier: ^3.10.3
-        version: 3.12.3(typescript@5.9.3)(vue@3.5.30(typescript@5.9.3))
+        specifier: ^4.0.7
+        version: 4.0.7(typescript@5.9.3)(vue@3.5.30(typescript@5.9.3))
     devDependencies:
       '@electron-toolkit/eslint-config-prettier':
         specifier: 3.0.0
@@ -3725,8 +3725,8 @@ packages:
       typescript:
         optional: true
 
-  vuetify@3.12.3:
-    resolution: {integrity: sha512-7QzgftMu8OYKRz/jr2yntPEJ7WFmAzMn8jyeUcW7gz539MjQbDF3UrqZXW3aWi458UVJW9WWvzQn9x5B75Aijw==}
+  vuetify@4.0.7:
+    resolution: {integrity: sha512-SV+YJkBmudY3s9qfZO2ZGUsrD0TDQU8pMBH1ERga9AEyjGvioZuXXh93V9wHxXJphvqRC2NW10Nt2lW9IZQcPw==}
     peerDependencies:
       typescript: '>=4.7'
       vite-plugin-vuetify: '>=2.1.0'
@@ -7576,7 +7576,7 @@ snapshots:
     optionalDependencies:
       typescript: 5.9.3
 
-  vuetify@3.12.3(typescript@5.9.3)(vue@3.5.30(typescript@5.9.3)):
+  vuetify@4.0.7(typescript@5.9.3)(vue@3.5.30(typescript@5.9.3)):
     dependencies:
       vue: 3.5.30(typescript@5.9.3)
     optionalDependencies:

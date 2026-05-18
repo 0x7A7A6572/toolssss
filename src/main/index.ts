@@ -37,7 +37,6 @@ import {
   setStickyNotesSaveDir
 } from './sticky-notes'
 import { registerWeatherHandlers } from './weather'
-import { registerScriptLibraryHandlers } from './script-library'
 import { applyScheduledTasks, registerScheduledTasksHandlers } from './scheduled-tasks'
 import { disposeExternalWindowPowerShell, warmupExternalWindowPowerShell } from './external-window'
 import {
@@ -2736,6 +2735,7 @@ function applySettingsToRuntime(): void {
 
 let updatesInitialized = false
 let updateCheckInFlight: Promise<UpdateState> | null = null
+let updateCloseLocked = false
 
 function initUpdates(): void {
   if (updatesInitialized) return
@@ -2752,8 +2752,8 @@ function initUpdates(): void {
     return
   }
 
-  autoUpdater.autoDownload = true
-  autoUpdater.autoInstallOnAppQuit = true
+  autoUpdater.autoDownload = false
+  autoUpdater.autoInstallOnAppQuit = false
 
   autoUpdater.on('checking-for-update', () => {
     updateState = {
@@ -2782,16 +2782,19 @@ function initUpdates(): void {
   })
   autoUpdater.on('download-progress', (p) => {
     const percent = typeof p?.percent === 'number' && Number.isFinite(p.percent) ? p.percent : null
+    updateCloseLocked = true
     updateState = { ...updateState, status: 'downloading', percent }
     broadcastUpdateState()
   })
   autoUpdater.on('update-downloaded', (info) => {
     const version = typeof info?.version === 'string' ? info.version : updateState.version
+    updateCloseLocked = false
     updateState = { status: 'downloaded', hasUpdate: true, version, percent: 100, message: null }
     broadcastUpdateState()
   })
   autoUpdater.on('error', (err) => {
     const message = err instanceof Error ? err.message : String(err)
+    updateCloseLocked = false
     updateState = { status: 'error', hasUpdate: false, version: null, percent: null, message }
     broadcastUpdateState()
   })
@@ -2864,6 +2867,16 @@ function createWindow(): void {
   mainWindow.on('blur', sendWindowState)
 
   mainWindow.on('close', (event) => {
+    if (updateCloseLocked) {
+      event.preventDefault()
+      try {
+        mainWindow?.show()
+        mainWindow?.focus()
+      } catch {
+        void 0
+      }
+      return
+    }
     if (settings.general.minimizeToTray && !isQuitting) {
       event.preventDefault()
       mainWindow?.hide()
@@ -2989,7 +3002,6 @@ app.whenReady().then(async () => {
   }, 1100)
   registerStickyNotesHandlers()
   registerWeatherHandlers()
-  registerScriptLibraryHandlers()
   registerScheduledTasksHandlers({
     getSettings: () => settings,
     setSettings: (next) => {
@@ -3011,6 +3023,28 @@ app.whenReady().then(async () => {
   ipcMain.handle('update:status:get', () => updateState)
   ipcMain.handle('update:check', async () => {
     return await requestUpdateCheck()
+  })
+  ipcMain.handle('update:download', async () => {
+    initUpdates()
+    if (updateState.status === 'unsupported') return updateState
+    if (updateState.status === 'downloaded' || updateState.status === 'downloading')
+      return updateState
+    try {
+      if (updateState.status !== 'available') await requestUpdateCheck()
+      if (updateState.status !== 'available') return updateState
+
+      updateCloseLocked = true
+      updateState = { ...updateState, status: 'downloading', percent: null }
+      broadcastUpdateState()
+      await autoUpdater.downloadUpdate()
+      return updateState
+    } catch (e) {
+      updateCloseLocked = false
+      const message = e instanceof Error ? e.message : String(e)
+      updateState = { status: 'error', hasUpdate: false, version: null, percent: null, message }
+      broadcastUpdateState()
+      return updateState
+    }
   })
   ipcMain.handle('update:install', () => installUpdate())
   ipcMain.handle('settings:get', () => settings)

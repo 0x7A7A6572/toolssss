@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { Check } from 'lucide-vue-next'
+import AppSwitch from '../../components/AppSwitch.vue'
 
 type ShutdownMode = 'once' | 'daily'
 type ShutdownConfig = {
@@ -47,6 +48,16 @@ const nextAtText = computed(() => {
   if (nextAtMs.value === null) return '—'
   return formatNextAt(nextAtMs.value)
 })
+
+function getErrorMessage(err: unknown): string {
+  if (err instanceof Error && typeof err.message === 'string') return err.message
+  if (typeof err === 'string') return err
+  try {
+    return JSON.stringify(err)
+  } catch {
+    return String(err)
+  }
+}
 
 async function getState(): Promise<{ config: ShutdownConfig | null; nextAtMs: number | null }> {
   const res = (await window.electron.ipcRenderer.invoke('scheduled-task:shutdown:get')) as {
@@ -106,8 +117,8 @@ async function scheduleShutdown(): Promise<void> {
     if (!ok) {
       await refresh()
     }
-  } catch (err: any) {
-    statusMsg.value = `请求出错：${err.message}`
+  } catch (err: unknown) {
+    statusMsg.value = `请求出错：${getErrorMessage(err)}`
     await refresh()
   } finally {
     isSyncing = false
@@ -138,8 +149,8 @@ async function cancelShutdown(): Promise<void> {
     if (!ok) {
       await refresh()
     }
-  } catch (err: any) {
-    statusMsg.value = `请求出错：${err.message}`
+  } catch (err: unknown) {
+    statusMsg.value = `请求出错：${getErrorMessage(err)}`
     await refresh()
   } finally {
     isSyncing = false
@@ -156,10 +167,8 @@ function isSameConfig(a: ShutdownConfig | null, b: ShutdownConfig): boolean {
   )
 }
 
-async function onEnabledChange(e: Event): Promise<void> {
+async function onEnabledChange(checked: boolean): Promise<void> {
   if (isBusy.value) return
-  const checked = (e.target as HTMLInputElement | null)?.checked ?? enabled.value
-
   isLoading.value = true
   try {
     const state = await getState()
@@ -214,10 +223,11 @@ onMounted(async () => {
     <section class="card">
       <div class="block-title" style="margin-bottom: 16px">
         <span>定时关机</span>
-        <label class="switch">
-          <input v-model="enabled" type="checkbox" :disabled="isBusy" @change="onEnabledChange" />
-          <span class="slider" />
-        </label>
+        <AppSwitch
+          :model-value="enabled"
+          :disabled="isBusy"
+          @update:model-value="onEnabledChange"
+        />
         <!-- <v-switch
           v-model="enabled"
           density="compact"

@@ -241,12 +241,7 @@ onBeforeUnmount(() => {
       </header>
 
       <div class="faq">
-        <v-empty-state
-          headline="Whoops, 404"
-          title="Page not found"
-          text="The page you were looking for does not exist"
-          image="https://vuetifyjs.b-cdn.net/docs/images/logos/v.png"
-        ></v-empty-state>
+        <v-empty-state headline="" title="暂无" text=".." image="1"></v-empty-state>
         <!-- <div v-for="f in faqs" :key="f.q" class="card qa">
           <div class="q">{{ f.q }}</div>
           <div class="a">{{ f.a }}</div>

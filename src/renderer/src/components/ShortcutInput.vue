@@ -325,29 +325,4 @@ function clear(): void {
   gap: 12px;
   justify-content: flex-end;
 }
-
-.btn {
-  padding: 8px 16px;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.05);
-  color: #fff;
-  cursor: pointer;
-  font-size: 14px;
-}
-
-.btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.btn.primary {
-  background: var(--color-text);
-  color: #000;
-  border-color: transparent;
-  font-weight: 600;
-}
-
-.btn.primary:hover {
-  background: #22e6ea;
-}
 </style>

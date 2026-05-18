@@ -233,10 +233,7 @@ onMounted(() => {
             <div class="history-time">{{ formatTime(item.createdAt) }}</div>
             <div class="history-lang">{{ item.source || 'auto' }} → {{ item.target }}</div>
             <div class="spacer" />
-            <!-- <button class="mini-btn" type="button" @click="copyText(item.output)">复制</button> -->
-            <button class="mini-btn" type="button" @click="deleteHistoryItem(item.id)">
-              <X :size="18" />
-            </button>
+            <X class="point" :size="18" @click="deleteHistoryItem(item.id)" />
           </div>
           <div class="history-text">
             <div class="history-label">原</div>
@@ -324,7 +321,7 @@ onMounted(() => {
   height: 34px;
   padding: 0 12px;
   border-radius: 8px;
-  /* border: 1px solid rgba(255, 255, 255, 0.1); */
+  border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.03);
   color: rgba(235, 235, 245, 0.88);
   cursor: pointer;
@@ -463,6 +460,7 @@ onMounted(() => {
 
 .history-item {
   /* border: 1px solid rgba(255, 255, 255, 0.08); */
+  border: none;
   border-radius: 12px;
   background: rgba(0, 0, 0, 0.15);
   padding: 10px;
@@ -499,6 +497,7 @@ onMounted(() => {
   cursor: pointer;
   font-weight: 700;
   font-size: 12px;
+  border: none;
 }
 
 .mini-btn:hover {
@@ -520,6 +519,7 @@ onMounted(() => {
   font-weight: bold;
   font-size: 16px;
   background: #ffffff40;
+  border: none;
   display: flex;
   /* align-items: center; */
   padding: 3px 6px;
@@ -531,6 +531,7 @@ onMounted(() => {
   white-space: pre-wrap;
   word-break: break-word;
   padding: 10px;
+  border: none;
   border-top-right-radius: 8px;
   border-bottom-right-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.06);

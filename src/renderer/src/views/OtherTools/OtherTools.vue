@@ -943,7 +943,7 @@ onUnmounted(() => {
             <div class="fun-fact-title">
               {{ funFactTitle }}
               <button
-                class="btn no-bg"
+                class="bg-transparent border-none"
                 type="button"
                 :disabled="funFactLoading"
                 @click.stop="openFunFactEditor"
@@ -953,7 +953,7 @@ onUnmounted(() => {
             </div>
             <div v-if="stackActive === 'funFact'" class="actions">
               <button
-                class="btn no-bg"
+                class="bg-transparent border-none"
                 type="button"
                 :disabled="funFactLoading || !aiReady"
                 @click.stop="refreshDailyFunFact(true)"
@@ -1266,28 +1266,6 @@ onUnmounted(() => {
 .hint {
   font-size: 12px;
   color: rgba(235, 235, 245, 0.62);
-}
-
-.btn {
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--ev-c-text-1);
-  padding: 6px 10px;
-  border-radius: 6px;
-  font-size: 12px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.btn.no-bg {
-  background: transparent;
-  border: none;
-}
-
-.btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
 }
 
 .location-btn {
@@ -1794,7 +1772,6 @@ onUnmounted(() => {
 
 .block {
   position: relative;
-  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.03);
   padding: 12px;

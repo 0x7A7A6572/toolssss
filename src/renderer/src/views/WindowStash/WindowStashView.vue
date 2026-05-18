@@ -2,6 +2,7 @@
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { DEFAULT_SETTINGS, type AppSettings, type SettingsPatch } from '@shared/settings'
 import { PencilLine, X } from 'lucide-vue-next'
+import AppSwitch from '../../components/AppSwitch.vue'
 
 type Edge = 'left' | 'right' | 'top' | 'bottom'
 type StashedItem = {
@@ -291,14 +292,10 @@ onBeforeUnmount(() => {
 
         <div class="flex justify-between">
           <div class="label">动画</div>
-          <label class="switch">
-            <input
-              type="checkbox"
-              :checked="stashSettings.animate"
-              @change="setAnimate(($event.target as HTMLInputElement).checked)"
-            />
-            <span class="slider" />
-          </label>
+          <AppSwitch
+            :model-value="stashSettings.animate"
+            @update:model-value="setAnimate($event)"
+          />
         </div>
 
         <div class="row">
@@ -335,40 +332,25 @@ onBeforeUnmount(() => {
         <div class="row">
           <div class="label">显示标题</div>
           <div />
-          <label class="switch">
-            <input
-              type="checkbox"
-              :checked="stashSettings.showHandleTitle"
-              @change="setShowHandleTitle(($event.target as HTMLInputElement).checked)"
-            />
-            <span class="slider" />
-          </label>
+          <AppSwitch
+            :model-value="stashSettings.showHandleTitle"
+            @update:model-value="setShowHandleTitle($event)"
+          />
         </div>
 
         <div class="row">
           <div class="label">显示拖拽</div>
           <div />
-          <label class="switch">
-            <input
-              type="checkbox"
-              :checked="stashSettings.showHandleDrag"
-              @change="setShowHandleDrag(($event.target as HTMLInputElement).checked)"
-            />
-            <span class="slider" />
-          </label>
+          <AppSwitch
+            :model-value="stashSettings.showHandleDrag"
+            @update:model-value="setShowHandleDrag($event)"
+          />
         </div>
 
         <div class="row">
           <div class="label">双击标签关闭收纳</div>
           <div />
-          <label class="switch">
-            <input
-              type="checkbox"
-              :disabled="true"
-              :checked="true /* stashSettings.showHandleDrag */"
-            />
-            <span class="slider" />
-          </label>
+          <AppSwitch :model-value="true" :disabled="true" />
         </div>
       </section>
       <section class="card">

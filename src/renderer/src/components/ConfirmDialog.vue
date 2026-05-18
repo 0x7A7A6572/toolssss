@@ -81,26 +81,4 @@ function onConfirm(): void {
   gap: 8px;
   margin-top: 8px;
 }
-.btn {
-  padding: 8px 12px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--ev-c-text-1);
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 700;
-}
-.btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-.btn.primary {
-  background: #3b82f6;
-  border-color: #3b82f6;
-  color: #fff;
-}
-.btn.primary:hover {
-  background: #2563eb;
-  border-color: #2563eb;
-}
 </style>

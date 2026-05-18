@@ -1,6 +1,6 @@
 {
   "name": "toolssss",
-  "version": "1.2.8",
+  "version": "1.2.9",
   "description": "A toolbox for workflow",
   "main": "./out/main/index.js",
   "author": "zzerx",
@@ -48,7 +48,7 @@
     "tesseract.js": "^5.1.1",
     "tyme4ts": "^1.4.4",
     "vue-router": "^4.6.4",
-    "vuetify": "^3.10.3"
+    "vuetify": "^4.0.7"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config-prettier": "3.0.0",

@@ -3,13 +3,21 @@ import { aliases, mdi } from 'vuetify/iconsets/mdi'
 import {
   VBtn,
   VCard,
+  VCardActions,
+  VCardText,
+  VCardTitle,
   VColorPicker,
+  VDialog,
+  VIcon,
   VMenu,
+  VProgressLinear,
   VSelect,
   VSlider,
+  VSpacer,
   VSwitch,
   VTextField,
-  VTimePicker
+  VTimePicker,
+  VEmptyState
 } from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 
@@ -17,13 +25,21 @@ const vuetify = createVuetify({
   components: {
     VBtn,
     VCard,
+    VCardActions,
+    VCardText,
+    VCardTitle,
     VColorPicker,
+    VDialog,
+    VIcon,
     VMenu,
+    VProgressLinear,
     VSelect,
     VSlider,
+    VSpacer,
     VSwitch,
     VTextField,
-    VTimePicker
+    VTimePicker,
+    VEmptyState
   },
   defaults: {
     VSelect: {
@@ -42,6 +58,13 @@ const vuetify = createVuetify({
   },
   theme: {
     defaultTheme: 'dark'
+    // themes: {
+    //   dark: {
+    //     colors: {
+    //       primary: '#3b83f6db'
+    //     }
+    //   }
+    // }
   }
 })
 

@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { DEFAULT_SETTINGS, type AppSettings, type SettingsPatch } from '@shared/settings'
 import ShortcutInput from '../../components/ShortcutInput.vue'
+import AppSwitch from '../../components/AppSwitch.vue'
 import { Delete, FolderOpen } from 'lucide-vue-next'
 import { AI_PROVIDERS } from '../../constants/aiProviders'
 import { Languages } from '@renderer/utils/bean'
@@ -319,34 +320,18 @@ onMounted(() => {
 
       <div class="row">
         <div class="label">开机自启</div>
-        <label class="switch">
-          <input
-            type="checkbox"
-            :checked="settings.general.autoStart"
-            @change="
-              update({
-                general: { autoStart: ($event.target as HTMLInputElement).checked }
-              })
-            "
-          />
-          <span class="slider" />
-        </label>
+        <AppSwitch
+          :model-value="settings.general.autoStart"
+          @update:model-value="update({ general: { autoStart: $event } })"
+        />
       </div>
 
       <div class="row">
         <div class="label">关闭时最小化到托盘</div>
-        <label class="switch">
-          <input
-            type="checkbox"
-            :checked="settings.general.minimizeToTray"
-            @change="
-              update({
-                general: { minimizeToTray: ($event.target as HTMLInputElement).checked }
-              })
-            "
-          />
-          <span class="slider" />
-        </label>
+        <AppSwitch
+          :model-value="settings.general.minimizeToTray"
+          @update:model-value="update({ general: { minimizeToTray: $event } })"
+        />
       </div>
 
       <div class="row">
@@ -364,7 +349,7 @@ onMounted(() => {
             "
           />
           <button
-            class="btn icon-btn"
+            class="flex px-[6px] py-[4px] rounded-[4px] bg-[#99999933] border-none"
             type="button"
             title="选择目录"
             aria-label="选择目录"
@@ -390,7 +375,7 @@ onMounted(() => {
             "
           />
           <button
-            class="btn icon-btn"
+            class="flex px-[6px] py-[4px] rounded-[4px] bg-[#99999933] border-none"
             type="button"
             title="选择目录"
             aria-label="选择目录"
@@ -409,35 +394,19 @@ onMounted(() => {
 
       <div class="row">
         <div class="label">启用截屏贴图</div>
-        <label class="switch">
-          <input
-            type="checkbox"
-            :checked="settings.snip.enabled"
-            @change="
-              update({
-                snip: { enabled: ($event.target as HTMLInputElement).checked }
-              })
-            "
-          />
-          <span class="slider" />
-        </label>
+        <AppSwitch
+          :model-value="settings.snip.enabled"
+          @update:model-value="update({ snip: { enabled: $event } })"
+        />
       </div>
 
       <div class="row">
         <div class="label">截图时隐藏护眼遮罩</div>
-        <label class="switch">
-          <input
-            type="checkbox"
-            :checked="settings.snip.suspendEyeOverlay"
-            :disabled="!settings.snip.enabled"
-            @change="
-              update({
-                snip: { suspendEyeOverlay: ($event.target as HTMLInputElement).checked }
-              })
-            "
-          />
-          <span class="slider" />
-        </label>
+        <AppSwitch
+          :model-value="settings.snip.suspendEyeOverlay"
+          :disabled="!settings.snip.enabled"
+          @update:model-value="update({ snip: { suspendEyeOverlay: $event } })"
+        />
       </div>
     </section>
 
@@ -470,16 +439,10 @@ onMounted(() => {
             placeholder="未设置"
             @update:model-value="onShortcutChange('toggleEye', $event)"
           />
-          <label class="switch">
-            <input
-              type="checkbox"
-              :checked="isShortcutEnabled('toggleEye')"
-              @change="
-                onShortcutEnabledChange('toggleEye', ($event.target as HTMLInputElement).checked)
-              "
-            />
-            <span class="slider" />
-          </label>
+          <AppSwitch
+            :model-value="isShortcutEnabled('toggleEye')"
+            @update:model-value="onShortcutEnabledChange('toggleEye', $event)"
+          />
         </div>
       </div>
 
@@ -497,19 +460,10 @@ onMounted(() => {
             placeholder="未设置"
             @update:model-value="onShortcutChange('translateSelection', $event)"
           />
-          <label class="switch">
-            <input
-              type="checkbox"
-              :checked="isShortcutEnabled('translateSelection')"
-              @change="
-                onShortcutEnabledChange(
-                  'translateSelection',
-                  ($event.target as HTMLInputElement).checked
-                )
-              "
-            />
-            <span class="slider" />
-          </label>
+          <AppSwitch
+            :model-value="isShortcutEnabled('translateSelection')"
+            @update:model-value="onShortcutEnabledChange('translateSelection', $event)"
+          />
         </div>
       </div>
 
@@ -527,19 +481,10 @@ onMounted(() => {
             placeholder="未设置"
             @update:model-value="onShortcutChange('stickyNotesPopup', $event)"
           />
-          <label class="switch">
-            <input
-              type="checkbox"
-              :checked="isShortcutEnabled('stickyNotesPopup')"
-              @change="
-                onShortcutEnabledChange(
-                  'stickyNotesPopup',
-                  ($event.target as HTMLInputElement).checked
-                )
-              "
-            />
-            <span class="slider" />
-          </label>
+          <AppSwitch
+            :model-value="isShortcutEnabled('stickyNotesPopup')"
+            @update:model-value="onShortcutEnabledChange('stickyNotesPopup', $event)"
+          />
         </div>
       </div>
 
@@ -555,16 +500,10 @@ onMounted(() => {
             placeholder="未设置"
             @update:model-value="onShortcutChange('snipStart', $event)"
           />
-          <label class="switch">
-            <input
-              type="checkbox"
-              :checked="isShortcutEnabled('snipStart')"
-              @change="
-                onShortcutEnabledChange('snipStart', ($event.target as HTMLInputElement).checked)
-              "
-            />
-            <span class="slider" />
-          </label>
+          <AppSwitch
+            :model-value="isShortcutEnabled('snipStart')"
+            @update:model-value="onShortcutEnabledChange('snipStart', $event)"
+          />
         </div>
       </div>
 
@@ -582,16 +521,10 @@ onMounted(() => {
             placeholder="未设置"
             @update:model-value="onShortcutChange('stickerPaste', $event)"
           />
-          <label class="switch">
-            <input
-              type="checkbox"
-              :checked="isShortcutEnabled('stickerPaste')"
-              @change="
-                onShortcutEnabledChange('stickerPaste', ($event.target as HTMLInputElement).checked)
-              "
-            />
-            <span class="slider" />
-          </label>
+          <AppSwitch
+            :model-value="isShortcutEnabled('stickerPaste')"
+            @update:model-value="onShortcutEnabledChange('stickerPaste', $event)"
+          />
         </div>
       </div>
 
@@ -609,19 +542,10 @@ onMounted(() => {
             placeholder="未设置"
             @update:model-value="onShortcutChange('stickersToggleHidden', $event)"
           />
-          <label class="switch">
-            <input
-              type="checkbox"
-              :checked="isShortcutEnabled('stickersToggleHidden')"
-              @change="
-                onShortcutEnabledChange(
-                  'stickersToggleHidden',
-                  ($event.target as HTMLInputElement).checked
-                )
-              "
-            />
-            <span class="slider" />
-          </label>
+          <AppSwitch
+            :model-value="isShortcutEnabled('stickersToggleHidden')"
+            @update:model-value="onShortcutEnabledChange('stickersToggleHidden', $event)"
+          />
         </div>
       </div>
 
@@ -640,16 +564,10 @@ onMounted(() => {
               placeholder="未设置"
               @update:model-value="onShortcutChange('stashLeft', $event)"
             />
-            <label class="switch">
-              <input
-                type="checkbox"
-                :checked="isShortcutEnabled('stashLeft')"
-                @change="
-                  onShortcutEnabledChange('stashLeft', ($event.target as HTMLInputElement).checked)
-                "
-              />
-              <span class="slider" />
-            </label>
+            <AppSwitch
+              :model-value="isShortcutEnabled('stashLeft')"
+              @update:model-value="onShortcutEnabledChange('stashLeft', $event)"
+            />
           </div>
         </div>
 
@@ -665,16 +583,10 @@ onMounted(() => {
               placeholder="未设置"
               @update:model-value="onShortcutChange('stashTop', $event)"
             />
-            <label class="switch">
-              <input
-                type="checkbox"
-                :checked="isShortcutEnabled('stashTop')"
-                @change="
-                  onShortcutEnabledChange('stashTop', ($event.target as HTMLInputElement).checked)
-                "
-              />
-              <span class="slider" />
-            </label>
+            <AppSwitch
+              :model-value="isShortcutEnabled('stashTop')"
+              @update:model-value="onShortcutEnabledChange('stashTop', $event)"
+            />
           </div>
         </div>
 
@@ -692,16 +604,10 @@ onMounted(() => {
               placeholder="未设置"
               @update:model-value="onShortcutChange('stashRight', $event)"
             />
-            <label class="switch">
-              <input
-                type="checkbox"
-                :checked="isShortcutEnabled('stashRight')"
-                @change="
-                  onShortcutEnabledChange('stashRight', ($event.target as HTMLInputElement).checked)
-                "
-              />
-              <span class="slider" />
-            </label>
+            <AppSwitch
+              :model-value="isShortcutEnabled('stashRight')"
+              @update:model-value="onShortcutEnabledChange('stashRight', $event)"
+            />
           </div>
         </div>
 
@@ -719,19 +625,10 @@ onMounted(() => {
               placeholder="未设置"
               @update:model-value="onShortcutChange('stashBottom', $event)"
             />
-            <label class="switch">
-              <input
-                type="checkbox"
-                :checked="isShortcutEnabled('stashBottom')"
-                @change="
-                  onShortcutEnabledChange(
-                    'stashBottom',
-                    ($event.target as HTMLInputElement).checked
-                  )
-                "
-              />
-              <span class="slider" />
-            </label>
+            <AppSwitch
+              :model-value="isShortcutEnabled('stashBottom')"
+              @update:model-value="onShortcutEnabledChange('stashBottom', $event)"
+            />
           </div>
         </div>
       </div>
@@ -904,18 +801,10 @@ onMounted(() => {
 
       <div class="row">
         <div class="label">启用</div>
-        <label class="switch">
-          <input
-            type="checkbox"
-            :checked="settings.ai.enabled"
-            @change="
-              update({
-                ai: { enabled: ($event.target as HTMLInputElement).checked }
-              })
-            "
-          />
-          <span class="slider" />
-        </label>
+        <AppSwitch
+          :model-value="settings.ai.enabled"
+          @update:model-value="update({ ai: { enabled: $event } })"
+        />
       </div>
 
       <div class="row">
@@ -1176,53 +1065,7 @@ onMounted(() => {
   flex-shrink: 0;
 }
 
-.switch {
-  position: relative;
-  display: inline-block;
-  width: 46px;
-  height: 26px;
-  flex-shrink: 0;
-}
-
-.switch input {
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-
-.slider {
-  position: absolute;
-  cursor: pointer;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(255, 255, 255, 0.12);
-  transition: 0.2s;
-  border-radius: 999px;
-}
-
-.slider:before {
-  position: absolute;
-  content: '';
-  height: 20px;
-  width: 20px;
-  left: 3px;
-  bottom: 3px;
-  background-color: rgba(255, 255, 255, 0.9);
-  transition: 0.2s;
-  border-radius: 50%;
-}
-
-.switch input:checked + .slider {
-  background-color: rgba(59, 130, 246, 0.65);
-}
-
-.switch input:checked + .slider:before {
-  transform: translateX(20px);
-}
-
-.text {
+/* .text {
   padding: 6px 10px;
   border-radius: 6px;
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -1232,7 +1075,7 @@ onMounted(() => {
   font-size: 13px;
   width: 200px;
   text-align: right;
-}
+} */
 
 .path-row {
   display: flex;
@@ -1298,56 +1141,12 @@ onMounted(() => {
   text-align: left;
 }
 
-.btn {
-  padding: 7px 10px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 245, 0.92);
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-
 .icon-btn {
   padding: 7px;
   display: inline-grid;
   place-items: center;
   min-width: 34px;
   line-height: 1;
-}
-
-.select {
-  flex: 1;
-}
-
-.select :deep(.v-field__input) {
-  justify-content: flex-end;
-}
-
-.select :deep(input) {
-  text-align: right;
-}
-
-.select :deep(.v-select__selection-text) {
-  text-align: right;
-}
-
-.text:focus {
-  border-color: rgba(59, 130, 246, 0.5);
-}
-
-.hint {
-  font-size: 12px;
-  color: var(--ev-c-text-3);
-  margin-top: -4px;
 }
 
 .shortcut-group {
@@ -1481,9 +1280,5 @@ onMounted(() => {
   background: var(--color-text);
   color: #000;
   border-color: transparent;
-}
-
-.btn.primary:hover {
-  background: #22e6ea;
 }
 </style>

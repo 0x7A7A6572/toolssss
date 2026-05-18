@@ -1963,7 +1963,7 @@ onBeforeUnmount(() => {
 
 .swatch.active {
   outline: 2px solid rgba(255, 255, 255, 0.9);
-  outline-offset: 2px;
+  outline-offset: 1px;
 }
 
 .stroke {
@@ -2011,7 +2011,7 @@ onBeforeUnmount(() => {
 
 .stroke-range:focus-visible::-webkit-slider-thumb {
   outline: 2px solid rgba(255, 255, 255, 0.85);
-  outline-offset: 2px;
+  outline-offset: 1px;
 }
 
 .stroke-dot-wrap {
@@ -2090,38 +2090,5 @@ onBeforeUnmount(() => {
   text-align: center;
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.12);
-}
-
-.btn {
-  height: 34px;
-  padding: 0 12px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.92);
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.btn:hover {
-  background: rgba(255, 255, 255, 0.14);
-}
-
-.btn:active {
-  transform: translateY(1px);
-}
-
-.btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.btn.danger {
-  border-color: rgba(255, 80, 80, 0.35);
-  background: rgba(255, 80, 80, 0.12);
-}
-
-.btn.danger:hover {
-  background: rgba(255, 80, 80, 0.18);
 }
 </style>

@@ -166,7 +166,7 @@ onBeforeUnmount(() => {
         <div class="card-title">截图库</div>
         <div class="card-actions">
           <button
-            class="btn icon-btn"
+            class="flex px-[6px] py-[4px] rounded-[4px] bg-[#99999933] border-none"
             type="button"
             title="一键清理"
             aria-label="一键清理"
@@ -176,7 +176,7 @@ onBeforeUnmount(() => {
             <Trash2 :size="16" />
           </button>
           <button
-            class="btn icon-btn"
+            class="flex px-[6px] py-[4px] rounded-[4px] bg-[#99999933] border-none"
             type="button"
             title="刷新"
             aria-label="刷新"
@@ -332,41 +332,12 @@ onBeforeUnmount(() => {
   gap: 8px;
 }
 
-.btn {
-  padding: 7px 10px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 245, 0.92);
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
 .shot-img.loading {
   aspect-ratio: 4 / 3;
   display: grid;
   place-items: center;
   color: rgba(255, 255, 255, 0.55);
   font-size: 12px;
-}
-
-.btn:hover:enabled {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.icon-btn {
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .icon-btn :deep(svg) {
