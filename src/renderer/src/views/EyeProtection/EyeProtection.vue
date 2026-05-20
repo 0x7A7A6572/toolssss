@@ -27,6 +27,19 @@ const reminderSecondsItems: Array<{ title: string; value: number }> = [
   { title: '60 秒', value: 60 }
 ]
 
+function toSelectOptions<T extends string | number>(
+  items: Array<{ title: string; value: T }>
+): Array<{ label: string; value: T }> {
+  return items.map((i) => ({ label: i.title, value: i.value }))
+}
+
+function onEyeOpacityAfterChange(v: number | [number, number]): void {
+  const value = Array.isArray(v) ? v[0] : v
+  update({
+    eye: { opacity: Number(Number(value).toFixed(2)) }
+  }).catch(() => null)
+}
+
 function formatCountdown(targetAt: number | null, now: number): string {
   if (targetAt === null) return '—'
   const diff = targetAt - now
@@ -122,22 +135,16 @@ onBeforeUnmount(() => {
       </div>
       <div class="row">
         <div class="label">强度</div>
-        <v-slider
-          v-model="settings.eye.opacity"
-          :show-ticks="false"
-          thumb-label
+        <a-slider
+          v-model:value="settings.eye.opacity"
           :min="0.04"
           :max="0.3"
           :step="0.02"
-          :tick-size="5"
-          @end="
-            update({
-              eye: { opacity: Number(settings.eye.opacity.toFixed(2)) }
-            })
-          "
-        >
-          <template #thumb-label="{ modelValue }"> {{ modelValue * 100 }}% </template>
-        </v-slider>
+          :tooltip="{
+            formatter: (v?: number) => (typeof v === 'number' ? `${Math.round(v * 100)}%` : '')
+          }"
+          @after-change="onEyeOpacityAfterChange"
+        />
         <!-- <input
           class="range"
           type="range"
@@ -246,13 +253,11 @@ onBeforeUnmount(() => {
         </div>
         <div class="row">
           <div class="label">间隔</div>
-          <v-select
+          <a-select
             class="select"
-            :items="breakIntervalItems"
-            item-title="title"
-            item-value="value"
-            :model-value="settings.break.intervalMinutes"
-            @update:model-value="onBreakIntervalChange"
+            :value="settings.break.intervalMinutes"
+            :options="toSelectOptions(breakIntervalItems)"
+            @change="onBreakIntervalChange"
           />
         </div>
         <div class="row">
@@ -272,13 +277,11 @@ onBeforeUnmount(() => {
         <div class="card-title">提醒时长</div>
         <div class="row">
           <div class="label">时长</div>
-          <v-select
+          <a-select
             class="select"
-            :items="reminderSecondsItems"
-            item-title="title"
-            item-value="value"
-            :model-value="settings.reminderSeconds"
-            @update:model-value="onReminderSecondsChange"
+            :value="settings.reminderSeconds"
+            :options="toSelectOptions(reminderSecondsItems)"
+            @change="onReminderSecondsChange"
           />
         </div>
         <div class="row">

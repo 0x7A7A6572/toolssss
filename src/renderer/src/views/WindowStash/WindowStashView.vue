@@ -30,6 +30,25 @@ const itemAliasDrafts = ref<Record<string, string>>({})
 const itemColorDrafts = ref<Record<string, string>>({})
 const itemColorMenus = ref<Record<string, boolean>>({})
 
+const PRESET_COLORS: string[] = [
+  '#22c55e88',
+  '#3b82f688',
+  '#f59e0b88',
+  '#ef444488',
+  '#a855f788',
+  '#14b8a688',
+  '#94a3b888',
+  '#00000088',
+  '#ffffff88'
+]
+
+function normalizeHexColorInput(s: string): string | null {
+  const raw = typeof s === 'string' ? s.trim() : ''
+  if (!raw) return null
+  const v = raw.startsWith('#') ? raw : `#${raw}`
+  return /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(v) ? v : null
+}
+
 watch(
   () => stashSettings.value.durationMs,
   (v) => {
@@ -121,7 +140,9 @@ async function update(patch: SettingsPatch): Promise<void> {
 }
 
 function setColor(edge: Edge, color: string): void {
-  const next = { ...stashSettings.value.handleColors, [edge]: color }
+  const normalized = normalizeHexColorInput(color)
+  if (!normalized) return
+  const next = { ...stashSettings.value.handleColors, [edge]: normalized }
   stashSettings.value = { ...stashSettings.value, handleColors: next }
   update({ windowStash: { handleColors: next } }).catch(() => null)
 }
@@ -211,7 +232,9 @@ function cancelItemColor(hwnd: string): void {
 }
 
 function applyItemColor(hwnd: string): void {
-  void updateItemMeta(hwnd, { handleColor: itemColorDrafts.value[hwnd] ?? '' })
+  const normalized = normalizeHexColorInput(itemColorDrafts.value[hwnd] ?? '')
+  if (!normalized) return
+  void updateItemMeta(hwnd, { handleColor: normalized })
   itemColorMenus.value[hwnd] = false
 }
 
@@ -253,39 +276,45 @@ onBeforeUnmount(() => {
           <div class="handle-grid">
             <div v-for="e in HANDLE_EDGES" :key="e" class="handle-item">
               <div class="handle-label">{{ edgeLabel(e) }}</div>
-              <v-menu
-                v-model="colorMenus[e]"
-                :close-on-content-click="false"
-                :offset="8"
-                location="bottom"
-                @update:model-value="(open) => onColorMenuChange(e, open)"
+              <a-popover
+                trigger="click"
+                placement="bottom"
+                :open="colorMenus[e]"
+                @update:open="
+                  (open) => {
+                    colorMenus[e] = open
+                    onColorMenuChange(e, open)
+                  }
+                "
               >
-                <template #activator="{ props }">
-                  <button
-                    v-bind="props"
-                    class="color-btn"
-                    type="button"
-                    :style="{ backgroundColor: stashSettings.handleColors[e] }"
-                    :title="stashSettings.handleColors[e]"
-                    :aria-label="`选择${edgeLabel(e)}侧颜色`"
-                  />
-                </template>
-
-                <v-card class="color-pop">
-                  <v-color-picker
-                    v-model="colorDrafts[e]"
-                    :modes="['rgba']"
-                    show-swatches
-                    hide-inputs
-                  />
-                  <div class="color-actions">
-                    <v-btn variant="text" density="compact" @click="cancelColor(e)">取消</v-btn>
-                    <v-btn color="primary" variant="flat" density="compact" @click="applyColor(e)">
-                      应用
-                    </v-btn>
+                <template #content>
+                  <div class="color-pop">
+                    <div class="color-palette">
+                      <button
+                        v-for="c in PRESET_COLORS"
+                        :key="c"
+                        class="palette-swatch"
+                        type="button"
+                        :style="{ backgroundColor: c }"
+                        :title="c"
+                        @click="colorDrafts[e] = c"
+                      />
+                    </div>
+                    <a-input v-model:value="colorDrafts[e]" placeholder="#RRGGBB / #RRGGBBAA" />
+                    <div class="color-actions">
+                      <a-button size="small" @click="cancelColor(e)">取消</a-button>
+                      <a-button size="small" type="primary" @click="applyColor(e)">应用</a-button>
+                    </div>
                   </div>
-                </v-card>
-              </v-menu>
+                </template>
+                <button
+                  class="color-btn"
+                  type="button"
+                  :style="{ backgroundColor: stashSettings.handleColors[e] }"
+                  :title="stashSettings.handleColors[e]"
+                  :aria-label="`选择${edgeLabel(e)}侧颜色`"
+                />
+              </a-popover>
             </div>
           </div>
         </div>
@@ -301,14 +330,12 @@ onBeforeUnmount(() => {
         <div class="row">
           <div class="label">动画时长</div>
           <div class="slider-wrap">
-            <v-slider
-              v-model="durationMsDraft"
-              min="60"
-              max="500"
-              step="10"
-              hide-details
-              density="compact"
-              @end="setDurationMs(durationMsDraft)"
+            <a-slider
+              v-model:value="durationMsDraft"
+              :min="60"
+              :max="500"
+              :step="10"
+              @after-change="(v) => setDurationMs(Array.isArray(v) ? v[0] : v)"
             />
           </div>
           <div class="value">{{ durationMsDraft }}ms</div>
@@ -317,14 +344,12 @@ onBeforeUnmount(() => {
         <div class="row">
           <div class="label">透明度</div>
           <div class="slider-wrap">
-            <v-slider
-              v-model="opacityDraft"
-              min="0"
-              max="1"
-              step="0.05"
-              hide-details
-              density="compact"
-              @end="setHandleOpacity(opacityDraft)"
+            <a-slider
+              v-model:value="opacityDraft"
+              :min="0"
+              :max="1"
+              :step="0.05"
+              @after-change="(v) => setHandleOpacity(Array.isArray(v) ? v[0] : v)"
             />
           </div>
           <div class="value">{{ Math.round(opacityDraft * 100) }}%</div>
@@ -384,53 +409,60 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="stash-controls">
-            <v-menu
-              v-model="itemColorMenus[it.hwnd]"
-              :close-on-content-click="false"
-              :offset="8"
-              location="bottom"
-              @update:model-value="(open) => onItemColorMenuChange(it, open)"
+            <a-popover
+              trigger="click"
+              placement="bottom"
+              :open="itemColorMenus[it.hwnd]"
+              @update:open="
+                (open) => {
+                  itemColorMenus[it.hwnd] = open
+                  onItemColorMenuChange(it, open)
+                }
+              "
             >
-              <template #activator="{ props }">
-                <button
-                  v-bind="props"
-                  class="color-btn only"
-                  type="button"
-                  :style="{
-                    backgroundColor: it.handleColor?.trim()
-                      ? it.handleColor
-                      : stashSettings.handleColors[it.edge]
-                  }"
-                  :title="it.handleColor?.trim() ? `独立颜色：${it.handleColor}` : '跟随贴边颜色'"
-                  aria-label="设置外露标签颜色"
-                />
-              </template>
-
-              <v-card class="color-pop">
-                <v-color-picker
-                  v-model="itemColorDrafts[it.hwnd]"
-                  :modes="['rgba']"
-                  show-swatches
-                  hide-inputs
-                />
-                <div class="color-actions">
-                  <v-btn variant="text" density="compact" @click="clearItemColor(it.hwnd)"
-                    >跟随</v-btn
-                  >
-                  <v-btn variant="text" density="compact" @click="cancelItemColor(it.hwnd)"
-                    >取消</v-btn
-                  >
-                  <v-btn
-                    color="primary"
-                    variant="text"
-                    density="compact"
-                    @click="applyItemColor(it.hwnd)"
-                  >
-                    应用
-                  </v-btn>
+              <template #content>
+                <div class="color-pop">
+                  <div class="color-palette">
+                    <button
+                      v-for="c in PRESET_COLORS"
+                      :key="c"
+                      class="palette-swatch"
+                      type="button"
+                      :style="{ backgroundColor: c }"
+                      :title="c"
+                      @click="itemColorDrafts[it.hwnd] = c"
+                    />
+                  </div>
+                  <a-input
+                    v-model:value="itemColorDrafts[it.hwnd]"
+                    size="small"
+                    placeholder="#RRGGBB / #RRGGBBAA"
+                  />
+                  <div class="color-actions">
+                    <a-button type="text" size="small" @click="clearItemColor(it.hwnd)"
+                      >跟随</a-button
+                    >
+                    <a-button type="text" size="small" @click="cancelItemColor(it.hwnd)"
+                      >取消</a-button
+                    >
+                    <a-button type="primary" size="small" @click="applyItemColor(it.hwnd)"
+                      >应用</a-button
+                    >
+                  </div>
                 </div>
-              </v-card>
-            </v-menu>
+              </template>
+              <button
+                class="color-btn only"
+                type="button"
+                :style="{
+                  backgroundColor: it.handleColor?.trim()
+                    ? it.handleColor
+                    : stashSettings.handleColors[it.edge]
+                }"
+                :title="it.handleColor?.trim() ? `独立颜色：${it.handleColor}` : '跟随贴边颜色'"
+                aria-label="设置外露标签颜色"
+              />
+            </a-popover>
 
             <X :size="18" @click="restore(it.hwnd)"></X>
           </div>
@@ -563,6 +595,24 @@ onBeforeUnmount(() => {
 
 .color-pop {
   padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 220px;
+}
+
+.color-palette {
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  gap: 6px;
+}
+
+.palette-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  cursor: pointer;
 }
 
 .color-actions {

@@ -82,6 +82,12 @@ const codeBlockLanguageItems: Array<{ title: string; value: string }> = [
   { title: 'SQL', value: 'sql' }
 ]
 
+function toSelectOptions(
+  items: Array<{ title: string; value: string }>
+): Array<{ label: string; value: string }> {
+  return items.map((i) => ({ label: i.title, value: i.value }))
+}
+
 function focus(): void {
   editor.value?.chain().focus().run()
 }
@@ -509,15 +515,12 @@ onBeforeUnmount(() => {
       <div class="divider" />
 
       <div class="group">
-        <v-select
+        <a-select
           v-if="isInCodeBlock"
           class="lang"
-          :items="codeBlockLanguageItems"
-          item-title="title"
-          item-value="value"
-          :model-value="codeBlockLanguage"
-          variant="solo-filled"
-          @update:model-value="setCodeBlockLanguage"
+          :value="codeBlockLanguage"
+          :options="toSelectOptions(codeBlockLanguageItems)"
+          @change="setCodeBlockLanguage"
         />
         <button type="button" class="tool" @click="openImagePicker">
           <ImagePlus :size="16" />

@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { House, Settings2 } from 'lucide-vue-next'
 import { Minus, Square, X } from 'lucide-vue-next'
+import { DownloadOutlined } from '@ant-design/icons-vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -128,11 +129,19 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="layout">
-    <v-dialog v-model="updateDialogOpen" :persistent="updateIsDownloading" max-width="320">
-      <v-card class="update-card rounded-[18px]">
-        <v-card-title class="update-title">
+    <a-modal
+      :open="updateDialogOpen"
+      :width="320"
+      :mask-closable="!updateIsDownloading"
+      :keyboard="!updateIsDownloading"
+      :closable="!updateIsDownloading"
+      :footer="null"
+      @cancel="postponeUpdate"
+    >
+      <div class="update-card rounded-[18px]">
+        <div class="update-title">
           <div class="update-title-main">
-            <v-icon icon="mdi-tray-arrow-down" :size="24" />
+            <DownloadOutlined style="font-size: 24px" />
             <span>发现新版本：{{ update?.version || '' }}</span>
           </div>
           <div v-if="update?.status" class="update-sub">
@@ -146,44 +155,38 @@ onBeforeUnmount(() => {
               >更新失败：{{ update?.message || '未知错误' }}</span
             >
           </div>
-        </v-card-title>
+        </div>
 
-        <v-card-text>
-          <v-progress-linear
+        <div class="update-progress">
+          <a-progress
             v-if="updateIsDownloading"
-            :model-value="typeof update?.percent === 'number' ? update.percent : 0"
-            height="10"
-            rounded
+            :percent="typeof update?.percent === 'number' ? Math.round(update.percent) : 0"
+            :show-info="false"
           />
-        </v-card-text>
+        </div>
 
-        <v-card-actions class="update-actions">
-          <v-btn variant="outlined" :disabled="updateIsDownloading" @click="postponeUpdate">
-            稍后更新
-          </v-btn>
-          <!-- <v-spacer /> -->
-          <v-btn
+        <div class="update-actions">
+          <a-button :disabled="updateIsDownloading" @click="postponeUpdate">稍后更新</a-button>
+          <a-button
             v-if="updateIsDownloaded"
-            color="primary"
-            variant="elevated"
+            type="primary"
             :disabled="updateIsDownloading"
             @click="installUpdate"
           >
             立即重启
-          </v-btn>
-          <v-btn
+          </a-button>
+          <a-button
             v-else
-            color="primary"
-            variant="elevated"
+            type="primary"
             :loading="updateIsDownloading"
             :disabled="updateIsDownloading"
             @click="startUpdateDownload"
           >
             立即更新
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
+          </a-button>
+        </div>
+      </div>
+    </a-modal>
 
     <div class="window-titlebar">
       <div class="titlebar-drag"></div>

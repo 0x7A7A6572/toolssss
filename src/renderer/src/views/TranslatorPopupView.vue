@@ -13,6 +13,12 @@ const sourceItems: Array<{ title: string; value: string }> = [
 
 const targetItems: Array<{ title: string; value: string }> = [...Languages]
 
+function toSelectOptions(
+  items: Array<{ title: string; value: string }>
+): Array<{ label: string; value: string }> {
+  return items.map((i) => ({ label: i.title, value: i.value }))
+}
+
 const inputText = ref('')
 const outputText = ref('')
 const loading = ref(false)
@@ -133,44 +139,42 @@ onBeforeUnmount(() => {
     <header class="header">
       <div class="title">快捷翻译</div>
       <div class="title-toolbar">
-        <v-select
-          v-model="source"
-          class="select"
-          :items="sourceItems"
-          item-title="title"
-          item-value="value"
+        <a-select
+          v-model:value="source"
+          custom-class="text-[12px]"
+          :options="toSelectOptions(sourceItems)"
+          size="small"
         />
-        <button
+        <!-- <button
           class="swap"
           type="button"
           :disabled="loading || (!inputText.trim() && !outputText.trim())"
           @click="swapAndTranslate"
-        >
-          <ArrowLeftRight :size="12" />
-        </button>
-        <v-select
-          v-model="target"
-          class="select"
-          :items="targetItems"
-          item-title="title"
-          item-value="value"
+        > -->
+        <ArrowLeftRight :size="12" @click="swapAndTranslate" />
+        <!-- </button> -->
+        <a-select
+          v-model:value="target"
+          custom-class="text-[12px]"
+          :options="toSelectOptions(targetItems)"
+          size="small"
         />
-        <button
-          class="btn"
-          type="button"
+        <!-- <a-button
+          size="small"
+          type="primary"
           :disabled="loading || !inputText.trim()"
           @click="translate"
         >
           {{ loading ? '翻译中...' : '翻译' }}
-        </button>
+        </a-button> -->
       </div>
       <div class="actions">
-        <button class="icon" type="button" :disabled="!outputText" @click="copyResult">
-          <Copy :size="12" />
-        </button>
-        <button class="icon" type="button" @click="close">
-          <X :size="12" />
-        </button>
+        <!-- <button class="icon" type="button" :disabled="!outputText" @click="copyResult"> -->
+        <Copy :size="12" @click="copyResult" />
+        <!-- </button> -->
+        <!-- <a-button class="icon" type="button" > -->
+        <X :size="12" @click="close" />
+        <!-- </a-button> -->
       </div>
     </header>
 
@@ -183,6 +187,7 @@ onBeforeUnmount(() => {
           :placeholder="
             selectionPending ? '正在获取选中文本…' : '选中文本后按快捷键，或手动粘贴...'
           "
+          @keyup.ctrl.enter="translate"
         />
         <!-- <div class="panel-foot">
           <div class="spacer" />
@@ -192,9 +197,9 @@ onBeforeUnmount(() => {
       <div class="panel">
         <div class="panel-title">译文</div>
         <textarea :value="outputText" class="textarea" readonly placeholder="这里显示翻译结果" />
-        <div v-if="errorText" class="error">{{ errorText }}</div>
       </div>
     </div>
+    <div v-if="errorText" class="error">{{ errorText }}</div>
   </div>
 </template>
 
@@ -207,10 +212,6 @@ onBeforeUnmount(() => {
   color: rgba(235, 235, 245, 0.9);
   display: flex;
   flex-direction: column;
-}
-
-.v-list-item--density-default.v-list-item--one-line {
-  min-height: auto !important;
 }
 
 .header {
@@ -226,7 +227,7 @@ onBeforeUnmount(() => {
 .title {
   flex: auto;
   white-space: nowrap;
-  font-size: 12px;
+  // font-size: 14px;
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -244,24 +245,6 @@ onBeforeUnmount(() => {
   display: flex;
   gap: 8px;
   -webkit-app-region: no-drag;
-}
-
-.icon {
-  /* height: 20; */
-  width: 20px;
-  /* border-radius: 10px; */
-  /* border: 1px solid rgba(255, 255, 255, 0.1); */
-  /* background: rgba(255, 255, 255, 0.03); */
-  color: rgba(235, 235, 245, 0.9);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.icon:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .content {
@@ -305,6 +288,7 @@ onBeforeUnmount(() => {
   padding: 10px 10px;
   // border: 1px solid rgba(255, 255, 255, 0.08);
   // background: rgba(0, 0, 0, 0.35);
+  background: transparent;
   color: rgba(235, 235, 245, 0.92);
   outline: none;
   font-size: 13px;
@@ -317,58 +301,13 @@ onBeforeUnmount(() => {
   gap: 8px;
 }
 
-.select {
-  width: 70px;
-  flex: none;
-}
-
-.swap {
-  height: 20px;
-  width: 20px;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.03);
-  color: rgba(235, 235, 245, 0.9);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0.7;
-}
-
-.swap:hover {
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.swap:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.spacer {
-  flex: 1;
-}
-
-.btn {
-  /* height: 32px; */
-  white-space: nowrap;
-  padding: 0 6px;
-  border-radius: 4px;
-  /* border: 1px solid rgba(59, 130, 246, 0.45); */
-  background: rgba(59, 131, 246, 0.534);
-  color: rgba(97, 158, 255, 0.877);
-  cursor: pointer;
-  font-weight: 800;
-  font-size: 12px;
-}
-
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 .error {
   font-size: 12px;
   color: rgba(239, 68, 68, 0.92);
+  background-color: rgba(133, 0, 0, 0.548);
+  padding: 4px 8px;
+  border-radius: 4px;
+  position: absolute;
+  bottom: 0;
 }
 </style>

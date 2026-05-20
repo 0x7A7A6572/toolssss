@@ -990,102 +990,79 @@ onUnmounted(() => {
         </div>
       </section>
     </div>
-
-    <Teleport to="body">
-      <div v-if="cityPickerOpen" class="picker-overlay" @click.self="closeCityPicker">
-        <div class="picker-card">
-          <div class="picker-title">选择城市</div>
-          <LazyCascader
-            v-model="cascValue"
-            :options="provinceOptions"
-            :lazy-load="lazyLoadCities"
-            :lazy-load-level="0"
-            :props-config="{
-              label: 'label',
-              value: 'value',
-              children: 'children',
-              disabled: 'disabled'
-            }"
-            @change="onCascChange"
-          />
-          <div class="picker-actions">
-            <button class="btn" type="button" @click="closeCityPicker">关闭</button>
-          </div>
-        </div>
-      </div>
-      <div v-if="cityPickerOpen" class="picker-backdrop" />
-
-      <div v-if="paydayDialogOpen" class="picker-overlay" @click.self="closePaydayDialog">
-        <div class="picker-card">
-          <div class="picker-title">设置发薪日</div>
-          <div class="payday-form">
-            <span class="payday-label">每月</span>
-            <input
-              v-model="paydayInput"
-              class="input payday-input"
-              type="number"
-              min="1"
-              max="31"
-            />
-            <span class="payday-label">日</span>
-          </div>
-          <div class="hint">范围 1-31，超过当月天数会按当月最后一天算</div>
-          <div class="picker-actions">
-            <button class="btn" type="button" @click="closePaydayDialog">取消</button>
-            <button class="btn" type="button" @click="savePaydayDay">保存</button>
-          </div>
-        </div>
-      </div>
-      <div v-if="paydayDialogOpen" class="picker-backdrop" />
-
-      <div v-if="funFactEditOpen" class="picker-overlay" @click.self="closeFunFactEditor">
-        <div class="picker-card funfact-editor-card">
-          <div class="picker-title">编辑冷知识</div>
-          <div class="funfact-form">
-            <div class="funfact-field">
-              <div class="funfact-label">标题</div>
-              <input
-                v-model="funFactTitleDraft"
-                class="input"
-                type="text"
-                placeholder="例如：每日冷知识"
-              />
-            </div>
-            <div class="funfact-field">
-              <div class="funfact-label">提示词</div>
-              <textarea
-                v-model="funFactPromptDraft"
-                class="input funfact-textarea"
-                rows="6"
-                placeholder="支持变量：{ymd}、{title}"
-              />
-              <div class="hint">支持变量：{ymd}（日期）、{title}（标题）。</div>
-            </div>
-            <div v-if="funFactEditErrorText" class="error">{{ funFactEditErrorText }}</div>
-          </div>
-          <div class="picker-actions">
-            <button
-              class="btn"
-              type="button"
-              :disabled="funFactEditSaving"
-              @click="closeFunFactEditor"
-            >
-              取消
-            </button>
-            <button
-              class="btn"
-              type="button"
-              :disabled="funFactEditSaving"
-              @click="saveFunFactEditor"
-            >
-              保存
-            </button>
-          </div>
-        </div>
-      </div>
-      <div v-if="funFactEditOpen" class="picker-backdrop" />
-    </Teleport>
   </div>
+
+  <a-modal :open="cityPickerOpen" centered :footer="null" @cancel="closeCityPicker">
+    <div class="city-picker">
+      <div class="picker-title mb-[10px]">选择城市</div>
+      <LazyCascader
+        v-model="cascValue"
+        :options="provinceOptions"
+        :lazy-load="lazyLoadCities"
+        :lazy-load-level="0"
+        :props-config="{
+          label: 'label',
+          value: 'value',
+          children: 'children',
+          disabled: 'disabled'
+        }"
+        @change="onCascChange"
+      />
+      <div class="picker-actions mt-[10px]">
+        <a-button @click="closeCityPicker">关闭</a-button>
+      </div>
+    </div>
+  </a-modal>
+
+  <a-modal :open="paydayDialogOpen" centered :footer="null" @cancel="closePaydayDialog">
+    <div class="picker-title">设置发薪日</div>
+    <div class="payday-form mt-[10px]">
+      <span class="payday-label">每月</span>
+      <a-input v-model:value="paydayInput" class="payday-input" type="number" />
+      <span class="payday-label">日</span>
+    </div>
+    <div class="hint mt-[10px]">范围 1-31，超过当月天数会按当月最后一天算</div>
+    <div class="picker-actions">
+      <a-button @click="closePaydayDialog">取消</a-button>
+      <a-button type="primary" @click="savePaydayDay">保存</a-button>
+    </div>
+  </a-modal>
+
+  <a-modal
+    :open="funFactEditOpen"
+    :width="560"
+    centered
+    :mask-closable="!funFactEditSaving"
+    :keyboard="!funFactEditSaving"
+    :closable="!funFactEditSaving"
+    :footer="null"
+    @cancel="closeFunFactEditor"
+  >
+    <div class="picker-title">编辑冷知识</div>
+    <div class="funfact-form">
+      <div class="funfact-field">
+        <div class="funfact-label">标题</div>
+        <a-input v-model:value="funFactTitleDraft" placeholder="例如：每日冷知识" />
+      </div>
+      <div class="funfact-field">
+        <div class="funfact-label">提示词</div>
+        <a-textarea
+          v-model:value="funFactPromptDraft"
+          class="funfact-textarea"
+          :rows="6"
+          placeholder="支持变量：{ymd}、{title}"
+        />
+        <div class="hint">支持变量：{ymd}（日期）、{title}（标题）。</div>
+      </div>
+      <div v-if="funFactEditErrorText" class="error">{{ funFactEditErrorText }}</div>
+    </div>
+    <div class="picker-actions">
+      <a-button :disabled="funFactEditSaving" @click="closeFunFactEditor">取消</a-button>
+      <a-button type="primary" :loading="funFactEditSaving" @click="saveFunFactEditor"
+        >保存</a-button
+      >
+    </div>
+  </a-modal>
 </template>
 
 <style scoped>
@@ -1290,11 +1267,11 @@ onUnmounted(() => {
 }
 
 .picker-overlay {
-  position: fixed;
+  position: absolute;
   inset: 0;
   display: grid;
   place-items: center;
-  z-index: 10000;
+  z-index: 1;
 }
 
 .picker-backdrop {
@@ -1302,7 +1279,7 @@ onUnmounted(() => {
   inset: 0;
   background: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(4px);
-  z-index: 9999;
+  z-index: 1;
 }
 
 .picker-card {
@@ -1318,6 +1295,7 @@ onUnmounted(() => {
   gap: 12px;
   top: 10%;
   position: absolute;
+  z-index: 2;
 }
 
 .funfact-editor-card {
@@ -1739,7 +1717,7 @@ onUnmounted(() => {
   color: rgba(235, 235, 245, 0.62);
 }
 
-.picker-card :deep(.lazy-cascader) {
+.city-picker :deep(.lazy-cascader) {
   width: 100%;
 }
 

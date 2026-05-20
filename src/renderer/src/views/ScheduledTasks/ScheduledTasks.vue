@@ -2,6 +2,10 @@
 import { computed, onMounted, ref } from 'vue'
 import { Check } from 'lucide-vue-next'
 import AppSwitch from '../../components/AppSwitch.vue'
+import dayjs from 'dayjs'
+import customParseFormat from 'dayjs/plugin/customParseFormat'
+
+dayjs.extend(customParseFormat)
 
 type ShutdownMode = 'once' | 'daily'
 type ShutdownConfig = {
@@ -36,6 +40,22 @@ const dayItems: Array<{ title: string; value: 0 | 1 }> = [
   { title: '今天', value: 0 },
   { title: '明天', value: 1 }
 ]
+
+function toSelectOptions<T extends string | number>(
+  items: Array<{ title: string; value: T }>
+): Array<{ label: string; value: T }> {
+  return items.map((i) => ({ label: i.title, value: i.value }))
+}
+
+const timePickerValue = computed(() => {
+  const t = dayjs(timeStr.value, 'HH:mm', true)
+  return t.isValid() ? t : null
+})
+
+function onTimeChange(v: dayjs.Dayjs | null): void {
+  if (!v) return
+  timeStr.value = v.format('HH:mm')
+}
 
 function formatNextAt(ms: number | null): string {
   if (ms === null) return '—'
@@ -228,54 +248,33 @@ onMounted(async () => {
           :disabled="isBusy"
           @update:model-value="onEnabledChange"
         />
-        <!-- <v-switch
-          v-model="enabled"
-          density="compact"
-          hide-details
-          inset
-          color="primary"
-          label="启用"
-        /> -->
       </div>
       <div class="task-row">
         <div class="task-label">类型：</div>
-        <v-select
-          v-model="mode"
-          :items="modeItems"
-          item-title="title"
-          item-value="value"
+        <a-select
+          v-model:value="mode"
+          :options="toSelectOptions(modeItems)"
           style="max-width: 160px"
         />
 
         <template v-if="mode === 'once'">
           <div class="task-label">日期：</div>
-          <v-select
-            v-model="onceDayOffset"
+          <a-select
+            v-model:value="onceDayOffset"
             class="select"
-            :items="dayItems"
-            item-title="title"
-            item-value="value"
+            :options="toSelectOptions(dayItems)"
             style="max-width: 120px"
           />
         </template>
 
         <div class="task-label">时间：</div>
-
-        <v-menu :close-on-content-click="false" transition="scale-transition">
-          <template #activator="{ props }">
-            <v-text-field
-              v-model="timeStr"
-              readonly
-              v-bind="props"
-              variant="outlined"
-              density="compact"
-              hide-details
-              prepend-inner-icon="mdi-clock-outline"
-              style="max-width: 150px"
-            ></v-text-field>
-          </template>
-          <v-time-picker v-model="timeStr" format="24hr"></v-time-picker>
-        </v-menu>
+        <a-time-picker
+          :value="timePickerValue"
+          format="HH:mm"
+          :show-now="false"
+          style="max-width: 150px"
+          @change="onTimeChange"
+        />
       </div>
       <div class="hint">下次执行：{{ nextAtText }}</div>
       <div

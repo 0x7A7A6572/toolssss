@@ -60,6 +60,12 @@ const aiProviderItems: Array<{ title: string; value: AppSettings['ai']['provider
   { title: 'Custom', value: 'custom' }
 ]
 
+function toSelectOptions<T extends string>(
+  items: Array<{ title: string; value: T }>
+): Array<{ label: string; value: T }> {
+  return items.map((i) => ({ label: i.title, value: i.value }))
+}
+
 function getShortcutLabel(key: string): string {
   return shortcutLabels[key] ?? key
 }
@@ -643,24 +649,18 @@ onMounted(() => {
 
       <div class="row">
         <div class="label">Provider</div>
-        <v-select
+        <a-select
           class="select"
-          :items="translateProviderItems"
-          item-title="title"
-          item-value="value"
-          :model-value="settings.translate.provider"
-          density="compact"
-          single-line
-          variant="outlined"
-          hide-details
-          @update:model-value="onTranslateProviderChange"
+          :value="settings.translate.provider"
+          :options="toSelectOptions(translateProviderItems)"
+          @change="onTranslateProviderChange"
         />
       </div>
 
       <template v-if="settings.translate.provider === 'baidu'">
         <div class="row">
           <div class="label">Base URL</div>
-          <input
+          <a-input
             class="text"
             type="text"
             :value="settings.translate.baidu.baseUrl"
@@ -752,46 +752,41 @@ onMounted(() => {
       </template>
 
       <template v-else>
-        <div class="hint">
-          使用下方「AI 服务」配置的 Base URL / Model / API Key，通过 /v1/chat/completions 进行翻译。
-        </div>
+        <a-alert
+          message="使用下方「AI 服务」配置的 Base URL / Model / API Key，进行翻译。"
+          type="info"
+          show-icon
+        >
+        </a-alert>
       </template>
 
       <div class="row">
         <div class="label">默认源语言</div>
-        <v-select
+        <a-select
           class="select"
-          :items="translateSourceItems"
-          item-title="title"
-          item-value="value"
-          :model-value="settings.translate.defaultSource"
-          density="compact"
-          single-line
-          variant="outlined"
-          hide-details
-          @update:model-value="onTranslateSourceChange"
+          :value="settings.translate.defaultSource"
+          :options="toSelectOptions(translateSourceItems)"
+          @change="onTranslateSourceChange"
         />
       </div>
 
       <div class="row">
         <div class="label">默认目标语言</div>
-        <v-select
+        <a-select
           class="select"
-          :items="translateTargetItems"
-          item-title="title"
-          item-value="value"
-          :model-value="settings.translate.defaultTarget"
-          density="compact"
-          single-line
-          variant="outlined"
-          hide-details
-          @update:model-value="onTranslateTargetChange"
+          :value="settings.translate.defaultTarget"
+          :options="toSelectOptions(translateTargetItems)"
+          @change="onTranslateTargetChange"
         />
       </div>
 
-      <div class="hint">
-        百度翻译接口：/api/trans/vip/translate；必应翻译接口：/translate?api-version=3.0；AI：/v1/chat/completions
-      </div>
+      <!-- <a-alert
+        message="百度翻译接口：/api/trans/vip/translate；必应翻译接口：/translate?api-version=3.0；AI：/v1/chat/completions"
+        type="info"
+        show-icon
+        closable
+      >
+      </a-alert> -->
     </section>
 
     <section class="card">
@@ -809,17 +804,11 @@ onMounted(() => {
 
       <div class="row">
         <div class="label">Provider</div>
-        <v-select
+        <a-select
           class="select"
-          :items="aiProviderItems"
-          item-title="title"
-          item-value="value"
-          :model-value="settings.ai.provider"
-          density="compact"
-          single-line
-          variant="outlined"
-          hide-details
-          @update:model-value="onAiProviderChange"
+          :value="settings.ai.provider"
+          :options="toSelectOptions(aiProviderItems)"
+          @change="onAiProviderChange"
         />
       </div>
 
@@ -841,16 +830,12 @@ onMounted(() => {
       <template v-if="aiModelsForProvider.length">
         <div class="row">
           <div class="label">模型选择</div>
-          <v-select
+          <a-select
             class="select"
-            :items="aiModelsForProvider"
-            :model-value="aiModelsForProvider.includes(settings.ai.model) ? settings.ai.model : ''"
             placeholder="选择模型"
-            density="compact"
-            single-line
-            variant="outlined"
-            hide-details
-            @update:model-value="onAiModelChange"
+            :value="aiModelsForProvider.includes(settings.ai.model) ? settings.ai.model : undefined"
+            :options="aiModelsForProvider.map((m) => ({ label: m, value: m }))"
+            @change="onAiModelChange"
           />
         </div>
       </template>
@@ -899,34 +884,37 @@ onMounted(() => {
       <div class="status">{{ saving ? '保存中…' : '已保存' }}</div> -->
     </footer>
 
-    <Teleport to="body">
-      <div v-if="shortcutConflict" class="conflict-overlay" @click.self="closeShortcutConflict">
-        <div class="conflict-modal">
-          <div class="conflict-header">
-            <div class="conflict-title">快捷键冲突</div>
-            <div class="conflict-subtitle">{{ shortcutConflict.value }} 已被占用</div>
-          </div>
+    <a-modal
+      :open="Boolean(shortcutConflict)"
+      centered
+      :footer="null"
+      @cancel="closeShortcutConflict"
+    >
+      <div v-if="shortcutConflict" class="conflict-modal">
+        <div class="conflict-header">
+          <div class="conflict-title">快捷键冲突</div>
+          <div class="conflict-subtitle">{{ shortcutConflict.value }} 已被占用</div>
+        </div>
 
-          <div class="conflict-body">
-            <div class="conflict-section-title">当前占用</div>
-            <div class="conflict-list">
-              <div v-for="c in shortcutConflict.conflicts" :key="c.key" class="conflict-item">
-                {{ c.label }}
-              </div>
+        <div class="conflict-body">
+          <div class="conflict-section-title">当前占用</div>
+          <div class="conflict-list">
+            <div v-for="c in shortcutConflict.conflicts" :key="c.key" class="conflict-item">
+              {{ c.label }}
             </div>
-
-            <div class="conflict-section-title">将要设置为</div>
-            <div class="conflict-target">{{ shortcutConflict.targetLabel }}</div>
-            <div class="conflict-hint">选择「替换」会清除上面所有占用项的绑定。</div>
           </div>
 
-          <div class="conflict-footer">
-            <button class="btn primary" type="button" @click="applyShortcutReplace">替换</button>
-            <button class="btn" type="button" @click="closeShortcutConflict">取消</button>
-          </div>
+          <div class="conflict-section-title">将要设置为</div>
+          <div class="conflict-target">{{ shortcutConflict.targetLabel }}</div>
+          <div class="conflict-hint">选择「替换」会清除上面所有占用项的绑定。</div>
+        </div>
+
+        <div class="conflict-footer">
+          <a-button type="primary" @click="applyShortcutReplace">替换</a-button>
+          <a-button @click="closeShortcutConflict">取消</a-button>
         </div>
       </div>
-    </Teleport>
+    </a-modal>
   </div>
 </template>
 

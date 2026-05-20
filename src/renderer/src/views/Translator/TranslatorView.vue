@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { ArrowLeftRight, Copy, Wand2, X } from 'lucide-vue-next'
+import { ArrowLeftRight, Copy, /* Wand2,  */ X } from 'lucide-vue-next'
 import { TRANSLATOR_EVENTS } from '@shared/translator'
 import type { AppSettings } from '@shared/settings'
 import confirm from '@renderer/utils/confirm'
@@ -21,6 +21,12 @@ const targetItems: Array<{ title: string; value: string }> = [
   { title: '自动识别', value: 'auto' },
   ...Languages
 ]
+
+function toSelectOptions(
+  items: Array<{ title: string; value: string }>
+): Array<{ label: string; value: string }> {
+  return items.map((i) => ({ label: i.title, value: i.value }))
+}
 
 const inputText = ref('')
 const outputText = ref('')
@@ -160,33 +166,21 @@ onMounted(() => {
     <section class="card">
       <div class="row">
         <div class="label">源语言</div>
-        <v-select
-          v-model="source"
-          class="select"
-          :items="sourceItems"
-          item-title="title"
-          item-value="value"
-        />
+        <a-select v-model:value="source" class="select" :options="toSelectOptions(sourceItems)" />
 
-        <button class="swap" type="button" @click="swapLanguages">
-          <ArrowLeftRight :size="16" />
-        </button>
+        <!-- <button class="swap" type="button" > -->
+        <ArrowLeftRight :size="16" @click="swapLanguages" />
+        <!-- </button> -->
 
         <div class="label">目标语言</div>
-        <v-select
-          v-model="target"
-          class="select"
-          :items="targetItems"
-          item-title="title"
-          item-value="value"
-        />
+        <a-select v-model:value="target" class="select" :options="toSelectOptions(targetItems)" />
 
         <div class="spacer" />
 
-        <button class="btn primary" type="button" :disabled="!canTranslate" @click="translate">
-          <Wand2 :size="16" />
+        <a-button type="primary" :disabled="!canTranslate" @click="translate">
+          <!-- <Wand2 :size="16" /> -->
           {{ loading ? '翻译中...' : '翻译' }}
-        </button>
+        </a-button>
       </div>
     </section>
 

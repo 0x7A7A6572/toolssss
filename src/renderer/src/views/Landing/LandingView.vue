@@ -241,7 +241,7 @@ onBeforeUnmount(() => {
       </header>
 
       <div class="faq">
-        <v-empty-state headline="" title="暂无" text=".." image="1"></v-empty-state>
+        <a-empty description="暂无" />
         <!-- <div v-for="f in faqs" :key="f.q" class="card qa">
           <div class="q">{{ f.q }}</div>
           <div class="a">{{ f.a }}</div>
