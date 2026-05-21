@@ -299,7 +299,7 @@ export function createTranslatorDomain(deps: Deps): {
     if (!base) throw new Error('未配置 AI Base URL，请到「全局设置」完善。')
     const model = settings.ai.model.trim()
     if (!model) throw new Error('未配置 AI Model，请到「全局设置」完善。')
-    const apiKey = getAiApiKeyFromSecrets()
+    const apiKey = getAiApiKeyFromSecrets(settings.ai.activeProfileId)
     if (!apiKey) throw new Error('未配置 AI API Key，请到「全局设置」完善。')
 
     const source = args.source && args.source !== 'auto' ? args.source : 'auto'

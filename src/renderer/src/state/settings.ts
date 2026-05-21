@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { isProxy, ref, toRaw } from 'vue'
 import { DEFAULT_SETTINGS, type AppSettings, type SettingsPatch } from '@shared/settings'
 
 const settings = ref<AppSettings>(structuredClone(DEFAULT_SETTINGS))
@@ -19,8 +19,24 @@ async function refresh(): Promise<void> {
   apply(ret)
 }
 
+function toPlainValue<T>(value: T): T {
+  const raw = isProxy(value) ? toRaw(value) : value
+  if (Array.isArray(raw)) {
+    return raw.map((item) => toPlainValue(item)) as T
+  }
+  if (raw && typeof raw === 'object') {
+    const out: Record<string, unknown> = {}
+    for (const [key, item] of Object.entries(raw as Record<string, unknown>)) {
+      out[key] = toPlainValue(item)
+    }
+    return out as T
+  }
+  return raw
+}
+
 async function update(patch: SettingsPatch): Promise<void> {
-  const ret = (await window.electron.ipcRenderer.invoke('settings:update', patch)) as unknown
+  const plainPatch = toPlainValue(patch)
+  const ret = (await window.electron.ipcRenderer.invoke('settings:update', plainPatch)) as unknown
   apply(ret)
 }
 

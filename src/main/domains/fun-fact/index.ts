@@ -63,7 +63,7 @@ async function requestFromAiStreamed(args: {
   if (!base) throw new Error('未配置 AI Base URL，请到「全局设置」完善。')
   const model = settings.ai.model.trim()
   if (!model) throw new Error('未配置 AI Model，请到「全局设置」完善。')
-  const apiKey = getAiApiKeyFromSecrets()
+  const apiKey = getAiApiKeyFromSecrets(settings.ai.activeProfileId)
   if (!apiKey) throw new Error('未配置 AI API Key，请到「全局设置」完善。')
 
   const url = buildAiChatCompletionsUrl(base)
@@ -146,7 +146,7 @@ async function requestFromAi(settings: AppSettings, ymd: string): Promise<string
   if (!base) throw new Error('未配置 AI Base URL，请到「全局设置」完善。')
   const model = settings.ai.model.trim()
   if (!model) throw new Error('未配置 AI Model，请到「全局设置」完善。')
-  const apiKey = getAiApiKeyFromSecrets()
+  const apiKey = getAiApiKeyFromSecrets(settings.ai.activeProfileId)
   if (!apiKey) throw new Error('未配置 AI API Key，请到「全局设置」完善。')
 
   const url = buildAiChatCompletionsUrl(base)

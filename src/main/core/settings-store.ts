@@ -1,9 +1,105 @@
 import { app } from 'electron'
 import { readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
-import { DEFAULT_SETTINGS, type AppSettings, type SettingsPatch } from '@shared/settings'
+import { AI_PROVIDERS } from '@shared/ai-providers'
+import {
+  DEFAULT_SETTINGS,
+  type AiProfile,
+  type AiProvider,
+  type AppSettings,
+  type SettingsPatch
+} from '@shared/settings'
 import { clampNumber, normalizeTimeString } from '@main-shared/primitives'
-import { getAiApiKeyFromSecrets, setAiApiKeyToSecrets } from './secrets'
+import {
+  getAiApiKeyFromSecrets,
+  getLegacyAiApiKeyFromSecrets,
+  setAiApiKeyToSecrets
+} from './secrets'
+
+function isAiProvider(value: unknown): value is AiProvider {
+  return value === 'custom' || (typeof value === 'string' && value in AI_PROVIDERS)
+}
+
+function normalizeAiProfile(input: unknown): AiProfile | null {
+  if (!input || typeof input !== 'object') return null
+  const raw = input as Record<string, unknown>
+  const id = typeof raw['id'] === 'string' ? raw['id'].trim() : ''
+  const name = typeof raw['name'] === 'string' ? raw['name'].trim() : ''
+  const provider = raw['provider']
+  const source = raw['source']
+  const baseUrl = typeof raw['baseUrl'] === 'string' ? raw['baseUrl'].trim() : ''
+  const model = typeof raw['model'] === 'string' ? raw['model'].trim() : ''
+  if (
+    !id ||
+    !name ||
+    !isAiProvider(provider) ||
+    (source !== 'provider' && source !== 'custom') ||
+    !baseUrl ||
+    !model
+  ) {
+    return null
+  }
+  return {
+    id,
+    name,
+    source,
+    provider,
+    baseUrl,
+    model,
+    apiKeySet: Boolean(raw['apiKeySet'])
+  }
+}
+
+function shouldCreateLegacyAiProfile(ai: AppSettings['ai']): boolean {
+  if (ai.profiles.length) return false
+  return Boolean(ai.baseUrl.trim() && ai.model.trim())
+}
+
+function createLegacyAiProfile(ai: AppSettings['ai']): AiProfile {
+  const isProviderProfile =
+    ai.provider !== 'custom' &&
+    Boolean(AI_PROVIDERS[ai.provider]) &&
+    AI_PROVIDERS[ai.provider].baseUrl.trim() === ai.baseUrl.trim() &&
+    AI_PROVIDERS[ai.provider].models.includes(ai.model.trim())
+  const source = isProviderProfile ? 'provider' : 'custom'
+  const provider = isProviderProfile ? ai.provider : 'custom'
+  const providerTitle =
+    source === 'provider' ? AI_PROVIDERS[provider as Exclude<AiProvider, 'custom'>].title : '自定义'
+  return {
+    id: 'legacy-imported',
+    name:
+      source === 'provider'
+        ? `${providerTitle} · ${ai.model.trim()}`
+        : ai.model.trim() || '已迁移模型',
+    source,
+    provider,
+    baseUrl: ai.baseUrl.trim(),
+    model: ai.model.trim(),
+    apiKeySet: ai.apiKeySet
+  }
+}
+
+function syncActiveAiProfile(ai: AppSettings['ai']): void {
+  const activeId = ai.activeProfileId.trim()
+  if (!activeId) {
+    ai.baseUrl = ''
+    ai.model = ''
+    ai.apiKeySet = false
+    return
+  }
+  const activeProfile = ai.profiles.find((item) => item.id === activeId)
+  if (!activeProfile) {
+    ai.activeProfileId = ''
+    ai.baseUrl = ''
+    ai.model = ''
+    ai.apiKeySet = false
+    return
+  }
+  ai.provider = activeProfile.provider
+  ai.baseUrl = activeProfile.baseUrl
+  ai.model = activeProfile.model
+  ai.apiKeySet = activeProfile.apiKeySet
+}
 
 function settingsFilePath(): string {
   return join(app.getPath('userData'), 'settings.json')
@@ -138,17 +234,18 @@ export function normalizeSettings(input: unknown): AppSettings {
     const ai = (obj as { ai: Record<string, unknown> }).ai
     base.ai.enabled = Boolean(ai['enabled'])
     const provider = ai['provider']
-    if (
-      provider === 'openai' ||
-      provider === 'gmini' ||
-      provider === 'kimi' ||
-      provider === 'qwen' ||
-      provider === 'custom'
-    )
-      base.ai.provider = provider
+    if (isAiProvider(provider)) base.ai.provider = provider
     if (typeof ai['baseUrl'] === 'string') base.ai.baseUrl = ai['baseUrl'].trim()
     if (typeof ai['model'] === 'string') base.ai.model = ai['model'].trim()
     if (typeof ai['apiKeySet'] === 'boolean') base.ai.apiKeySet = ai['apiKeySet'] as boolean
+    if (typeof ai['activeProfileId'] === 'string')
+      base.ai.activeProfileId = (ai['activeProfileId'] as string).trim()
+    if (Array.isArray(ai['profiles'])) {
+      const profiles = (ai['profiles'] as unknown[])
+        .map((item) => normalizeAiProfile(item))
+        .filter((item): item is AiProfile => item !== null)
+      base.ai.profiles = profiles
+    }
   }
 
   if (
@@ -236,6 +333,17 @@ export function normalizeSettings(input: unknown): AppSettings {
     if (typeof ws['durationMs'] === 'number')
       base.windowStash.durationMs = clampNumber(Number(ws['durationMs']), 60, 1200)
   }
+
+  if (
+    shouldCreateLegacyAiProfile(base.ai) &&
+    !base.ai.profiles.some((item) => item.id === 'legacy-imported')
+  ) {
+    const imported = createLegacyAiProfile(base.ai)
+    base.ai.profiles = [imported, ...base.ai.profiles]
+    base.ai.activeProfileId = imported.id
+  }
+
+  syncActiveAiProfile(base.ai)
 
   return base
 }
@@ -347,17 +455,17 @@ export function applySettingsPatch(current: AppSettings, patch: unknown): AppSet
     const ai = (p as { ai: Record<string, unknown> }).ai
     if (typeof ai['enabled'] === 'boolean') next.ai.enabled = ai['enabled'] as boolean
     const provider = ai['provider']
-    if (
-      provider === 'openai' ||
-      provider === 'gmini' ||
-      provider === 'kimi' ||
-      provider === 'qwen' ||
-      provider === 'custom'
-    )
-      next.ai.provider = provider
+    if (isAiProvider(provider)) next.ai.provider = provider
     if (typeof ai['baseUrl'] === 'string') next.ai.baseUrl = ai['baseUrl'] as string
     if (typeof ai['model'] === 'string') next.ai.model = ai['model'] as string
     if (typeof ai['apiKeySet'] === 'boolean') next.ai.apiKeySet = ai['apiKeySet'] as boolean
+    if (typeof ai['activeProfileId'] === 'string')
+      next.ai.activeProfileId = (ai['activeProfileId'] as string).trim()
+    if (Array.isArray(ai['profiles'])) {
+      next.ai.profiles = ai['profiles']
+        .map((item) => normalizeAiProfile(item))
+        .filter((item): item is AiProfile => item !== null)
+    }
   }
 
   if (
@@ -451,11 +559,11 @@ export function loadSettingsFromDisk(): AppSettings {
   }
 
   const normalized = normalizeSettings(parsed)
-  const existing = getAiApiKeyFromSecrets()
-  if (existing) {
-    normalized.ai.apiKeySet = true
-    return normalized
-  }
+  normalized.ai.profiles = normalized.ai.profiles.map((item) => ({
+    ...item,
+    apiKeySet: Boolean(getAiApiKeyFromSecrets(item.id))
+  }))
+  syncActiveAiProfile(normalized.ai)
 
   const legacyKey =
     parsed && typeof parsed === 'object'
@@ -464,17 +572,20 @@ export function loadSettingsFromDisk(): AppSettings {
         ]
       : undefined
   const legacyTrimmed = typeof legacyKey === 'string' ? legacyKey.trim() : ''
-  if (!legacyTrimmed) {
-    normalized.ai.apiKeySet = false
+  const legacySecret = legacyTrimmed || getLegacyAiApiKeyFromSecrets() || ''
+  if (!legacySecret) {
     return normalized
   }
 
-  if (!setAiApiKeyToSecrets(legacyTrimmed)) {
-    normalized.ai.apiKeySet = false
+  const activeSecretKey = normalized.ai.activeProfileId.trim()
+  if (!activeSecretKey || !setAiApiKeyToSecrets(activeSecretKey, legacySecret)) {
     return normalized
   }
 
-  normalized.ai.apiKeySet = true
+  normalized.ai.profiles = normalized.ai.profiles.map((item) =>
+    item.id === activeSecretKey ? { ...item, apiKeySet: true } : item
+  )
+  syncActiveAiProfile(normalized.ai)
   saveSettingsToDisk(normalized)
   return normalized
 }

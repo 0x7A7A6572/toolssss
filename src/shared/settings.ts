@@ -1,4 +1,18 @@
+import type { AiProviderKey } from './ai-providers'
+
 export type AlarmReason = 'alarm' | 'break'
+export type AiProvider = AiProviderKey | 'custom'
+export type AiProfileSource = 'provider' | 'custom'
+
+export interface AiProfile {
+  id: string
+  name: string
+  source: AiProfileSource
+  provider: AiProvider
+  baseUrl: string
+  model: string
+  apiKeySet: boolean
+}
 
 export interface AppSettings {
   general: {
@@ -33,10 +47,12 @@ export interface AppSettings {
   }
   ai: {
     enabled: boolean
-    provider: 'openai' | 'gmini' | 'kimi' | 'qwen' | 'custom'
+    provider: AiProvider
     baseUrl: string
     model: string
     apiKeySet: boolean
+    activeProfileId: string
+    profiles: AiProfile[]
   }
   funFact: {
     title: string
@@ -153,9 +169,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   ai: {
     enabled: false,
     provider: 'openai',
-    baseUrl: 'https://api.openai.com',
-    model: 'gpt-4o-mini',
-    apiKeySet: false
+    baseUrl: '',
+    model: '',
+    apiKeySet: false,
+    activeProfileId: '',
+    profiles: []
   },
   funFact: {
     title: '每日冷知识',

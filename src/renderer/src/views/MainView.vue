@@ -482,6 +482,9 @@ onBeforeUnmount(() => {
   font-weight: 700;
 }
 .update-sub {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   font-size: 13px;
   color: rgba(235, 235, 245, 0.72);
 }
