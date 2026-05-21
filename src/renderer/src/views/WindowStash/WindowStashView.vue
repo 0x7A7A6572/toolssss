@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch, toRaw } from 'vue'
 import { DEFAULT_SETTINGS, type AppSettings, type SettingsPatch } from '@shared/settings'
 import { PencilLine, X } from 'lucide-vue-next'
 import AppSwitch from '../../components/AppSwitch.vue'
+import { useSettingsStore } from '@renderer/state/settings'
 
 type Edge = 'left' | 'right' | 'top' | 'bottom'
 type StashedItem = {
@@ -14,7 +15,14 @@ type StashedItem = {
 }
 
 const items = ref<StashedItem[]>([])
-const stashSettings = ref<AppSettings['windowStash']>(structuredClone(DEFAULT_SETTINGS.windowStash))
+function cloneWindowStashSettings(v: AppSettings['windowStash']): AppSettings['windowStash'] {
+  return { ...v, handleColors: { ...v.handleColors } }
+}
+
+const stashSettings = ref<AppSettings['windowStash']>(
+  cloneWindowStashSettings(DEFAULT_SETTINGS.windowStash)
+)
+const settingsStore = useSettingsStore()
 const HANDLE_EDGES: Edge[] = ['left', 'top', 'right', 'bottom']
 const durationMsDraft = ref(stashSettings.value.durationMs)
 const opacityDraft = ref(stashSettings.value.handleOpacity)
@@ -69,12 +77,12 @@ watch(
     colorDrafts.value = { ...v }
   }
 )
-
 watch(
-  () => stashSettings.value.handleColors,
+  () => settingsStore.settings.value.windowStash,
   (v) => {
-    colorDrafts.value = { ...v }
-  }
+    stashSettings.value = cloneWindowStashSettings(toRaw(v))
+  },
+  { deep: true, immediate: true }
 )
 
 watch(
@@ -121,19 +129,10 @@ async function refresh(): Promise<void> {
   }
 }
 
-async function refreshSettings(): Promise<void> {
-  try {
-    const ret = (await window.electron.ipcRenderer.invoke('settings:get')) as AppSettings
-    stashSettings.value = ret.windowStash
-  } catch {
-    stashSettings.value = structuredClone(DEFAULT_SETTINGS.windowStash)
-  }
-}
-
 async function update(patch: SettingsPatch): Promise<void> {
   try {
-    const ret = (await window.electron.ipcRenderer.invoke('settings:update', patch)) as AppSettings
-    stashSettings.value = ret.windowStash
+    await settingsStore.update(patch)
+    stashSettings.value = cloneWindowStashSettings(toRaw(settingsStore.settings.value.windowStash))
   } catch {
     void 0
   }
@@ -189,7 +188,6 @@ function setShowHandleDrag(v: boolean): void {
 
 function restore(hwnd: string): void {
   if (!hwnd.trim()) return
-  console.log('hwnd:', hwnd)
   window.electron.ipcRenderer.send('window-stash:toggle', { hwnd, activate: true })
 }
 
@@ -249,7 +247,6 @@ const onChanged = (_: unknown, payload: unknown): void => {
 
 onMounted(() => {
   void refresh()
-  void refreshSettings()
   window.electron.ipcRenderer.on('window-stash:changed', onChanged)
 })
 
@@ -332,9 +329,10 @@ onBeforeUnmount(() => {
           <div class="slider-wrap">
             <a-slider
               v-model:value="durationMsDraft"
-              :min="60"
-              :max="500"
-              :step="10"
+              :min="30"
+              :max="200"
+              :step="30"
+              show-label
               @after-change="(v) => setDurationMs(Array.isArray(v) ? v[0] : v)"
             />
           </div>

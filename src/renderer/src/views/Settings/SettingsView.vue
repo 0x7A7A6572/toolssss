@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { DEFAULT_SETTINGS, type AppSettings, type SettingsPatch } from '@shared/settings'
+import type { AppSettings, SettingsPatch } from '@shared/settings'
 import ShortcutInput from '../../components/ShortcutInput.vue'
 import AppSwitch from '../../components/AppSwitch.vue'
 import { Delete, FolderOpen } from 'lucide-vue-next'
 import { AI_PROVIDERS } from '../../constants/aiProviders'
 import { Languages } from '@renderer/utils/bean'
+import { useSettingsStore } from '@renderer/state/settings'
 
-const settings = ref<AppSettings>(structuredClone(DEFAULT_SETTINGS))
+const settingsStore = useSettingsStore()
+const settings = settingsStore.settings
 const saving = ref(false)
 const appPaths = ref<{ userData: string; pictures: string } | null>(null)
 const aiApiKeyDraft = ref('')
@@ -239,15 +241,13 @@ function onAiModelChange(value: string): void {
 }
 
 async function refresh(): Promise<void> {
-  const result = await window.electron.ipcRenderer.invoke('settings:get')
-  settings.value = result as AppSettings
+  await settingsStore.refresh()
 }
 
 async function update(patch: SettingsPatch): Promise<void> {
   saving.value = true
   try {
-    const result = await window.electron.ipcRenderer.invoke('settings:update', patch)
-    settings.value = result as AppSettings
+    await settingsStore.update(patch)
   } finally {
     saving.value = false
   }
@@ -259,7 +259,7 @@ async function setAiApiKey(): Promise<void> {
   saving.value = true
   try {
     const result = await window.electron.ipcRenderer.invoke('ai:apiKey:set', v)
-    settings.value = result as AppSettings
+    settingsStore.replace(result as AppSettings)
     aiApiKeyDraft.value = ''
   } finally {
     saving.value = false
@@ -270,7 +270,7 @@ async function clearAiApiKey(): Promise<void> {
   saving.value = true
   try {
     const result = await window.electron.ipcRenderer.invoke('ai:apiKey:clear')
-    settings.value = result as AppSettings
+    settingsStore.replace(result as AppSettings)
     aiApiKeyDraft.value = ''
   } finally {
     saving.value = false
@@ -306,9 +306,6 @@ onMounted(() => {
       version.value = typeof v === 'string' ? v : ''
     })
     .catch(() => null)
-  window.electron.ipcRenderer.on('settings:changed', (_: unknown, s: unknown) => {
-    settings.value = s as AppSettings
-  })
 })
 </script>
 

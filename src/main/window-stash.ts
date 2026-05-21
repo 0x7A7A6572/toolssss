@@ -12,6 +12,7 @@ import {
   type ExternalWindowRect
 } from './external-window'
 import { DEFAULT_SETTINGS, type AppSettings } from '@shared/settings'
+import { clampNumber } from '@main-shared/primitives'
 
 type StashedWindow = {
   hwnd: string
@@ -208,11 +209,6 @@ function normalizeHexColor(s: string): string | null {
   const v = typeof s === 'string' ? s.trim() : ''
   if (!v) return null
   return /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(v) ? v : null
-}
-
-function clampNumber(value: number, min: number, max: number): number {
-  if (Number.isNaN(value) || !Number.isFinite(value)) return min
-  return Math.min(max, Math.max(min, value))
 }
 
 function rectContainsPoint(

@@ -1,50 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { WeatherTool } from '../../utils/weather'
-import type { WeatherDashboard } from '@shared/weather'
+import type { WeatherDashboard, WeatherProvinceCity } from '@shared/weather'
 import { DEFAULT_SETTINGS, type AppSettings } from '@shared/settings'
+import { useSettingsStore } from '@renderer/state/settings'
 import { PencilLine, Settings, Sparkles, Plus } from 'lucide-vue-next'
-import LazyCascader from '../../components/LazyCascader.vue'
 import SevenDayTempChart from '../../components/SevenDayTempChart.vue'
 import { LegalHoliday, SolarDay } from 'tyme4ts'
 import answerBookData from '../../../../libs/book-of-answers.json'
-
-const PROVINCES: Array<{ name: string; code: string }> = [
-  { name: '北京', code: 'BJ' },
-  { name: '天津', code: 'TJ' },
-  { name: '上海', code: 'SH' },
-  { name: '重庆', code: 'CQ' },
-  { name: '河北', code: 'HE' },
-  { name: '山西', code: 'SX' },
-  { name: '内蒙古', code: 'NM' },
-  { name: '辽宁', code: 'LN' },
-  { name: '吉林', code: 'JL' },
-  { name: '黑龙江', code: 'HL' },
-  { name: '江苏', code: 'JS' },
-  { name: '浙江', code: 'ZJ' },
-  { name: '安徽', code: 'AH' },
-  { name: '福建', code: 'FJ' },
-  { name: '江西', code: 'JX' },
-  { name: '山东', code: 'SD' },
-  { name: '河南', code: 'HA' },
-  { name: '湖北', code: 'HB' },
-  { name: '湖南', code: 'HN' },
-  { name: '广东', code: 'GD' },
-  { name: '广西', code: 'GX' },
-  { name: '海南', code: 'HI' },
-  { name: '四川', code: 'SC' },
-  { name: '贵州', code: 'GZ' },
-  { name: '云南', code: 'YN' },
-  { name: '西藏', code: 'XZ' },
-  { name: '陕西', code: 'SN' },
-  { name: '甘肃', code: 'GS' },
-  { name: '青海', code: 'QH' },
-  { name: '宁夏', code: 'NX' },
-  { name: '新疆', code: 'XJ' },
-  { name: '香港', code: 'HK' },
-  { name: '澳门', code: 'MO' },
-  { name: '台湾', code: 'TW' }
-]
 
 const DEFAULT_STATION_ID = '59431'
 const stationId = ref<string>(localStorage.getItem('weather.stationId') ?? DEFAULT_STATION_ID)
@@ -62,9 +25,19 @@ const citiesLoading = ref(false)
 const citiesErrorText = ref<string | null>(null)
 const lastRefreshMs = ref<number>(0)
 const lastRefreshKey = ref<string>('')
-const cascValue = ref<Array<string | number>>([])
 const cityPickerOpen = ref(false)
 const paydayDialogOpen = ref(false)
+const provinces = ref<WeatherProvinceCity[]>([])
+const provincesLoading = ref(false)
+const provincesErrorText = ref<string | null>(null)
+const provinceQuery = ref<string>('')
+
+const filteredProvinces = computed(() => {
+  const q = provinceQuery.value.trim()
+  if (!q) return provinces.value
+  const qUpper = q.toUpperCase()
+  return provinces.value.filter((p) => p.name.includes(q) || p.id.toUpperCase().includes(qUpper))
+})
 
 const PAYDAY_KEY = 'workCalendar.paydayDay'
 const paydayDay = ref<number>(normalizePaydayDay(localStorage.getItem(PAYDAY_KEY)))
@@ -91,7 +64,8 @@ const answerSpotlightStyle = computed<Record<string, string>>(() => ({
   '--answer-spot-y': `${answerSpotlightY.value}px`
 }))
 
-const settings = ref<AppSettings>(structuredClone(DEFAULT_SETTINGS))
+const settingsStore = useSettingsStore()
+const settings = computed(() => settingsStore.settings.value)
 
 const FUN_FACT_YMD_KEY = 'ai.funFact.ymd'
 const FUN_FACT_TEXT_KEY = 'ai.funFact.text'
@@ -175,7 +149,7 @@ async function saveFunFactEditor(): Promise<void> {
         prompt
       }
     })) as AppSettings
-    settings.value = ret
+    settingsStore.replace(ret)
     closeFunFactEditor()
   } catch (e) {
     funFactEditErrorText.value = e instanceof Error ? e.message : '保存失败'
@@ -193,13 +167,8 @@ function normalizeCachedFunFact(): void {
   localStorage.removeItem(FUN_FACT_TEXT_KEY)
 }
 
-const onSettingsChanged = (_: unknown, s: unknown): void => {
-  settings.value = s as AppSettings
-}
-
 async function refreshSettings(): Promise<void> {
-  const result = await window.electron.ipcRenderer.invoke('settings:get')
-  settings.value = result as AppSettings
+  await settingsStore.refresh()
 }
 
 function endFunFactLoading(): void {
@@ -295,10 +264,19 @@ async function refreshDailyFunFact(force: boolean): Promise<void> {
 
 function openCityPicker(): void {
   cityPickerOpen.value = true
+  provinceQuery.value = ''
+  if (provinces.value.length === 0) {
+    loadProvinces()
+      .then(() => loadCitiesForProvince(provCode.value))
+      .catch(() => null)
+    return
+  }
+  loadCitiesForProvince(provCode.value).catch(() => null)
 }
 
 function closeCityPicker(): void {
   cityPickerOpen.value = false
+  provinceQuery.value = ''
 }
 
 function onKeydown(e: KeyboardEvent): void {
@@ -308,45 +286,31 @@ function onKeydown(e: KeyboardEvent): void {
   closeFunFactEditor()
 }
 
-const provinceOptions = computed(() =>
-  PROVINCES.map((p) => ({
-    label: p.name,
-    value: p.code
-  }))
-)
-
-async function lazyLoadCities(
-  children: { value?: unknown; label?: unknown },
-  resolve: (children: Array<{ label: string; value: string }>) => void
-): Promise<void> {
-  const code = String(children.value || '')
-    .trim()
-    .toUpperCase()
-  const list = await WeatherTool.getProvinceCities(code)
-  resolve(list.map((c) => ({ label: c.name, value: c.id })))
-}
-
-const onCascChange = (payload: {
-  value: unknown[]
-  labels: string[]
-  selectedNodes: unknown[]
-}): void => {
-  const arr: unknown[] = Array.isArray(payload?.value) ? payload.value : []
-  const pv = typeof arr[0] === 'string' ? (arr[0] as string) : provCode.value
-  const city = typeof arr[1] === 'string' ? (arr[1] as string) : null
-  provCode.value = pv
-  localStorage.setItem('weather.provCode', pv)
-  if (city) {
-    chosenCityId.value = city
-    stationId.value = city
-    localStorage.setItem('weather.stationId', stationId.value)
-    refresh().catch(() => null)
-    closeCityPicker()
+async function loadProvinces(): Promise<void> {
+  provincesLoading.value = true
+  provincesErrorText.value = null
+  try {
+    const list = await WeatherTool.getProvinces()
+    provinces.value = list
+    const current = provCode.value
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z]/g, '')
+    const next = list.some((p) => p.id === current) ? current : (list[0]?.id ?? '')
+    if (next) {
+      provCode.value = next
+      localStorage.setItem('weather.provCode', next)
+    }
+  } catch {
+    provinces.value = []
+    provincesErrorText.value = '省份列表加载失败'
+  } finally {
+    provincesLoading.value = false
   }
 }
 
-async function loadCities(): Promise<void> {
-  const code = provCode.value
+async function loadCitiesForProvince(inputCode: string): Promise<void> {
+  const code = inputCode
     .trim()
     .toUpperCase()
     .replace(/[^A-Z]/g, '')
@@ -372,6 +336,26 @@ async function loadCities(): Promise<void> {
   } finally {
     citiesLoading.value = false
   }
+}
+
+function selectProvince(code: string): void {
+  const next = code
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z]/g, '')
+  if (!next) return
+  if (provCode.value !== next) chosenCityId.value = null
+  loadCitiesForProvince(next).catch(() => null)
+}
+
+function selectCity(cityId: string): void {
+  const v = String(cityId || '').trim()
+  if (!v) return
+  chosenCityId.value = v
+  stationId.value = v
+  localStorage.setItem('weather.stationId', v)
+  refresh().catch(() => null)
+  closeCityPicker()
 }
 
 const todayWeatherEmoji = computed(() => {
@@ -635,7 +619,6 @@ async function refresh(): Promise<void> {
 
 onMounted(() => {
   window.addEventListener('keydown', onKeydown)
-  window.electron.ipcRenderer.on('settings:changed', onSettingsChanged)
   window.electron.ipcRenderer.on('ai:funfact:daily:chunk', onFunFactChunk)
   window.electron.ipcRenderer.on('ai:funfact:daily:done', onFunFactDone)
   window.electron.ipcRenderer.on('ai:funfact:daily:error', onFunFactError)
@@ -654,7 +637,8 @@ onMounted(() => {
         refreshDailyFunFact(false).catch(() => null)
     })
     .catch(() => null)
-  loadCities()
+  loadProvinces()
+    .then(() => loadCitiesForProvince(provCode.value))
     .then(() => {
       if (chosenCityId.value) {
         stationId.value = chosenCityId.value
@@ -662,14 +646,11 @@ onMounted(() => {
       }
       refresh().catch(() => null)
     })
-    .catch(() => {
-      refresh().catch(() => null)
-    })
+    .catch(() => refresh().catch(() => null))
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
-  window.electron.ipcRenderer.removeListener('settings:changed', onSettingsChanged)
   window.electron.ipcRenderer.removeListener('ai:funfact:daily:chunk', onFunFactChunk)
   window.electron.ipcRenderer.removeListener('ai:funfact:daily:done', onFunFactDone)
   window.electron.ipcRenderer.removeListener('ai:funfact:daily:error', onFunFactError)
@@ -995,19 +976,46 @@ onUnmounted(() => {
   <a-modal :open="cityPickerOpen" centered :footer="null" @cancel="closeCityPicker">
     <div class="city-picker">
       <div class="picker-title mb-[10px]">选择城市</div>
-      <LazyCascader
-        v-model="cascValue"
-        :options="provinceOptions"
-        :lazy-load="lazyLoadCities"
-        :lazy-load-level="0"
-        :props-config="{
-          label: 'label',
-          value: 'value',
-          children: 'children',
-          disabled: 'disabled'
-        }"
-        @change="onCascChange"
-      />
+      <div v-if="!provincesLoading && !provincesErrorText" class="province-search">
+        <a-input v-model:value="provinceQuery" allow-clear placeholder="搜索省份（名称/代码）" />
+      </div>
+      <div v-if="provincesLoading" class="picker-loading">
+        <div class="loading-spinner"></div>
+      </div>
+      <div v-else-if="provincesErrorText" class="error">{{ provincesErrorText }}</div>
+      <div v-else-if="filteredProvinces.length === 0" class="empty">没有匹配的省份</div>
+      <div v-else class="province-grid">
+        <template v-for="p in filteredProvinces" :key="p.id">
+          <button
+            class="province-btn"
+            :class="{ active: p.id === provCode }"
+            type="button"
+            @click="selectProvince(p.id)"
+          >
+            {{ p.name }}
+          </button>
+
+          <div v-if="p.id === provCode" class="province-city-panel">
+            <div class="city-list-head">城市</div>
+            <div v-if="citiesLoading" class="picker-loading">
+              <div class="loading-spinner"></div>
+            </div>
+            <div v-else-if="citiesErrorText" class="error">{{ citiesErrorText }}</div>
+            <div v-else class="city-grid">
+              <button
+                v-for="c in cities"
+                :key="c.id"
+                class="city-btn"
+                :class="{ active: c.id === chosenCityId }"
+                type="button"
+                @click="selectCity(c.id)"
+              >
+                {{ c.name }}
+              </button>
+            </div>
+          </div>
+        </template>
+      </div>
       <div class="picker-actions mt-[10px]">
         <a-button @click="closeCityPicker">关闭</a-button>
       </div>
@@ -1079,6 +1087,101 @@ onUnmounted(() => {
   /* 隐藏滚动条 */
   scrollbar-width: none; /* Firefox */
   -ms-overflow-style: none; /* IE/Edge */
+}
+
+.picker-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 64px;
+}
+
+.province-search {
+  margin-bottom: 10px;
+}
+
+.empty {
+  padding: 10px 0;
+  color: rgba(0, 0, 0, 0.45);
+  text-align: center;
+}
+
+.province-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  max-height: 70vh;
+  overflow-y: scroll;
+}
+
+.province-city-panel {
+  grid-column: 1 / -1;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: #2a2d31;
+  border-radius: 12px;
+  padding: 10px;
+}
+
+.province-btn {
+  border: none;
+  background: none;
+  border-radius: 10px;
+  padding: 10px 8px;
+  font-size: 13px;
+  line-height: 1.1;
+  cursor: pointer;
+  transition:
+    transform 80ms ease,
+    border-color 120ms ease,
+    background 120ms ease;
+}
+
+.province-btn:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.province-btn.active {
+  color: rgba(22, 119, 255, 0.832);
+  /* border-color: rgba(22, 119, 255, 0.55); */
+  /* background: rgba(22, 119, 255, 0.08); */
+}
+
+.city-list-head {
+  font-size: 13px;
+  /* color: rgba(0, 0, 0, 0.65); */
+}
+
+.city-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  max-height: 44vh;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.city-btn {
+  border: none;
+  background: none;
+  border-radius: 10px;
+  padding: 10px 8px;
+  font-size: 13px;
+  line-height: 1.1;
+  cursor: pointer;
+  transition:
+    transform 80ms ease,
+    border-color 120ms ease,
+    background 120ms ease;
+}
+
+.city-btn:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.city-btn.active {
+  /* border-color: rgba(22, 119, 255, 0.55);
+  background: rgba(22, 119, 255, 0.08); */
+  color: rgba(22, 119, 255, 0.832);
 }
 
 .header {

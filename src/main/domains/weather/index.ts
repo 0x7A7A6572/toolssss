@@ -15,6 +15,7 @@ const USER_AGENT =
 
 const NOW_BASE = 'https://weather.cma.cn/api/now'
 const FORECAST_BASE = 'https://weather.cma.cn/web/weather'
+const DICT_PROVINCE_BASE = 'https://weather.cma.cn/api/dict/province'
 
 function asFiniteNumber(v: unknown): number | null {
   const n = typeof v === 'number' ? v : Number(v)
@@ -182,6 +183,23 @@ function parseProvinceCities(raw: string): WeatherProvinceCity[] {
   return list
 }
 
+function normalizeProvincePcode(input: unknown): string {
+  if (typeof input !== 'string') return ''
+  const letters = input
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z]/g, '')
+  if (!letters) return ''
+  if (letters.startsWith('A')) return letters.length >= 3 ? letters.slice(0, 3) : ''
+  return letters.length >= 2 ? `A${letters.slice(0, 2)}` : ''
+}
+
+function normalizeProvinceIdForClient(id: string): string {
+  const v = id.trim().toUpperCase()
+  if (/^A[A-Z]{2}$/u.test(v)) return v.slice(1)
+  return id.trim()
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object') return null
   if (Array.isArray(value)) return null
@@ -273,6 +291,26 @@ function writeDashboardToDisk(stationId: string, data: WeatherDashboard): void {
 type ProvinceCacheEntry = { atMs: number; data: WeatherProvinceCity[] }
 const provinceCache = new Map<string, ProvinceCacheEntry>()
 const PROVINCE_CACHE_TTL_MS = 24 * 60 * 60 * 1000
+const PROVINCES_CACHE_KEY = '__provinces__'
+
+async function getProvinces(): Promise<WeatherProvinceCity[]> {
+  const cached = provinceCache.get(PROVINCES_CACHE_KEY)
+  if (cached && Date.now() - cached.atMs < PROVINCE_CACHE_TTL_MS) return cached.data
+  try {
+    const payloadJson = await fetchJson(DICT_PROVINCE_BASE, 'https://weather.cma.cn/')
+    const obj = asRecord(payloadJson)
+    const raw = typeof obj?.data === 'string' ? (obj.data as string) : ''
+    const data = parseProvinceCities(raw).map((it) => ({
+      id: normalizeProvinceIdForClient(it.id),
+      name: it.name
+    }))
+    provinceCache.set(PROVINCES_CACHE_KEY, { atMs: Date.now(), data })
+    return data
+  } catch {
+    provinceCache.delete(PROVINCES_CACHE_KEY)
+    return []
+  }
+}
 
 async function getDashboard(stationId: string): Promise<WeatherDashboard> {
   const cached = cache.get(stationId)
@@ -333,27 +371,25 @@ export function registerWeatherHandlers(): void {
     }
   })
 
+  ipcMain.handle(WEATHER_EVENTS.GET_PROVINCES, async () => {
+    return await getProvinces()
+  })
+
   ipcMain.handle(WEATHER_EVENTS.GET_PROVINCE_CITIES, async (_event, payload: unknown) => {
-    const code =
-      typeof payload === 'string'
-        ? payload
-            .trim()
-            .toUpperCase()
-            .replace(/[^A-Z]/g, '')
-        : ''
-    if (!code) return []
-    const cached = provinceCache.get(code)
+    const pcode = normalizeProvincePcode(payload)
+    if (!pcode) return []
+    const cached = provinceCache.get(pcode)
     if (cached && Date.now() - cached.atMs < PROVINCE_CACHE_TTL_MS) return cached.data
     try {
-      const url = `https://weather.cma.cn/api/dict/province/A${code}`
+      const url = `${DICT_PROVINCE_BASE}/${pcode}`
       const payloadJson = await fetchJson(url, 'https://weather.cma.cn/')
       const obj = asRecord(payloadJson)
       const raw = typeof obj?.data === 'string' ? (obj.data as string) : ''
       const data = parseProvinceCities(raw)
-      provinceCache.set(code, { atMs: Date.now(), data })
+      provinceCache.set(pcode, { atMs: Date.now(), data })
       return data
     } catch {
-      provinceCache.delete(code)
+      provinceCache.delete(pcode)
       return []
     }
   })

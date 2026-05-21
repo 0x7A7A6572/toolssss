@@ -3,7 +3,7 @@ import { randomUUID } from 'crypto'
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
-import { STICKY_NOTES_EVENTS, type StickyNote } from '../shared/sticky-notes'
+import { STICKY_NOTES_EVENTS, type StickyNote } from '@shared/sticky-notes'
 
 const NOTES_FILE = 'sticky-notes.json'
 let notesDirOverride: string | null = null
@@ -13,7 +13,7 @@ function broadcastNotes(notes: StickyNote[]): void {
     try {
       win.webContents.send('sticky-notes:changed', notes)
     } catch {
-      // ignore
+      void 0
     }
   }
 }
@@ -52,7 +52,7 @@ export function setStickyNotesSaveDir(saveDir: string | null): void {
       const raw = readFileSync(prevPath, 'utf-8')
       writeFileSync(nextPath, raw, 'utf-8')
     } catch {
-      // ignore
+      void 0
     }
   }
 
@@ -112,14 +112,13 @@ function createStickyEditorWindow(noteId: string): void {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true
-      // devTools: false
     }
   })
 
   try {
     win.webContents.closeDevTools()
   } catch {
-    // ignore
+    void 0
   }
 
   loadWindowForEditor(win, { mode: 'note-editor', id: noteId })

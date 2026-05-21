@@ -7,7 +7,11 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
     resolve: {
       alias: {
-        '@shared': resolve('src/shared')
+        '@main': resolve('src/main'),
+        '@shared': resolve('src/shared'),
+        '@main-shared': resolve('src/main/shared'),
+        '@main-core': resolve('src/main/core'),
+        '@libs': resolve('src/libs')
       }
     }
   },
@@ -23,7 +27,11 @@ export default defineConfig({
     },
     resolve: {
       alias: {
-        '@shared': resolve('src/shared')
+        '@main': resolve('src/main'),
+        '@shared': resolve('src/shared'),
+        '@main-shared': resolve('src/main/shared'),
+        '@main-core': resolve('src/main/core'),
+        '@libs': resolve('src/libs')
       }
     }
   },
@@ -31,14 +39,18 @@ export default defineConfig({
     resolve: {
       alias: {
         '@renderer': resolve('src/renderer/src'),
-        '@shared': resolve('src/shared')
+        '@main': resolve('src/main'),
+        '@shared': resolve('src/shared'),
+        '@main-shared': resolve('src/main/shared'),
+        '@main-core': resolve('src/main/core'),
+        '@libs': resolve('src/libs')
       }
     },
     build: {
       rollupOptions: {
         input: {
           index: resolve('src/renderer/index.html'),
-          screenshots: resolve('src/renderer/screenshots.html'),
+          screenshots: resolve('src/renderer/screenshots.html')
         }
       }
     },

@@ -2,8 +2,8 @@
 import { computed, onMounted, ref } from 'vue'
 import { ArrowLeftRight, Copy, /* Wand2,  */ X } from 'lucide-vue-next'
 import { TRANSLATOR_EVENTS } from '@shared/translator'
-import type { AppSettings } from '@shared/settings'
 import confirm from '@renderer/utils/confirm'
+import { useSettingsStore } from '@renderer/state/settings'
 import {
   appendTranslationHistory,
   clearTranslationHistory,
@@ -33,7 +33,8 @@ const outputText = ref('')
 const loading = ref(false)
 const errorText = ref('')
 
-const settings = ref<AppSettings | null>(null)
+const settingsStore = useSettingsStore()
+const settings = computed(() => settingsStore.settings.value)
 
 const source = ref('auto')
 const target = ref('zh')
@@ -43,7 +44,6 @@ const historyItems = ref<TranslationHistoryItem[]>([])
 const canTranslate = computed(() => inputText.value.trim().length > 0 && !loading.value)
 const missingConfigHint = computed(() => {
   const s = settings.value
-  if (!s) return ''
   if (s.translate.provider === 'ai') {
     if (!s.ai.enabled) return 'AI 未启用，请到「全局设置」开启。'
     if (!s.ai.baseUrl.trim()) return '未配置 AI Base URL，请到「全局设置」完善。'
@@ -97,10 +97,9 @@ async function clearHistory(): Promise<void> {
 }
 
 async function refreshSettings(): Promise<void> {
-  const s = (await window.electron.ipcRenderer.invoke('settings:get')) as AppSettings
-  settings.value = s
-  source.value = s.translate?.defaultSource || 'auto'
-  target.value = s.translate?.defaultTarget || 'zh'
+  await settingsStore.refresh()
+  source.value = settings.value.translate?.defaultSource || 'auto'
+  target.value = settings.value.translate?.defaultTarget || 'zh'
 }
 
 function swapLanguages(): void {
@@ -150,9 +149,6 @@ async function copyResult(): Promise<void> {
 onMounted(() => {
   refreshSettings().catch(() => null)
   refreshHistory()
-  window.electron.ipcRenderer.on('settings:changed', (_: unknown, s: unknown) => {
-    settings.value = s as AppSettings
-  })
 })
 </script>
 

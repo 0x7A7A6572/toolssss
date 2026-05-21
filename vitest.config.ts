@@ -4,7 +4,8 @@ import vue from '@vitejs/plugin-vue'
 export default defineConfig({
   resolve: {
     alias: {
-      '@root': '/'
+      '@root': '/',
+      '@main-shared': resolve(__dirname, 'src/main/shared')
     }
   },
   plugins: [vue()],

@@ -47,6 +47,42 @@ export default defineConfig(
       ]
     }
   },
+  {
+    files: ['src/main/domains/**/*.{ts,mts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['../*', '../*/**'],
+              message: '禁止跨域引用：domains 内只允许同域 ./ 导入，或依赖 core/shared'
+            },
+            {
+              group: ['@main/*'],
+              message: '禁止跨域引用：domains 内不允许依赖 main 根目录（使用 core/shared 或同域）'
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    files: ['src/main/domains/window-stash/index.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['../*', '../*/**'],
+              message: '禁止跨域引用：domains 内只允许同域 ./ 导入，或依赖 core/shared'
+            }
+          ]
+        }
+      ]
+    }
+  },
   eslintConfigPrettier,
   {
     rules: {

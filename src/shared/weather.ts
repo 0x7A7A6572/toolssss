@@ -1,5 +1,6 @@
 export const WEATHER_EVENTS = {
   GET_DASHBOARD: 'weather:dashboard:get',
+  GET_PROVINCES: 'weather:provinces:get',
   GET_PROVINCE_CITIES: 'weather:provinceCities:get'
 } as const
 
