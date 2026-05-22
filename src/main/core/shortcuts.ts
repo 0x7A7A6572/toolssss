@@ -92,48 +92,46 @@ export function registerShortcuts(args: RegisterArgs): void {
     }
   }
 
-  if (settings.snip.enabled) {
-    if (isEnabled(settings, 'snipStart') && (settings.shortcuts as Record<string, unknown>).snipStart) {
-      const acc = (settings.shortcuts as Record<string, string>).snipStart
-      if (acc) {
-        try {
-          globalShortcut.register(acc, () => args.startSnipCapture())
-        } catch (e) {
-          console.error('Failed to register shortcut:', acc, e)
-        }
+  if (isEnabled(settings, 'snipStart') && (settings.shortcuts as Record<string, unknown>).snipStart) {
+    const acc = (settings.shortcuts as Record<string, string>).snipStart
+    if (acc) {
+      try {
+        globalShortcut.register(acc, () => args.startSnipCapture())
+      } catch (e) {
+        console.error('Failed to register shortcut:', acc, e)
       }
     }
+  }
 
-    if (isEnabled(settings, 'stickerPaste') && (settings.shortcuts as Record<string, unknown>).stickerPaste) {
-      const acc = (settings.shortcuts as Record<string, string>).stickerPaste
-      if (acc) {
-        try {
-          if (!args.isSnipCapturing()) {
-            globalShortcut.register(acc, () => args.pasteStickerFromClipboard())
-          } else {
-            args.snipDbg('skip register stickerPaste during snip', acc)
-          }
-        } catch (e) {
-          console.error('Failed to register shortcut:', acc, e)
+  if (isEnabled(settings, 'stickerPaste') && (settings.shortcuts as Record<string, unknown>).stickerPaste) {
+    const acc = (settings.shortcuts as Record<string, string>).stickerPaste
+    if (acc) {
+      try {
+        if (!args.isSnipCapturing()) {
+          globalShortcut.register(acc, () => args.pasteStickerFromClipboard())
+        } else {
+          args.snipDbg('skip register stickerPaste during snip', acc)
         }
+      } catch (e) {
+        console.error('Failed to register shortcut:', acc, e)
       }
     }
+  }
 
-    if (
-      isEnabled(settings, 'stickersToggleHidden') &&
-      (settings.shortcuts as Record<string, unknown>).stickersToggleHidden
-    ) {
-      const acc = (settings.shortcuts as Record<string, string>).stickersToggleHidden
-      if (acc) {
-        try {
-          if (!args.isSnipCapturing()) {
-            globalShortcut.register(acc, () => args.toggleStickersHidden())
-          } else {
-            args.snipDbg('skip register stickersToggleHidden during snip', acc)
-          }
-        } catch (e) {
-          console.error('Failed to register shortcut:', acc, e)
+  if (
+    isEnabled(settings, 'stickersToggleHidden') &&
+    (settings.shortcuts as Record<string, unknown>).stickersToggleHidden
+  ) {
+    const acc = (settings.shortcuts as Record<string, string>).stickersToggleHidden
+    if (acc) {
+      try {
+        if (!args.isSnipCapturing()) {
+          globalShortcut.register(acc, () => args.toggleStickersHidden())
+        } else {
+          args.snipDbg('skip register stickersToggleHidden during snip', acc)
         }
+      } catch (e) {
+        console.error('Failed to register shortcut:', acc, e)
       }
     }
   }

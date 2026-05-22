@@ -207,9 +207,9 @@ const snipPlaceholder = computed(() => {
 const stickyNotesPlaceholder = computed(() => {
   const userData = appPaths.value?.userData
   if (typeof userData === 'string' && userData.trim()) {
-    return `默认：${joinPath(userData, 'sticky-notes.json')}`
+    return `默认：${userData.trim()}`
   }
-  return '默认：应用数据目录/sticky-notes.json'
+  return '默认：应用数据目录'
 })
 
 function createAiConfigDraft(provider: Exclude<AiProvider, 'custom'> = 'openai'): AiConfigDraft {
@@ -728,18 +728,9 @@ onMounted(() => {
       </div>
 
       <div class="row">
-        <div class="label">启用截屏贴图</div>
-        <AppSwitch
-          :model-value="settings.snip.enabled"
-          @update:model-value="update({ snip: { enabled: $event } })"
-        />
-      </div>
-
-      <div class="row">
         <div class="label">截图时隐藏护眼遮罩</div>
         <AppSwitch
           :model-value="settings.snip.suspendEyeOverlay"
-          :disabled="!settings.snip.enabled"
           @update:model-value="update({ snip: { suspendEyeOverlay: $event } })"
         />
       </div>
@@ -749,6 +740,8 @@ onMounted(() => {
       <div class="card-head">
         <div class="card-title">全局快捷键</div>
       </div>
+      <a-alert message="点击快捷键进行录制，支持 Ctrl, Alt, Shift 组合" type="info" show-icon>
+      </a-alert>
 
       <div v-if="shortcutConflictGroups.length" class="conflict-summary">
         <div class="conflict-summary-title">检测到快捷键冲突</div>
@@ -967,8 +960,6 @@ onMounted(() => {
           </div>
         </div>
       </div>
-
-      <div class="hint">点击上方快捷键进行录制，支持 Ctrl, Alt, Shift, Meta 组合</div>
     </section>
 
     <section class="card">

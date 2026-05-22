@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
-import { MasonryWall } from '@yeger/vue-masonry-wall'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { RefreshCw, Trash2, X } from 'lucide-vue-next'
 import confirm from '../../utils/confirm'
 
@@ -13,6 +12,15 @@ type SnipSavedItem = {
   size: number
 }
 
+type TimelineDayGroup = {
+  key: string
+  dateMs: number
+  label: string
+  count: number
+  totalBytes: number
+  items: SnipSavedItem[]
+}
+
 const saved = ref<SnipSavedItem[]>([])
 const loadingSaved = ref(false)
 const helpOpen = ref(false)
@@ -22,6 +30,99 @@ const elToItem = new WeakMap<Element, SnipSavedItem>()
 const thumbQueue: SnipSavedItem[] = []
 let thumbActive = 0
 const thumbConcurrency = 3
+
+const dateFormatter = new Intl.DateTimeFormat('zh-CN', {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit'
+})
+
+const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false
+})
+
+function formatDate(ms: number): string {
+  const v = Number(ms)
+  if (!Number.isFinite(v) || v <= 0) return '-'
+  return dateFormatter.format(new Date(v))
+}
+
+function formatTime(ms: number): string {
+  const v = Number(ms)
+  if (!Number.isFinite(v) || v <= 0) return '-'
+  return timeFormatter.format(new Date(v))
+}
+
+function dateKey(ms: number): { key: string; dayStartMs: number } {
+  const v = Number(ms)
+  if (!Number.isFinite(v) || v <= 0) return { key: 'unknown', dayStartMs: 0 }
+  const d = new Date(v)
+  const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  const y = dayStart.getFullYear()
+  const m = String(dayStart.getMonth() + 1).padStart(2, '0')
+  const dd = String(dayStart.getDate()).padStart(2, '0')
+  return { key: `${y}-${m}-${dd}`, dayStartMs: dayStart.getTime() }
+}
+
+function formatSize(bytes: number): string {
+  const v = Number(bytes)
+  if (!Number.isFinite(v) || v < 0) return '-'
+  if (v < 1024) return `${v} B`
+  const kb = v / 1024
+  if (kb < 1024) return `${kb.toFixed(1)} KB`
+  const mb = kb / 1024
+  if (mb < 1024) return `${mb.toFixed(1)} MB`
+  const gb = mb / 1024
+  return `${gb.toFixed(2)} GB`
+}
+
+const timelineGroups = computed<TimelineDayGroup[]>(() => {
+  const items = [...saved.value].sort((a, b) => b.mtimeMs - a.mtimeMs)
+  const map = new Map<string, TimelineDayGroup>()
+  for (const it of items) {
+    const { key, dayStartMs } = dateKey(it.mtimeMs)
+    const g = map.get(key)
+    if (g) {
+      g.items.push(it)
+      g.count += 1
+      g.totalBytes += Number.isFinite(it.size) ? it.size : 0
+      continue
+    }
+    map.set(key, {
+      key,
+      dateMs: dayStartMs,
+      label: formatDate(it.mtimeMs),
+      count: 1,
+      totalBytes: Number.isFinite(it.size) ? it.size : 0,
+      items: [it]
+    })
+  }
+  return [...map.values()].sort((a, b) => b.dateMs - a.dateMs)
+})
+
+let shotClickTimer: number | null = null
+
+function clearShotClickTimer(): void {
+  if (shotClickTimer === null) return
+  window.clearTimeout(shotClickTimer)
+  shotClickTimer = null
+}
+
+function onShotClick(item: SnipSavedItem): void {
+  clearShotClickTimer()
+  shotClickTimer = window.setTimeout(() => {
+    shotClickTimer = null
+    stickSaved(item)
+  }, 220)
+}
+
+function onShotDblClick(item: SnipSavedItem): void {
+  clearShotClickTimer()
+  revealSaved(item)
+}
 
 async function refreshSaved(): Promise<void> {
   loadingSaved.value = true
@@ -141,6 +242,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  clearShotClickTimer()
   if (thumbObserver) {
     thumbObserver.disconnect()
     thumbObserver = null
@@ -193,23 +295,41 @@ onBeforeUnmount(() => {
         暂无截图。点击截图工具条“保存”会自动保存到「截图保存目录」。
       </div>
 
-      <MasonryWall v-else :items="saved" :ssr-columns="1" :column-width="240" :gap="12">
-        <template #default="{ item }">
-          <div
-            :ref="(el) => onShotEl(el, item)"
-            class="shot"
-            role="button"
-            tabindex="0"
-            @click="revealSaved(item)"
-          >
-            <div v-if="item.thumbStatus === 'error'" class="shot-img missing">无法预览</div>
-            <div v-else-if="!item.thumbUrl" class="shot-img loading">加载中…</div>
-            <img v-else class="shot-img" :src="item.thumbUrl" :alt="item.name" />
-            <button class="pin-btn" type="button" @click.stop="stickSaved(item)">贴图</button>
-            <div class="shot-name">{{ item.name }}</div>
+      <a-timeline v-else mode="right" class="shot-timeline">
+        <a-timeline-item v-for="group in timelineGroups" :key="group.key">
+          <!-- <template #label> -->
+          <div class="tl-label">
+            <div class="tl-date">{{ group.label }}</div>
+            <div class="tl-meta">{{ group.count }} 张 · {{ formatSize(group.totalBytes) }}</div>
           </div>
-        </template>
-      </MasonryWall>
+          <!-- </template> -->
+
+          <div class="day-grid">
+            <div
+              v-for="item in group.items"
+              :key="item.filePath"
+              :ref="(el) => onShotEl(el, item)"
+              class="shot"
+              role="button"
+              tabindex="0"
+              @click="onShotClick(item)"
+              @dblclick="onShotDblClick(item)"
+              @keydown.enter.prevent="stickSaved(item)"
+              @keydown.space.prevent="stickSaved(item)"
+            >
+              <div v-if="item.thumbStatus === 'error'" class="shot-img missing">无法预览</div>
+              <div v-else-if="!item.thumbUrl" class="shot-img loading">加载中…</div>
+              <img v-else class="shot-img" :src="item.thumbUrl" :alt="item.name" />
+              <button class="pin-btn" type="button" @click.stop="revealSaved(item)">打开</button>
+              <div class="shot-name">{{ item.name }}</div>
+              <div class="shot-meta">
+                <div class="shot-meta-time">{{ formatTime(item.mtimeMs) }}</div>
+                <div class="shot-meta-size">{{ formatSize(item.size) }}</div>
+              </div>
+            </div>
+          </div>
+        </a-timeline-item>
+      </a-timeline>
     </section>
 
     <div v-if="helpOpen" class="modal-overlay" @click.self="helpOpen = false">
@@ -332,6 +452,39 @@ onBeforeUnmount(() => {
   gap: 8px;
 }
 
+.shot-timeline {
+  padding-top: 4px;
+}
+
+.tl-label {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 4px;
+  line-height: 1.2;
+  margin-bottom: 10px;
+}
+
+.tl-date {
+  font-size: 12px;
+  font-weight: 800;
+  color: rgba(235, 235, 245, 0.86);
+  /* text-align: left; */
+}
+
+.tl-meta {
+  font-size: 12px;
+  color: rgba(235, 235, 245, 0.55);
+  /* text-align: left; */
+}
+
+.day-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-start;
+}
+
 .shot-img.loading {
   aspect-ratio: 4 / 3;
   display: grid;
@@ -346,7 +499,8 @@ onBeforeUnmount(() => {
 
 .shot {
   position: relative;
-  width: 100%;
+  width: 220px;
+  max-width: 100%;
   padding: 0;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(0, 0, 0, 0.2);
@@ -412,6 +566,24 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.shot-meta {
+  padding: 0 10px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: rgba(235, 235, 245, 0.55);
+}
+
+.shot-meta-time {
+  font-variant-numeric: tabular-nums;
+}
+
+.shot-meta-size {
+  font-variant-numeric: tabular-nums;
 }
 
 .kv {

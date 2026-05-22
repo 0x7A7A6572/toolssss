@@ -30,14 +30,42 @@ const paydayDialogOpen = ref(false)
 const provinces = ref<WeatherProvinceCity[]>([])
 const provincesLoading = ref(false)
 const provincesErrorText = ref<string | null>(null)
-const provinceQuery = ref<string>('')
+const cityQuery = ref<string>('')
+const cityDropdownOpen = ref(false)
 
-const filteredProvinces = computed(() => {
-  const q = provinceQuery.value.trim()
-  if (!q) return provinces.value
+const filteredCities = computed(() => {
+  const q = cityQuery.value.trim()
+  if (!q) return cities.value
   const qUpper = q.toUpperCase()
-  return provinces.value.filter((p) => p.name.includes(q) || p.id.toUpperCase().includes(qUpper))
+  return cities.value.filter((c) => c.name.includes(q) || c.id.toUpperCase().includes(qUpper))
 })
+
+const provinceGroups = computed(() => {
+  const map = new Map<string, WeatherProvinceCity[]>()
+  for (const p of provinces.value) {
+    const letter = (p.id?.[0] || '#').toUpperCase()
+    const list = map.get(letter)
+    if (list) list.push(p)
+    else map.set(letter, [p])
+  }
+  return Array.from(map.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([letter, list]) => ({
+      letter,
+      items: [...list].sort((x, y) => x.name.localeCompare(y.name, 'zh-Hans-CN'))
+    }))
+})
+
+const provinceLetters = computed(() => provinceGroups.value.map((g) => g.letter))
+const provinceListEl = ref<HTMLElement | null>(null)
+
+function scrollToProvinceLetter(letter: string): void {
+  const container = provinceListEl.value
+  if (!container) return
+  const target = container.querySelector(`[data-letter="${letter}"]`) as HTMLElement | null
+  if (!target) return
+  container.scrollTo({ top: target.offsetTop, behavior: 'smooth' })
+}
 
 const PAYDAY_KEY = 'workCalendar.paydayDay'
 const paydayDay = ref<number>(normalizePaydayDay(localStorage.getItem(PAYDAY_KEY)))
@@ -264,23 +292,24 @@ async function refreshDailyFunFact(force: boolean): Promise<void> {
 
 function openCityPicker(): void {
   cityPickerOpen.value = true
-  provinceQuery.value = ''
   if (provinces.value.length === 0) {
-    loadProvinces()
-      .then(() => loadCitiesForProvince(provCode.value))
-      .catch(() => null)
+    loadProvinces().catch(() => null)
     return
   }
-  loadCitiesForProvince(provCode.value).catch(() => null)
 }
 
 function closeCityPicker(): void {
   cityPickerOpen.value = false
-  provinceQuery.value = ''
+  cityQuery.value = ''
+  cityDropdownOpen.value = false
 }
 
 function onKeydown(e: KeyboardEvent): void {
   if (e.key !== 'Escape') return
+  if (cityDropdownOpen.value) {
+    closeCityDropdown()
+    return
+  }
   closeCityPicker()
   closePaydayDialog()
   closeFunFactEditor()
@@ -317,6 +346,7 @@ async function loadCitiesForProvince(inputCode: string): Promise<void> {
   if (!code) return
   provCode.value = code
   localStorage.setItem('weather.provCode', code)
+  cityQuery.value = ''
   citiesLoading.value = true
   citiesErrorText.value = null
   try {
@@ -344,7 +374,11 @@ function selectProvince(code: string): void {
     .toUpperCase()
     .replace(/[^A-Z]/g, '')
   if (!next) return
-  if (provCode.value !== next) chosenCityId.value = null
+  if (provCode.value !== next) {
+    chosenCityId.value = null
+    cityQuery.value = ''
+  }
+  openCityDropdown()
   loadCitiesForProvince(next).catch(() => null)
 }
 
@@ -356,6 +390,25 @@ function selectCity(cityId: string): void {
   localStorage.setItem('weather.stationId', v)
   refresh().catch(() => null)
   closeCityPicker()
+}
+
+function openCityDropdown(): void {
+  cityDropdownOpen.value = true
+  cityQuery.value = ''
+  if (provinces.value.length === 0) {
+    loadProvinces()
+      .then(() => loadCitiesForProvince(provCode.value))
+      .catch(() => null)
+    return
+  }
+  if (cities.value.length === 0) {
+    loadCitiesForProvince(provCode.value).catch(() => null)
+  }
+}
+
+function closeCityDropdown(): void {
+  cityDropdownOpen.value = false
+  cityQuery.value = ''
 }
 
 const todayWeatherEmoji = computed(() => {
@@ -976,45 +1029,90 @@ onUnmounted(() => {
   <a-modal :open="cityPickerOpen" centered :footer="null" @cancel="closeCityPicker">
     <div class="city-picker">
       <div class="picker-title mb-[10px]">选择城市</div>
-      <div v-if="!provincesLoading && !provincesErrorText" class="province-search">
-        <a-input v-model:value="provinceQuery" allow-clear placeholder="搜索省份（名称/代码）" />
-      </div>
       <div v-if="provincesLoading" class="picker-loading">
         <div class="loading-spinner"></div>
       </div>
       <div v-else-if="provincesErrorText" class="error">{{ provincesErrorText }}</div>
-      <div v-else-if="filteredProvinces.length === 0" class="empty">没有匹配的省份</div>
-      <div v-else class="province-grid">
-        <template v-for="p in filteredProvinces" :key="p.id">
-          <button
-            class="province-btn"
-            :class="{ active: p.id === provCode }"
-            type="button"
-            @click="selectProvince(p.id)"
-          >
-            {{ p.name }}
-          </button>
+      <div v-else-if="provinceGroups.length === 0" class="empty">暂无省份数据</div>
+      <div v-else class="province-index-layout">
+        <div class="province-index-left">
+          <!-- <div class="city-trigger-row">
+            <button class="city-trigger-btn" type="button" @click="openCityDropdown">
+              城市：{{ chosenCityName || '点击选择' }}
+            </button>
+          </div> -->
 
-          <div v-if="p.id === provCode" class="province-city-panel">
-            <div class="city-list-head">城市</div>
-            <div v-if="citiesLoading" class="picker-loading">
-              <div class="loading-spinner"></div>
-            </div>
-            <div v-else-if="citiesErrorText" class="error">{{ citiesErrorText }}</div>
-            <div v-else class="city-grid">
-              <button
-                v-for="c in cities"
-                :key="c.id"
-                class="city-btn"
-                :class="{ active: c.id === chosenCityId }"
-                type="button"
-                @click="selectCity(c.id)"
-              >
-                {{ c.name }}
-              </button>
+          <div ref="provinceListEl" class="province-index-list">
+            <div
+              v-for="g in provinceGroups"
+              :key="g.letter"
+              class="province-group"
+              :data-letter="g.letter"
+            >
+              <div class="province-group-head">{{ g.letter }}</div>
+              <div class="province-group-grid">
+                <button
+                  v-for="p in g.items"
+                  :key="p.id"
+                  class="province-btn"
+                  :class="{ active: p.id === provCode }"
+                  type="button"
+                  @click="selectProvince(p.id)"
+                >
+                  {{ p.name }}
+                </button>
+              </div>
             </div>
           </div>
-        </template>
+          <div class="province-letter-index" aria-hidden="true">
+            <button
+              v-for="l in provinceLetters"
+              :key="l"
+              class="letter-btn"
+              type="button"
+              @click="scrollToProvinceLetter(l)"
+            >
+              {{ l }}
+            </button>
+          </div>
+
+          <div
+            v-if="cityDropdownOpen"
+            class="city-dropdown-backdrop"
+            @click="closeCityDropdown"
+          ></div>
+          <transition name="city-drop" appear>
+            <div v-if="cityDropdownOpen" class="city-pop city-dropdown">
+              <div class="city-list-head">城市</div>
+              <div v-if="citiesLoading" class="picker-loading">
+                <div class="loading-spinner"></div>
+              </div>
+              <div v-else-if="citiesErrorText" class="error">{{ citiesErrorText }}</div>
+              <template v-else>
+                <div class="city-search mb-[10px]">
+                  <a-input
+                    v-model:value="cityQuery"
+                    allow-clear
+                    placeholder="搜索城市（名称/代码）"
+                  />
+                </div>
+                <div v-if="filteredCities.length === 0" class="empty">没有匹配的城市</div>
+                <div v-else class="city-grid">
+                  <button
+                    v-for="c in filteredCities"
+                    :key="c.id"
+                    class="city-btn"
+                    :class="{ active: c.id === chosenCityId }"
+                    type="button"
+                    @click="selectCity(c.id)"
+                  >
+                    {{ c.name }}
+                  </button>
+                </div>
+              </template>
+            </div>
+          </transition>
+        </div>
       </div>
       <div class="picker-actions mt-[10px]">
         <a-button @click="closeCityPicker">关闭</a-button>
@@ -1096,7 +1194,7 @@ onUnmounted(() => {
   min-height: 64px;
 }
 
-.province-search {
+.city-search {
   margin-bottom: 10px;
 }
 
@@ -1106,20 +1204,156 @@ onUnmounted(() => {
   text-align: center;
 }
 
-.province-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 8px;
+.province-index-layout {
+  display: flex;
+  gap: 12px;
   max-height: 70vh;
-  overflow-y: scroll;
+  overflow: hidden;
 }
 
-.province-city-panel {
-  grid-column: 1 / -1;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  background: #2a2d31;
+.province-index-left {
+  position: relative;
+  flex: 1 1 auto;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  height: 70vh;
+}
+
+.province-index-list {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding-right: 24px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.province-index-list::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.province-group {
+  padding-bottom: 10px;
+}
+
+.province-group-head {
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0.65;
+  padding: 6px 0;
+}
+
+.province-group-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.province-letter-index {
+  position: absolute;
+  right: 2px;
+  top: 44px;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0;
+}
+
+.letter-btn {
+  border: none;
+  background: none;
+  padding: 2px 4px;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.letter-btn:hover {
+  opacity: 1;
+}
+
+.city-pop {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(48, 48, 48, 0.96);
   border-radius: 12px;
   padding: 10px;
+  box-shadow:
+    0 18px 55px rgba(0, 0, 0, 0.45),
+    0 2px 0 rgba(255, 255, 255, 0.04) inset;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.city-dropdown-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+}
+
+.city-dropdown {
+  position: absolute;
+  left: 0;
+  right: 24px;
+  top: 44px;
+  bottom: 0;
+  z-index: 10;
+}
+
+.city-trigger-row {
+  flex: none;
+  padding: 0 24px 10px 0;
+}
+
+.city-trigger-btn {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(235, 235, 245, 0.92);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.city-trigger-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.city-trigger-btn:active {
+  transform: translateY(1px);
+}
+
+.city-drop-enter-active,
+.city-drop-leave-active {
+  transition:
+    transform 170ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 170ms ease;
+  will-change: transform, opacity;
+}
+
+.city-drop-enter-from,
+.city-drop-leave-to {
+  transform: translateY(-12px);
+  opacity: 0;
+}
+
+.city-drop-enter-to,
+.city-drop-leave-from {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .city-drop-enter-active,
+  .city-drop-leave-active {
+    transition: none;
+  }
 }
 
 .province-btn {
@@ -1155,9 +1389,19 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
-  max-height: 44vh;
-  overflow: auto;
   padding-right: 2px;
+}
+
+.city-dropdown .city-grid {
+  flex: 1 1 auto;
+  overflow: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.city-dropdown .city-grid::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .city-btn {

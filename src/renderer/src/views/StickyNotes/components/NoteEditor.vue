@@ -60,7 +60,7 @@ async function insertImagesFromFiles(files: FileList | File[]): Promise<void> {
 }
 
 const fileInputRef = ref<HTMLInputElement | null>(null)
-const linkHrefInputRef = ref<HTMLInputElement | null>(null)
+const linkHrefInputRef = ref<{ focus?: () => void } | null>(null)
 const toolbarTick = ref(0)
 
 const lowlight = createLowlight(common)
@@ -190,7 +190,7 @@ function openLinkModal(): void {
   const { from, to } = editor.value.state.selection
   linkTextDraft.value = from === to ? '' : editor.value.state.doc.textBetween(from, to, ' ')
   isLinkModalOpen.value = true
-  nextTick(() => linkHrefInputRef.value?.focus())
+  nextTick(() => linkHrefInputRef.value?.focus?.())
 }
 
 function closeLinkModal(): void {
@@ -354,6 +354,11 @@ watch(
     }
   }
 )
+
+watch(isLinkModalOpen, (open) => {
+  if (!open) return
+  nextTick(() => linkHrefInputRef.value?.focus?.())
+})
 
 onMounted(() => {
   if (props.autofocus) {
@@ -545,51 +550,42 @@ onBeforeUnmount(() => {
       multiple
       @change="onPickImages"
     />
-    <Teleport to="body">
-      <div
-        v-if="isLinkModalOpen && editor?.isEditable"
-        class="modal-overlay"
-        @click.self="closeLinkModal"
-      >
-        <div class="modal" @keydown.esc="closeLinkModal">
-          <div class="modal-header">
-            <div class="modal-title">链接</div>
-          </div>
-          <div class="modal-body">
-            <div class="field">
-              <div class="label">URL</div>
-              <input
-                ref="linkHrefInputRef"
-                v-model="linkHrefDraft"
-                class="input"
-                type="text"
-                inputmode="url"
-                placeholder="https://example.com"
-                @keydown.enter.prevent="applyLink"
-              />
-            </div>
-            <div
-              v-if="editor && editor.state.selection.from === editor.state.selection.to"
-              class="field"
-            >
-              <div class="label">文本</div>
-              <input
-                v-model="linkTextDraft"
-                class="input"
-                type="text"
-                placeholder="显示文本（可选）"
-                @keydown.enter.prevent="applyLink"
-              />
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button class="btn primary" @click="applyLink">应用</button>
-            <button v-if="isInLink" class="btn danger" @click="removeLink">移除</button>
-            <button class="btn" @click="closeLinkModal">取消</button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <a-modal
+      :open="Boolean(isLinkModalOpen && editor?.isEditable)"
+      centered
+      destroy-on-close
+      title="链接"
+      @cancel="closeLinkModal"
+    >
+      <a-form layout="vertical">
+        <a-form-item label="URL">
+          <a-input
+            ref="linkHrefInputRef"
+            v-model:value="linkHrefDraft"
+            inputmode="url"
+            placeholder="https://example.com"
+            @press-enter="applyLink"
+          />
+        </a-form-item>
+        <a-form-item
+          v-if="editor && editor.state.selection.from === editor.state.selection.to"
+          label="文本"
+        >
+          <a-input
+            v-model:value="linkTextDraft"
+            placeholder="显示文本（可选）"
+            @press-enter="applyLink"
+          />
+        </a-form-item>
+      </a-form>
+      <template #footer>
+        <a-space>
+          <a-button type="primary" @click="applyLink">应用</a-button>
+          <a-button v-if="isInLink" danger @click="removeLink">移除</a-button>
+          <a-button @click="closeLinkModal">取消</a-button>
+        </a-space>
+      </template>
+    </a-modal>
     <editor-content style="padding: 0 18px" :editor="editor" />
   </div>
 </template>
@@ -618,7 +614,7 @@ onBeforeUnmount(() => {
   padding: 8px 10px;
   /* border: 1px solid rgba(0, 0, 0, 0.12); */
   /* border-radius: 12px; */
-  background: rgba(255, 255, 255, 0.394);
+  background: rgb(255, 255, 255);
   /* backdrop-filter: blur(10px); */
   margin-bottom: 10px;
   overflow-x: auto;
@@ -626,97 +622,6 @@ onBeforeUnmount(() => {
 
 .file-input {
   display: none;
-}
-
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.4);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 50;
-}
-
-.modal {
-  width: min(520px, calc(100vw - 32px));
-  border-radius: 12px;
-  background: rgb(0 0 0 / 58%);
-  color: rgba(255, 255, 255, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  padding: 14px;
-}
-
-.modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-}
-
-.modal-title {
-  font-weight: 800;
-  font-size: 14px;
-}
-
-.modal-body {
-  display: grid;
-  gap: 10px;
-  margin-bottom: 12px;
-}
-
-.field {
-  display: grid;
-  gap: 6px;
-}
-
-.label {
-  font-size: 12px;
-  opacity: 0.8;
-}
-
-.input {
-  height: 34px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(0, 0, 0, 0.2);
-  color: rgba(255, 255, 255, 0.92);
-  padding: 0 10px;
-  outline: none;
-}
-
-.input:focus {
-  border-color: rgba(59, 130, 246, 0.6);
-}
-
-.modal-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-}
-
-.btn {
-  height: 32px;
-  padding: 0 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.92);
-  cursor: pointer;
-}
-
-.btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.btn.primary {
-  border-color: rgba(59, 130, 246, 0.6);
-  background: rgba(59, 130, 246, 0.22);
-}
-
-.btn.danger {
-  border-color: rgba(248, 113, 113, 0.6);
-  background: rgba(248, 113, 113, 0.14);
 }
 
 .group {

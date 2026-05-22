@@ -20,7 +20,6 @@ export interface AppSettings {
     autoStart: boolean
   }
   snip: {
-    enabled: boolean
     provider: 'app'
     saveDir: string
     suspendEyeOverlay: boolean
@@ -119,7 +118,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
     autoStart: false
   },
   snip: {
-    enabled: true,
     provider: 'app',
     saveDir: '',
     suspendEyeOverlay: false

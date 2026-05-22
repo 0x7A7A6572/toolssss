@@ -116,7 +116,6 @@ export function normalizeSettings(input: unknown): AppSettings {
   }
 
   if (obj.snip) {
-    base.snip.enabled = typeof obj.snip.enabled === 'boolean' ? obj.snip.enabled : base.snip.enabled
     base.snip.provider = 'app'
     base.snip.saveDir = typeof obj.snip.saveDir === 'string' ? obj.snip.saveDir : base.snip.saveDir
     const sn = obj.snip as Record<string, unknown>
@@ -360,7 +359,6 @@ export function applySettingsPatch(current: AppSettings, patch: unknown): AppSet
   }
 
   if (p.snip) {
-    if (typeof p.snip.enabled === 'boolean') next.snip.enabled = p.snip.enabled
     if (p.snip.provider === 'app') next.snip.provider = p.snip.provider
     if (typeof p.snip.saveDir === 'string') next.snip.saveDir = p.snip.saveDir
     if (typeof (p.snip as Record<string, unknown>).suspendEyeOverlay === 'boolean')
