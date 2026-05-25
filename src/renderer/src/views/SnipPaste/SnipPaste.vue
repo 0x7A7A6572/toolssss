@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { RefreshCw, Trash2, X } from 'lucide-vue-next'
+import { RefreshCw, Trash2, ExternalLink } from 'lucide-vue-next'
 import confirm from '../../utils/confirm'
 
 type SnipSavedItem = {
@@ -259,7 +259,7 @@ onBeforeUnmount(() => {
           <div class="title">截屏贴图</div>
           <div class="subtitle">开始截图（应用截图） + 剪贴板贴图置顶</div>
         </div>
-        <button class="btn help-btn" type="button" @click="helpOpen = true">说明</button>
+        <a-button type="primary" @click="helpOpen = true">说明</a-button>
       </div>
     </header>
 
@@ -320,11 +320,20 @@ onBeforeUnmount(() => {
               <div v-if="item.thumbStatus === 'error'" class="shot-img missing">无法预览</div>
               <div v-else-if="!item.thumbUrl" class="shot-img loading">加载中…</div>
               <img v-else class="shot-img" :src="item.thumbUrl" :alt="item.name" />
-              <button class="pin-btn" type="button" @click.stop="revealSaved(item)">打开</button>
-              <div class="shot-name">{{ item.name }}</div>
-              <div class="shot-meta">
-                <div class="shot-meta-time">{{ formatTime(item.mtimeMs) }}</div>
-                <div class="shot-meta-size">{{ formatSize(item.size) }}</div>
+
+              <ExternalLink
+                :size="16"
+                class="pin-btn"
+                type="button"
+                @click.stop="revealSaved(item)"
+              />
+
+              <div class="shot-info">
+                <div class="shot-name">{{ item.name }}</div>
+                <div class="shot-meta">
+                  <div class="shot-meta-time">{{ formatTime(item.mtimeMs) }}</div>
+                  <div class="shot-meta-size">{{ formatSize(item.size) }}</div>
+                </div>
               </div>
             </div>
           </div>
@@ -332,52 +341,64 @@ onBeforeUnmount(() => {
       </a-timeline>
     </section>
 
-    <div v-if="helpOpen" class="modal-overlay" @click.self="helpOpen = false">
-      <div class="modal">
-        <div class="modal-head">
-          <div class="modal-title">使用说明</div>
-          <div
-            class="icon-btn modal-close"
-            type="button"
-            title="关闭"
-            aria-label="关闭"
-            @click="helpOpen = false"
-          >
-            <X :size="16" />
-          </div>
-        </div>
-
-        <div class="modal-body">
-          <div class="modal-section">
-            <div class="modal-section-title">截屏</div>
-            <div class="modal-line">开始截图：快捷键（默认 F1）</div>
-            <div class="modal-line">取消截图：任何时刻按 Esc；或点击工具条关闭</div>
-            <div class="modal-line">使用应用截图完成选区。截图结果在系统剪贴板中。</div>
-            <div class="modal-line">未选区时，按 C 复制色值并退出（Shift 切换 HEX / RGB）</div>
-            <div class="modal-line">未选区时，右键可直接关闭截图</div>
-            <div class="modal-line">已选区时，按 F3 可一键保存并贴图</div>
-            <div class="modal-line">已选区后支持标记：直线 / 矩形 / 圆形 / 笔刷 / 打码 / 文字</div>
-            <div class="modal-line">
+    <a-modal
+      v-model:open="helpOpen"
+      title="使用说明"
+      centered
+      :footer="null"
+      :width="760"
+      :mask-closable="true"
+    >
+      <a-space
+        direction="vertical"
+        size="middle"
+        style="width: 100%; max-height: 80vh; overflow-y: scroll"
+      >
+        <a-card size="small" title="截屏">
+          <a-typography>
+            <a-typography-paragraph>开始截图：快捷键（默认 F1）</a-typography-paragraph>
+            <a-typography-paragraph
+              >取消截图：任何时刻按 Esc；或点击工具条关闭</a-typography-paragraph
+            >
+            <a-typography-paragraph>
+              使用应用截图完成选区。截图结果在系统剪贴板中。
+            </a-typography-paragraph>
+            <a-typography-paragraph>
+              未选区时，按 C 复制色值并退出（Shift 切换 HEX / RGB）
+            </a-typography-paragraph>
+            <a-typography-paragraph>未选区时，右键可直接关闭截图</a-typography-paragraph>
+            <a-typography-paragraph>已选区时，按 F3 可一键保存并贴图</a-typography-paragraph>
+            <a-typography-paragraph>
+              已选区后支持标记：直线 / 矩形 / 圆形 / 笔刷 / 打码 / 文字
+            </a-typography-paragraph>
+            <a-typography-paragraph>
               标记支持颜色、粗细、填充（矩形/圆形）、撤销重做（Ctrl+Z / Ctrl+Y）
-            </div>
-            <div class="modal-line">
+            </a-typography-paragraph>
+            <a-typography-paragraph>
               文字标记：选择“文字”工具后点击输入，Enter 确认，Shift+Enter 换行
-            </div>
-            <div class="modal-line">点击截图工具条“保存”会自动保存到「截图保存目录」</div>
-          </div>
+            </a-typography-paragraph>
+            <a-typography-paragraph>
+              点击截图工具条“保存”会自动保存到「截图保存目录」
+            </a-typography-paragraph>
+          </a-typography>
+        </a-card>
 
-          <div class="modal-section">
-            <div class="modal-section-title">贴图</div>
-            <div class="modal-line">剪贴板贴图：快捷键（默认 F3）</div>
-            <div class="modal-line">截图后完成/保存后会复制到剪贴板，此时可以再按贴图键贴图</div>
-            <div class="modal-line">贴图操作：缩放（滚轮 / + -），透明度（Ctrl + 滚轮）</div>
-            <div class="modal-line">贴图操作：旋转（1 2），翻转（3 4）</div>
-            <div class="modal-line">关闭贴图：Esc / 左键双击</div>
-            <div class="modal-line">隐藏/显示所有贴图：默认 Shift + F3</div>
-          </div>
-        </div>
-      </div>
-    </div>
+        <a-card size="small" title="贴图">
+          <a-typography>
+            <a-typography-paragraph>剪贴板贴图：快捷键（默认 F3）</a-typography-paragraph>
+            <a-typography-paragraph>
+              截图后完成/保存后会复制到剪贴板，此时可以再按贴图键贴图
+            </a-typography-paragraph>
+            <a-typography-paragraph>
+              贴图操作：缩放（滚轮 / + -），透明度（Ctrl + 滚轮）
+            </a-typography-paragraph>
+            <a-typography-paragraph>贴图操作：旋转（1 2），翻转（3 4）</a-typography-paragraph>
+            <a-typography-paragraph>关闭贴图：Esc / 左键双击</a-typography-paragraph>
+            <a-typography-paragraph>隐藏/显示所有贴图：默认 Shift + F3</a-typography-paragraph>
+          </a-typography>
+        </a-card>
+      </a-space>
+    </a-modal>
   </div>
 </template>
 
@@ -500,6 +521,7 @@ onBeforeUnmount(() => {
 .shot {
   position: relative;
   width: 220px;
+  min-height: 60px;
   max-width: 100%;
   padding: 0;
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -508,22 +530,44 @@ onBeforeUnmount(() => {
   overflow: hidden;
   cursor: pointer;
   text-align: left;
+  /* opacity: 0; */
+  transition: opacity 0.12s ease;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
+.shot-info {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  background: rgba(0, 0, 0, 0.764);
+  color: rgba(255, 255, 245, 0.92);
+  width: 100%;
+  height: fit-content;
+  opacity: 0;
 }
 
 .pin-btn {
   position: absolute;
   top: 8px;
   right: 8px;
-  padding: 6px 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  z-index: 100;
+  padding: 2px;
+  border-radius: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: none;
+  /* background: transparent; */
+  /* border: 1px solid rgba(255, 255, 255, 0.16); */
   background: rgba(0, 0, 0, 0.42);
   color: rgba(255, 255, 245, 0.92);
-  font-size: 12px;
   font-weight: 700;
   cursor: pointer;
   opacity: 0;
-  transform: translateY(-2px);
   transition:
     opacity 0.12s ease,
     transform 0.12s ease,
@@ -533,6 +577,10 @@ onBeforeUnmount(() => {
 .shot:hover .pin-btn {
   opacity: 1;
   transform: translateY(0);
+}
+
+.shot:hover .shot-info {
+  opacity: 1;
 }
 
 .pin-btn:hover {
@@ -549,6 +597,8 @@ onBeforeUnmount(() => {
   max-height: 300px;
   object-fit: cover;
   display: block;
+  align-items: center;
+  justify-content: center;
 }
 
 .shot-img.missing {
@@ -616,75 +666,5 @@ onBeforeUnmount(() => {
   font-size: 12px;
   color: rgba(235, 235, 245, 0.62);
   line-height: 18px;
-}
-
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: grid;
-  place-items: center;
-  z-index: 1000;
-}
-
-.modal {
-  width: min(760px, calc(100vw - 60px));
-  max-height: min(80vh, 820px);
-  overflow: hidden;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgb(0 0 0 / 58%);
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5);
-  display: flex;
-  flex-direction: column;
-}
-
-.modal-head {
-  padding: 14px 16px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.modal-title {
-  font-size: 14px;
-  font-weight: 800;
-  color: rgba(255, 255, 245, 0.92);
-}
-
-.modal-close {
-  border-radius: 999px;
-}
-
-.modal-body {
-  padding: 16px;
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.modal-section {
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
-  padding: 12px 12px;
-  background: rgba(255, 255, 255, 0.03);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.modal-section-title {
-  font-size: 13px;
-  font-weight: 800;
-  color: rgba(255, 255, 245, 0.9);
-}
-
-.modal-line {
-  font-size: 13px;
-  color: rgba(235, 235, 245, 0.78);
-  line-height: 19px;
 }
 </style>

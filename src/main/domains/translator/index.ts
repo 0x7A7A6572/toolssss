@@ -2,7 +2,7 @@ import { exec } from 'child_process'
 import { createHash } from 'crypto'
 import { promisify } from 'util'
 import { join } from 'path'
-import { app, BrowserWindow, clipboard, ipcMain, screen } from 'electron'
+import { BrowserWindow, clipboard, ipcMain, screen } from 'electron'
 import type { AppSettings } from '@shared/settings'
 import { TRANSLATOR_EVENTS, type TranslatePayload, type TranslateResult } from '@shared/translator'
 import { getAiApiKeyFromSecrets } from '@main-core/secrets'
@@ -75,13 +75,6 @@ export function createTranslatorDomain(deps: Deps): {
       win.showInactive()
     }
     win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-    if (activate) {
-      try {
-        app.focus()
-      } catch {
-        void 0
-      }
-    }
     win.moveTop()
     if (activate) {
       win.focus()

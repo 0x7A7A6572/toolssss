@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ArrowLeftRight, Copy, X } from 'lucide-vue-next'
 import { TRANSLATOR_EVENTS } from '@shared/translator'
 import { appendTranslationHistory } from '@renderer/utils/translationHistory'
+import { useSettingsStore } from '@renderer/state/settings'
 
 import { Languages } from '@renderer/utils/bean'
 
@@ -22,45 +23,113 @@ function toSelectOptions(
 const inputText = ref('')
 const outputText = ref('')
 const loading = ref(false)
+const loadingHint = ref(false)
 const errorText = ref('')
 const source = ref('auto')
 const target = ref('zh')
 const selectionPending = ref(false)
 
+const settingsStore = useSettingsStore()
+
+let desiredToken = 0
+let inFlight = false
+let pendingRerun = false
+let lastRequest: { text: string; source: string; target: string; recordHistory: boolean } | null =
+  null
+let autoTranslateTimer: ReturnType<typeof setTimeout> | null = null
+let slowHintTimer: ReturnType<typeof setTimeout> | null = null
+let ignoreAutoTranslate = false
+
+const outputPlaceholder = computed(() => {
+  if (loading.value) return loadingHint.value ? '翻译中…（有点慢）' : '翻译中…'
+  return '这里显示翻译结果'
+})
+
 async function close(): Promise<void> {
   await window.electron.ipcRenderer.invoke('translator-popup:close')
 }
 
-async function translate(): Promise<void> {
+function scheduleTranslate(ms: number, opts: { recordHistory: boolean }): void {
+  if (autoTranslateTimer) clearTimeout(autoTranslateTimer)
+  autoTranslateTimer = setTimeout(() => {
+    requestTranslate(opts).catch(() => null)
+  }, ms)
+}
+
+async function requestTranslate(opts: { recordHistory: boolean }): Promise<void> {
   const text = inputText.value.trim()
   if (!text) return
+  if (selectionPending.value) return
+
+  desiredToken += 1
+  lastRequest = {
+    text,
+    source: source.value,
+    target: target.value,
+    recordHistory: opts.recordHistory
+  }
+  if (inFlight) {
+    pendingRerun = true
+    return
+  }
+  await runTranslate(desiredToken)
+}
+
+async function runTranslate(token: number): Promise<void> {
+  const req = lastRequest
+  if (!req) return
+
+  inFlight = true
   loading.value = true
+  loadingHint.value = false
   errorText.value = ''
+
+  if (slowHintTimer) clearTimeout(slowHintTimer)
+  slowHintTimer = setTimeout(() => {
+    if (loading.value && token === desiredToken) loadingHint.value = true
+  }, 800)
+
   try {
     const result = (await window.electron.ipcRenderer.invoke(TRANSLATOR_EVENTS.TRANSLATE, {
-      text,
-      source: source.value,
-      target: target.value
+      text: req.text,
+      source: req.source,
+      target: req.target
     })) as { text?: unknown }
+    if (token !== desiredToken) return
     outputText.value = typeof result?.text === 'string' ? result.text : ''
-    if (outputText.value.trim()) {
+    if (req.recordHistory && outputText.value.trim()) {
       appendTranslationHistory({
-        input: text,
+        input: req.text,
         output: outputText.value,
-        source: source.value,
-        target: target.value
+        source: req.source,
+        target: req.target
       })
     }
   } catch (e) {
+    if (token !== desiredToken) return
     outputText.value = ''
     errorText.value = e instanceof Error ? e.message : '翻译失败'
   } finally {
-    loading.value = false
+    if (slowHintTimer) clearTimeout(slowHintTimer)
+    slowHintTimer = null
+    if (token === desiredToken) loading.value = false
+    inFlight = false
   }
+
+  if (pendingRerun && desiredToken !== token) {
+    pendingRerun = false
+    await runTranslate(desiredToken)
+    return
+  }
+  pendingRerun = false
 }
 
 async function swapAndTranslate(): Promise<void> {
   if (loading.value) return
+  ignoreAutoTranslate = true
+  setTimeout(() => {
+    ignoreAutoTranslate = false
+  }, 0)
 
   const a = source.value
   source.value = target.value
@@ -76,7 +145,8 @@ async function swapAndTranslate(): Promise<void> {
   }
 
   errorText.value = ''
-  await translate()
+  if (autoTranslateTimer) clearTimeout(autoTranslateTimer)
+  await requestTranslate({ recordHistory: true })
 }
 
 async function copyResult(): Promise<void> {
@@ -100,11 +170,16 @@ function onKeyDown(e: KeyboardEvent): void {
   }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'enter') {
     e.preventDefault()
-    translate().catch(() => null)
+    requestTranslate({ recordHistory: true }).catch(() => null)
   }
 }
 
 function onOpen(_: unknown, payload: unknown): void {
+  ignoreAutoTranslate = true
+  setTimeout(() => {
+    ignoreAutoTranslate = false
+  }, 0)
+
   const p =
     payload && typeof payload === 'object'
       ? (payload as {
@@ -120,18 +195,55 @@ function onOpen(_: unknown, payload: unknown): void {
   source.value = typeof p.source === 'string' && p.source ? p.source : 'auto'
   target.value = typeof p.target === 'string' && p.target ? p.target : 'zh'
   selectionPending.value = Boolean(p.pendingSelection)
-  if (inputText.value.trim()) translate().catch(() => null)
+  if (autoTranslateTimer) clearTimeout(autoTranslateTimer)
+  if (inputText.value.trim()) requestTranslate({ recordHistory: true }).catch(() => null)
 }
 
 onMounted(() => {
+  settingsStore.init().catch(() => null)
   window.addEventListener('keydown', onKeyDown)
   window.electron.ipcRenderer.on('translator-popup:open', onOpen)
 })
 
 onBeforeUnmount(() => {
+  if (autoTranslateTimer) clearTimeout(autoTranslateTimer)
+  if (slowHintTimer) clearTimeout(slowHintTimer)
   window.removeEventListener('keydown', onKeyDown)
   window.electron.ipcRenderer.removeListener('translator-popup:open', onOpen)
 })
+
+watch(
+  () => inputText.value,
+  () => {
+    if (ignoreAutoTranslate) return
+    if (selectionPending.value) return
+    if (!inputText.value.trim()) {
+      outputText.value = ''
+      errorText.value = ''
+      return
+    }
+    scheduleTranslate(350, { recordHistory: false })
+  }
+)
+
+watch(
+  () => [source.value, target.value] as const,
+  () => {
+    if (ignoreAutoTranslate) return
+    if (selectionPending.value) return
+    if (!inputText.value.trim()) return
+    requestTranslate({ recordHistory: false }).catch(() => null)
+  }
+)
+
+watch(
+  () => settingsStore.settings.value.translate.provider,
+  () => {
+    if (selectionPending.value) return
+    if (!inputText.value.trim()) return
+    requestTranslate({ recordHistory: false }).catch(() => null)
+  }
+)
 </script>
 
 <template>
@@ -187,7 +299,7 @@ onBeforeUnmount(() => {
           :placeholder="
             selectionPending ? '正在获取选中文本…' : '选中文本后按快捷键，或手动粘贴...'
           "
-          @keyup.ctrl.enter="translate"
+          @keyup.ctrl.enter="requestTranslate({ recordHistory: true })"
         />
         <!-- <div class="panel-foot">
           <div class="spacer" />
@@ -196,7 +308,7 @@ onBeforeUnmount(() => {
 
       <div class="panel">
         <div class="panel-title">译文</div>
-        <textarea :value="outputText" class="textarea" readonly placeholder="这里显示翻译结果" />
+        <textarea :value="outputText" class="textarea" readonly :placeholder="outputPlaceholder" />
       </div>
     </div>
     <div v-if="errorText" class="error">{{ errorText }}</div>
