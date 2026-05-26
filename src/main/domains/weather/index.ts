@@ -9,6 +9,7 @@ import {
 import dayjs from 'dayjs'
 import { readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
+import { parseHourlyTrendsFromText } from './parsers'
 
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36'
@@ -386,6 +387,7 @@ async function getDashboard(stationId: string): Promise<WeatherDashboard> {
     const days = parse7DayForecastFromText(text)
     const now = mapNowPayload(stationId, nowPayload)
     const hourly = parseHourlyPrecipFromText(text, new Date())
+    const hourlyTrends = parseHourlyTrendsFromText(text)
     const next3 = hourly.filter((it) => it.inNext3Hours)
     const willRain = next3.some((it) => it.precipitationMm > 0)
     const maxPrecipitationMm = next3.reduce((max, it) => Math.max(max, it.precipitationMm), 0)
@@ -403,6 +405,7 @@ async function getDashboard(stationId: string): Promise<WeatherDashboard> {
           inNext3Hours: it.inNext3Hours
         }))
       },
+      hourlyTrends: hourlyTrends ?? undefined,
       fetchedAtMs: Date.now(),
       sources: { nowUrl, forecastUrl }
     }

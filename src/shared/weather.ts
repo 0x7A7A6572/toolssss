@@ -46,10 +46,20 @@ export interface WeatherThreeHourWarning {
   items: WeatherHourlyPrecip[]
 }
 
+export interface WeatherHourlyTrends {
+  times: string[]
+  temperatureC: Array<number | null>
+  precipitationMm: Array<number | null>
+  windSpeedMs: Array<number | null>
+  humidityPercent: Array<number | null>
+  cloudPercent: Array<number | null>
+}
+
 export interface WeatherDashboard {
   now: WeatherNow
   days: WeatherDayForecast[]
   threeHour: WeatherThreeHourWarning
+  hourlyTrends?: WeatherHourlyTrends
   fetchedAtMs: number
   sources: {
     nowUrl: string

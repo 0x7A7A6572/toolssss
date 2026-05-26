@@ -6,6 +6,9 @@ import { DEFAULT_SETTINGS, type AppSettings } from '@shared/settings'
 import { useSettingsStore } from '@renderer/state/settings'
 import { PencilLine, Settings, Sparkles, Plus } from 'lucide-vue-next'
 import SevenDayTempChart from '../../components/SevenDayTempChart.vue'
+import WeatherHourlyTrendsChart, {
+  type HourlyMetricKey
+} from '../../components/WeatherHourlyTrendsChart.vue'
 import { LegalHoliday, SolarDay } from 'tyme4ts'
 import answerBookData from '../../../../libs/book-of-answers.json'
 
@@ -18,6 +21,20 @@ const loadingSate = reactive({
 const errorText = ref<string | null>(null)
 const dashboard = ref<WeatherDashboard | null>(null)
 const weatherType = ref<string>('recently')
+const hourlyActiveKey = ref<HourlyMetricKey>('temperatureC')
+const hourlyTrends = computed(() => dashboard.value?.hourlyTrends ?? null)
+
+const hourlyLegend = [
+  { key: 'temperatureC' as const, label: '气温' },
+  { key: 'precipitationMm' as const, label: '降水' },
+  { key: 'windSpeedMs' as const, label: '风速' },
+  { key: 'humidityPercent' as const, label: '湿度' },
+  { key: 'cloudPercent' as const, label: '云量' }
+]
+
+function toggleHourlyMetric(key: HourlyMetricKey): void {
+  hourlyActiveKey.value = key
+}
 
 const provCode = ref<string>(localStorage.getItem('weather.provCode') ?? 'JS')
 const cities = ref<Array<{ id: string; name: string }>>([])
@@ -860,13 +877,50 @@ onUnmounted(() => {
                 />
               </span>
               <span class="legend">
-                <span class="lg lg-high"></span>
-                <span class="lg lg-low"></span>
+                <template v-if="weatherType === 'recently'">
+                  <span class="lg lg-high"></span>
+                  <span class="lg lg-low"></span>
+                </template>
+                <template v-else>
+                  <a-tooltip v-for="it in hourlyLegend" :key="it.key" placement="topLeft">
+                    <template #title>
+                      <span>{{ it.label }}</span>
+                    </template>
+                    <span
+                      :key="it.key"
+                      :class="['lg', it.key, hourlyActiveKey === it.key ? 'active' : '']"
+                      :label="it.label"
+                      @click="toggleHourlyMetric(it.key)"
+                    ></span>
+                  </a-tooltip>
+                  <!-- <span
+                    v-for="it in hourlyLegend"
+                    :key="it.key"
+                    class="lg"
+                    :label="it.label"
+                    @click="toggleHourlyMetric(it.key)"
+                  ></span> -->
+                  <!-- <button
+                    v-for="it in hourlyLegend"
+                    :key="it.key"
+                    class="legend-item"
+                    type="button"
+                    :class="{ active: hourlyActiveKey === it.key }"
+                    @click="toggleHourlyMetric(it.key)"
+                  >
+                    {{ it.label }}
+                  </button> -->
+                </template>
               </span>
             </div>
             <SevenDayTempChart
-              v-if="(dashboard?.days?.length ?? 0) > 0"
+              v-if="weatherType === 'recently' && (dashboard?.days?.length ?? 0) > 0"
               :days="dashboard?.days ?? []"
+            />
+            <WeatherHourlyTrendsChart
+              v-else-if="weatherType === 'now' && hourlyTrends"
+              :trends="hourlyTrends"
+              :active-key="hourlyActiveKey"
             />
             <div v-else class="empty">暂无数据</div>
           </div>
@@ -1183,7 +1237,7 @@ onUnmounted(() => {
   </a-modal>
 </template>
 
-<style scoped>
+<style lang="scss" scoped>
 .ant-segmented {
   background: #2d2d2d;
   font-size: smaller;
@@ -2123,6 +2177,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  height: 100%;
   /* min-height: 170px; */
 }
 
@@ -2250,6 +2305,28 @@ onUnmounted(() => {
   align-items: center;
 }
 
+.legend-item {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(235, 235, 245, 0.72);
+  font-size: 12px;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.legend-item:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.legend-item.active {
+  border-color: rgba(0, 220, 255, 0.35);
+  background: rgba(0, 220, 255, 0.14);
+  color: rgba(235, 235, 245, 0.9);
+}
+
 .lg {
   width: 10px;
   height: 10px;
@@ -2257,6 +2334,52 @@ onUnmounted(() => {
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.06);
   color: rgba(235, 235, 245, 0.72);
+
+  &.temperatureC {
+    background-color: rgba(0, 221, 255, 0.3);
+    border-color: rgba(0, 220, 255, 0.25);
+    &.active {
+      background-color: rgba(0, 220, 255, 0.95);
+      border-color: rgba(0, 220, 255, 0.25);
+      box-shadow: 0 0 0 2px rgba(0, 220, 255, 0.3);
+    }
+  }
+  &.precipitationMm {
+    background-color: rgba(60, 180, 120, 0.3);
+    border-color: rgba(60, 180, 120, 0.25);
+    &.active {
+      background-color: rgba(60, 180, 120, 0.95);
+      border-color: rgba(60, 180, 120, 0.25);
+      box-shadow: 0 0 0 2px rgba(60, 180, 120, 0.3);
+    }
+  }
+  &.windSpeedMs {
+    background-color: rgba(255, 198, 0, 0.3);
+    border-color: rgba(255, 198, 0, 0.25);
+    &.active {
+      background-color: rgba(255, 198, 0, 0.95);
+      border-color: rgba(255, 198, 0, 0.25);
+      box-shadow: 0 0 0 2px rgba(255, 198, 0, 0.3);
+    }
+  }
+  &.humidityPercent {
+    background-color: rgba(180, 140, 255, 0.3);
+    border-color: rgba(180, 140, 255, 0.25);
+    &.active {
+      background-color: rgba(180, 140, 255, 0.95);
+      border-color: rgba(180, 140, 255, 0.25);
+      box-shadow: 0 0 0 2px rgba(180, 140, 255, 0.3);
+    }
+  }
+  &.cloudPercent {
+    background-color: rgba(255, 120, 120, 0.3);
+    border-color: rgba(255, 120, 120, 0.25);
+    &.active {
+      background-color: rgba(255, 120, 120, 0.95);
+      border-color: rgba(255, 120, 120, 0.25);
+      box-shadow: 0 0 0 2px rgba(255, 120, 120, 0.3);
+    }
+  }
 }
 
 .lg-high {
