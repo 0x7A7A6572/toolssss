@@ -17,6 +17,7 @@ const loadingSate = reactive({
 })
 const errorText = ref<string | null>(null)
 const dashboard = ref<WeatherDashboard | null>(null)
+const weatherType = ref<string>('recently')
 
 const provCode = ref<string>(localStorage.getItem('weather.provCode') ?? 'JS')
 const cities = ref<Array<{ id: string; name: string }>>([])
@@ -704,10 +705,10 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
-  window.electron.ipcRenderer.removeListener('ai:funfact:daily:chunk', onFunFactChunk)
-  window.electron.ipcRenderer.removeListener('ai:funfact:daily:done', onFunFactDone)
-  window.electron.ipcRenderer.removeListener('ai:funfact:daily:error', onFunFactError)
-  window.electron.ipcRenderer.removeListener('ai:funfact:daily:cancelled', onFunFactCancelled)
+  // window.electron.ipcRenderer.removeListener('ai:funfact:daily:chunk', onFunFactChunk)
+  // window.electron.ipcRenderer.removeListener('ai:funfact:daily:done', onFunFactDone)
+  // window.electron.ipcRenderer.removeListener('ai:funfact:daily:error', onFunFactError)
+  // window.electron.ipcRenderer.removeListener('ai:funfact:daily:cancelled', onFunFactCancelled)
   if (funFactStreamId.value) {
     window.electron.ipcRenderer
       .invoke('ai:funfact:daily:cancel', { id: funFactStreamId.value })
@@ -736,11 +737,10 @@ onUnmounted(() => {
     </header>
 
     <section class="card">
-      <div v-if="dashboard" class="weather-layout">
+      <div class="weather-layout">
         <div class="left-col">
           <div class="block has-emoji">
             <div
-              v-if="dashboard"
               class="weather-emoji"
               :class="{
                 'is-dragging': emojiPulling,
@@ -763,14 +763,14 @@ onUnmounted(() => {
               <div class="block-title">今日</div>
               <div class="now-main">
                 <button class="location location-btn" type="button" @click="openCityPicker">
-                  <span>{{ dashboard.now.locationName }}</span>
+                  <span>{{ dashboard?.now?.locationName }}</span>
                   <span class="location-caret">▾</span>
                 </button>
                 <div class="temp">
                   <span class="temp-value">{{
-                    dashboard.now.temperatureC === null
+                    dashboard?.now?.temperatureC == null
                       ? '—'
-                      : Math.round(dashboard.now.temperatureC)
+                      : Math.round(dashboard?.now?.temperatureC ?? 0)
                   }}</span>
                   <span class="temp-unit">℃</span>
                 </div>
@@ -779,46 +779,46 @@ onUnmounted(() => {
                 <div class="meta-row">
                   <span class="meta-k">体感</span>
                   <span class="meta-v">{{
-                    dashboard.now.feelsLikeC === null
+                    dashboard?.now?.feelsLikeC == null
                       ? '—'
-                      : `${Math.round(dashboard.now.feelsLikeC)}℃`
+                      : `${Math.round(dashboard?.now?.feelsLikeC ?? 0)}℃`
                   }}</span>
                 </div>
                 <div class="meta-row">
                   <span class="meta-k">湿度</span>
                   <span class="meta-v">{{
-                    dashboard.now.humidityPercent === null
+                    dashboard?.now?.humidityPercent == null
                       ? '—'
-                      : `${Math.round(dashboard.now.humidityPercent)}%`
+                      : `${Math.round(dashboard?.now?.humidityPercent ?? 0)}%`
                   }}</span>
                 </div>
                 <div class="meta-row">
                   <span class="meta-k">气压</span>
                   <span class="meta-v">{{
-                    dashboard.now.pressureHpa === null
+                    dashboard?.now?.pressureHpa == null
                       ? '—'
-                      : `${Math.round(dashboard.now.pressureHpa)}hPa`
+                      : `${Math.round(dashboard?.now?.pressureHpa ?? 0)}hPa`
                   }}</span>
                 </div>
                 <div class="meta-row">
                   <span class="meta-k">降水</span>
                   <span class="meta-v">{{
-                    dashboard.now.precipitationMm === null
+                    dashboard?.now?.precipitationMm == null
                       ? '—'
-                      : `${dashboard.now.precipitationMm}mm`
+                      : `${dashboard?.now?.precipitationMm ?? 0}mm`
                   }}</span>
                 </div>
                 <div class="meta-row">
                   <span class="meta-k">风</span>
                   <span class="meta-v">{{
-                    dashboard.now.windDirectionText && dashboard.now.windScaleText
-                      ? `${dashboard.now.windDirectionText} ${dashboard.now.windScaleText}`
+                    dashboard?.now?.windDirectionText && dashboard?.now?.windScaleText
+                      ? `${dashboard?.now?.windDirectionText} ${dashboard?.now?.windScaleText}`
                       : '—'
                   }}</span>
                 </div>
                 <div class="meta-row">
                   <span class="meta-k">更新</span>
-                  <span class="meta-v">{{ dashboard.now.lastUpdateText ?? '—' }}</span>
+                  <span class="meta-v">{{ dashboard?.now?.lastUpdateText ?? '—' }}</span>
                 </div>
               </div>
             </div>
@@ -830,11 +830,11 @@ onUnmounted(() => {
             <div class="block-title">
               <span>3小时降雨预警</span>
               <div class="warning-line">
-                <span class="badge" :class="{ danger: dashboard.threeHour.willRain }">
-                  {{ dashboard.threeHour.willRain ? '可能降雨' : '无降雨' }}
+                <span class="badge" :class="{ danger: dashboard?.threeHour?.willRain }">
+                  {{ dashboard?.threeHour?.willRain ? '可能降雨' : '无降雨' }}
                 </span>
-                <span v-if="dashboard.threeHour.willRain" class="warning-hint">
-                  最大 {{ dashboard.threeHour.maxPrecipitationMm }}mm
+                <span v-if="dashboard?.threeHour?.willRain" class="warning-hint">
+                  最大 {{ dashboard?.threeHour?.maxPrecipitationMm ?? 0 }}mm
                 </span>
               </div>
             </div>
@@ -849,13 +849,25 @@ onUnmounted(() => {
           </div>
           <div class="block border-none">
             <div class="block-title">
-              <span>近7日天气</span>
+              <span>
+                <a-segmented
+                  v-model:value="weatherType"
+                  size="small"
+                  :options="[
+                    { label: '近7日天气', value: 'recently' },
+                    { label: '当日天气', value: 'now' }
+                  ]"
+                />
+              </span>
               <span class="legend">
                 <span class="lg lg-high"></span>
                 <span class="lg lg-low"></span>
               </span>
             </div>
-            <SevenDayTempChart v-if="dashboard.days.length > 0" :days="dashboard.days" />
+            <SevenDayTempChart
+              v-if="(dashboard?.days?.length ?? 0) > 0"
+              :days="dashboard?.days ?? []"
+            />
             <div v-else class="empty">暂无数据</div>
           </div>
         </div>
@@ -1172,6 +1184,14 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.ant-segmented {
+  background: #2d2d2d;
+  font-size: smaller;
+}
+.ant-segmented .ant-segmented-item-selected {
+  background: #2d2d2d;
+}
+
 .border-none {
   border: none;
 }

@@ -17,6 +17,37 @@ const NOW_BASE = 'https://weather.cma.cn/api/now'
 const FORECAST_BASE = 'https://weather.cma.cn/web/weather'
 const DICT_PROVINCE_BASE = 'https://weather.cma.cn/api/dict/province'
 
+function isCmaHttpsUrl(url: string): boolean {
+  return url.startsWith('https://weather.cma.cn/')
+}
+
+function toCmaHttpUrl(url: string): string {
+  if (!isCmaHttpsUrl(url)) return url
+  return `http://${url.slice('https://'.length)}`
+}
+
+function getErrorMessage(err: unknown): string {
+  if (!err || typeof err !== 'object') return ''
+  const maybeMessage = (err as { message?: unknown }).message
+  if (typeof maybeMessage === 'string') return maybeMessage
+  return ''
+}
+
+function getCauseMessage(err: unknown): string {
+  if (!err || typeof err !== 'object') return ''
+  const cause = (err as { cause?: unknown }).cause
+  return getErrorMessage(cause)
+}
+
+function isLikelyCertificateError(err: unknown): boolean {
+  const msg = `${getErrorMessage(err)} ${getCauseMessage(err)}`.toLowerCase()
+  if (!msg) return false
+  if (msg.includes('certificate has expired')) return true
+  if (msg.includes('cert has expired')) return true
+  if (msg.includes('cert') && msg.includes('expired')) return true
+  return false
+}
+
 function asFiniteNumber(v: unknown): number | null {
   const n = typeof v === 'number' ? v : Number(v)
   if (!Number.isFinite(n)) return null
@@ -146,28 +177,48 @@ function parseHourlyPrecipFromText(
 }
 
 async function fetchJson(url: string, referer: string): Promise<unknown> {
-  const res = await fetch(url, {
-    headers: {
-      Accept: 'application/json, text/javascript, */*; q=0.01',
-      'X-Requested-With': 'XMLHttpRequest',
-      Referer: referer,
-      'User-Agent': USER_AGENT
+  try {
+    const res = await fetch(url, {
+      headers: {
+        Accept: 'application/json, text/javascript, */*; q=0.01',
+        'X-Requested-With': 'XMLHttpRequest',
+        Referer: referer,
+        'User-Agent': USER_AGENT
+      }
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.json()
+  } catch (error) {
+    if (isCmaHttpsUrl(url) && isLikelyCertificateError(error)) {
+      return await fetchJson(
+        toCmaHttpUrl(url),
+        isCmaHttpsUrl(referer) ? toCmaHttpUrl(referer) : referer
+      )
     }
-  })
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  return res.json()
+    throw error
+  }
 }
 
 async function fetchText(url: string, referer: string): Promise<string> {
-  const res = await fetch(url, {
-    headers: {
-      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      Referer: referer,
-      'User-Agent': USER_AGENT
+  try {
+    const res = await fetch(url, {
+      headers: {
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        Referer: referer,
+        'User-Agent': USER_AGENT
+      }
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.text()
+  } catch (error) {
+    if (isCmaHttpsUrl(url) && isLikelyCertificateError(error)) {
+      return await fetchText(
+        toCmaHttpUrl(url),
+        isCmaHttpsUrl(referer) ? toCmaHttpUrl(referer) : referer
+      )
     }
-  })
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  return res.text()
+    throw error
+  }
 }
 
 function parseProvinceCities(raw: string): WeatherProvinceCity[] {
@@ -326,38 +377,43 @@ async function getDashboard(stationId: string): Promise<WeatherDashboard> {
   const forecastUrl = `${FORECAST_BASE}/${stationId}.html`
   const referer = forecastUrl
 
-  const [nowPayload, html] = await Promise.all([
-    fetchJson(nowUrl, referer),
-    fetchText(forecastUrl, referer)
-  ])
-  const text = stripHtmlToText(html)
-  const days = parse7DayForecastFromText(text)
-  const now = mapNowPayload(stationId, nowPayload)
-  const hourly = parseHourlyPrecipFromText(text, new Date())
-  const next3 = hourly.filter((it) => it.inNext3Hours)
-  const willRain = next3.some((it) => it.precipitationMm > 0)
-  const maxPrecipitationMm = next3.reduce((max, it) => Math.max(max, it.precipitationMm), 0)
+  try {
+    const [nowPayload, html] = await Promise.all([
+      fetchJson(nowUrl, referer),
+      fetchText(forecastUrl, referer)
+    ])
+    const text = stripHtmlToText(html)
+    const days = parse7DayForecastFromText(text)
+    const now = mapNowPayload(stationId, nowPayload)
+    const hourly = parseHourlyPrecipFromText(text, new Date())
+    const next3 = hourly.filter((it) => it.inNext3Hours)
+    const willRain = next3.some((it) => it.precipitationMm > 0)
+    const maxPrecipitationMm = next3.reduce((max, it) => Math.max(max, it.precipitationMm), 0)
 
-  const data: WeatherDashboard = {
-    now,
-    days,
-    threeHour: {
-      willRain,
-      maxPrecipitationMm,
-      items: hourly.map((it) => ({
-        atText: it.atText,
-        precipitationText: it.precipitationText,
-        precipitationMm: it.precipitationMm,
-        inNext3Hours: it.inNext3Hours
-      }))
-    },
-    fetchedAtMs: Date.now(),
-    sources: { nowUrl, forecastUrl }
+    const data: WeatherDashboard = {
+      now,
+      days,
+      threeHour: {
+        willRain,
+        maxPrecipitationMm,
+        items: hourly.map((it) => ({
+          atText: it.atText,
+          precipitationText: it.precipitationText,
+          precipitationMm: it.precipitationMm,
+          inNext3Hours: it.inNext3Hours
+        }))
+      },
+      fetchedAtMs: Date.now(),
+      sources: { nowUrl, forecastUrl }
+    }
+
+    cache.set(stationId, { atMs: Date.now(), data })
+    writeDashboardToDisk(stationId, data)
+    return data
+  } catch (error) {
+    console.error(error)
+    throw error
   }
-
-  cache.set(stationId, { atMs: Date.now(), data })
-  writeDashboardToDisk(stationId, data)
-  return data
 }
 
 export function registerWeatherHandlers(): void {
