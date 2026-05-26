@@ -70,21 +70,21 @@ async function installUpdate(): Promise<void> {
   }
 }
 
-type Faq = {
-  q: string
-  a: string
-}
+// type Faq = {
+//   q: string
+//   a: string
+// }
 
-const faqs: Faq[] = [
-  {
-    q: 'toolsss 是什么？',
-    a: '一个桌面端工具箱，把常用小工具集中到一个地方，减少你在应用之间来回切换。'
-  },
-  {
-    q: '它会收集我的数据吗？',
-    a: '默认以本地能力为主。涉及网络能力（比如翻译/AI）只在你配置并使用时发生请求。'
-  }
-]
+// const faqs: Faq[] = [
+//   {
+//     q: 'toolsss 是什么？',
+//     a: '一个桌面端工具箱，把常用小工具集中到一个地方，减少你在应用之间来回切换。'
+//   },
+//   {
+//     q: '它会收集我的数据吗？',
+//     a: '默认以本地能力为主。涉及网络能力（比如翻译/AI）只在你配置并使用时发生请求。'
+//   }
+// ]
 
 onMounted(() => {
   window.electron.ipcRenderer
@@ -241,10 +241,11 @@ onBeforeUnmount(() => {
       </header>
 
       <div class="faq">
-        <div v-for="f in faqs" :key="f.q" class="card qa">
+        <a-empty description="暂无" />
+        <!-- <div v-for="f in faqs" :key="f.q" class="card qa">
           <div class="q">{{ f.q }}</div>
           <div class="a">{{ f.a }}</div>
-        </div>
+        </div> -->
       </div>
     </section>
   </div>
@@ -318,7 +319,7 @@ onBeforeUnmount(() => {
 }
 
 .card {
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  /* border: 1px solid rgba(255, 255, 255, 0.08); */
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.04);
   padding: 16px;

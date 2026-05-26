@@ -475,7 +475,7 @@ test('each capture resets tool to select', async () => {
   expect(wrapper.get('.toolbar button[aria-label="选择/移动"]').classes()).toContain('active')
 })
 
-test('double click locks snapped bounds and disables snapping until next capture', async () => {
+test('double click on snapped window bounds completes capture', async () => {
   const mock = createScreenshotsMock()
   ;(window as unknown as Record<string, unknown>)['screenshots'] = mock.api
 
@@ -498,9 +498,46 @@ test('double click locks snapped bounds and disables snapping until next capture
   await nextTick()
 
   await wrapper.get('canvas.overlay').trigger('dblclick')
+  await vi.runAllTimersAsync()
   await nextTick()
 
-  dispatchPointer(canvas, 'pointermove', { clientX: 500, clientY: 500, pointerId: 1, button: 0 })
+  expect(mock.api.ok).toHaveBeenCalledTimes(1)
+  const payload = mock.api.ok.mock.calls[0]?.[1] as ScreenshotsData
+  expect(payload.bounds).toEqual(winRect)
+})
+
+test('drag on snapped window bounds replaces auto selection', async () => {
+  const mock = createScreenshotsMock()
+  ;(window as unknown as Record<string, unknown>)['screenshots'] = mock.api
+
+  const wrapper = mount(ScreenshotsApp, { attachTo: document.body })
+  await nextTick()
+
+  const winRect = { x: 0, y: 0, width: 200, height: 200 }
+  mock.emit('capture', display, 'data:image/png;base64,iVBORw0KGgo=', [winRect])
+  await nextTick()
+
+  const img = wrapper.get('img.bg').element as HTMLImageElement
+  Object.defineProperty(img, 'naturalWidth', { value: 800, configurable: true })
+  Object.defineProperty(img, 'naturalHeight', { value: 600, configurable: true })
+  await wrapper.get('img.bg').trigger('load')
+  await nextTick()
+
+  const canvas = wrapper.get('canvas.overlay').element as HTMLCanvasElement & {
+    setPointerCapture?: (id: number) => void
+    releasePointerCapture?: (id: number) => void
+  }
+  canvas.setPointerCapture = vi.fn()
+  canvas.releasePointerCapture = vi.fn()
+
+  dispatchPointer(canvas, 'pointermove', { clientX: 10, clientY: 10, pointerId: 1, button: 0 })
+  flushRaf()
+  await nextTick()
+
+  dispatchPointer(canvas, 'pointerdown', { clientX: 20, clientY: 20, pointerId: 2, button: 0 })
+  dispatchPointer(canvas, 'pointermove', { clientX: 120, clientY: 120, pointerId: 2, button: 0 })
+  flushRaf()
+  dispatchPointer(canvas, 'pointerup', { clientX: 120, clientY: 120, pointerId: 2, button: 0 })
   flushRaf()
   await nextTick()
 
@@ -510,7 +547,7 @@ test('double click locks snapped bounds and disables snapping until next capture
 
   expect(mock.api.ok).toHaveBeenCalledTimes(1)
   const payload = mock.api.ok.mock.calls[0]?.[1] as ScreenshotsData
-  expect(payload.bounds).toEqual(winRect)
+  expect(payload.bounds).toMatchObject({ x: 20, y: 20, width: 100, height: 100 })
 })
 
 describe('e2e-ish viewport coverage', () => {

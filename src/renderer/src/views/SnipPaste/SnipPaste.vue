@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
-import { MasonryWall } from '@yeger/vue-masonry-wall'
-import { RefreshCw, Trash2, X } from 'lucide-vue-next'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { RefreshCw, Trash2, ExternalLink } from 'lucide-vue-next'
 import confirm from '../../utils/confirm'
 
 type SnipSavedItem = {
@@ -13,6 +12,15 @@ type SnipSavedItem = {
   size: number
 }
 
+type TimelineDayGroup = {
+  key: string
+  dateMs: number
+  label: string
+  count: number
+  totalBytes: number
+  items: SnipSavedItem[]
+}
+
 const saved = ref<SnipSavedItem[]>([])
 const loadingSaved = ref(false)
 const helpOpen = ref(false)
@@ -22,6 +30,99 @@ const elToItem = new WeakMap<Element, SnipSavedItem>()
 const thumbQueue: SnipSavedItem[] = []
 let thumbActive = 0
 const thumbConcurrency = 3
+
+const dateFormatter = new Intl.DateTimeFormat('zh-CN', {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit'
+})
+
+const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false
+})
+
+function formatDate(ms: number): string {
+  const v = Number(ms)
+  if (!Number.isFinite(v) || v <= 0) return '-'
+  return dateFormatter.format(new Date(v))
+}
+
+function formatTime(ms: number): string {
+  const v = Number(ms)
+  if (!Number.isFinite(v) || v <= 0) return '-'
+  return timeFormatter.format(new Date(v))
+}
+
+function dateKey(ms: number): { key: string; dayStartMs: number } {
+  const v = Number(ms)
+  if (!Number.isFinite(v) || v <= 0) return { key: 'unknown', dayStartMs: 0 }
+  const d = new Date(v)
+  const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  const y = dayStart.getFullYear()
+  const m = String(dayStart.getMonth() + 1).padStart(2, '0')
+  const dd = String(dayStart.getDate()).padStart(2, '0')
+  return { key: `${y}-${m}-${dd}`, dayStartMs: dayStart.getTime() }
+}
+
+function formatSize(bytes: number): string {
+  const v = Number(bytes)
+  if (!Number.isFinite(v) || v < 0) return '-'
+  if (v < 1024) return `${v} B`
+  const kb = v / 1024
+  if (kb < 1024) return `${kb.toFixed(1)} KB`
+  const mb = kb / 1024
+  if (mb < 1024) return `${mb.toFixed(1)} MB`
+  const gb = mb / 1024
+  return `${gb.toFixed(2)} GB`
+}
+
+const timelineGroups = computed<TimelineDayGroup[]>(() => {
+  const items = [...saved.value].sort((a, b) => b.mtimeMs - a.mtimeMs)
+  const map = new Map<string, TimelineDayGroup>()
+  for (const it of items) {
+    const { key, dayStartMs } = dateKey(it.mtimeMs)
+    const g = map.get(key)
+    if (g) {
+      g.items.push(it)
+      g.count += 1
+      g.totalBytes += Number.isFinite(it.size) ? it.size : 0
+      continue
+    }
+    map.set(key, {
+      key,
+      dateMs: dayStartMs,
+      label: formatDate(it.mtimeMs),
+      count: 1,
+      totalBytes: Number.isFinite(it.size) ? it.size : 0,
+      items: [it]
+    })
+  }
+  return [...map.values()].sort((a, b) => b.dateMs - a.dateMs)
+})
+
+let shotClickTimer: number | null = null
+
+function clearShotClickTimer(): void {
+  if (shotClickTimer === null) return
+  window.clearTimeout(shotClickTimer)
+  shotClickTimer = null
+}
+
+function onShotClick(item: SnipSavedItem): void {
+  clearShotClickTimer()
+  shotClickTimer = window.setTimeout(() => {
+    shotClickTimer = null
+    stickSaved(item)
+  }, 220)
+}
+
+function onShotDblClick(item: SnipSavedItem): void {
+  clearShotClickTimer()
+  revealSaved(item)
+}
 
 async function refreshSaved(): Promise<void> {
   loadingSaved.value = true
@@ -141,6 +242,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  clearShotClickTimer()
   if (thumbObserver) {
     thumbObserver.disconnect()
     thumbObserver = null
@@ -157,7 +259,7 @@ onBeforeUnmount(() => {
           <div class="title">截屏贴图</div>
           <div class="subtitle">开始截图（应用截图） + 剪贴板贴图置顶</div>
         </div>
-        <button class="btn help-btn" type="button" @click="helpOpen = true">说明</button>
+        <a-button type="primary" @click="helpOpen = true">说明</a-button>
       </div>
     </header>
 
@@ -166,7 +268,7 @@ onBeforeUnmount(() => {
         <div class="card-title">截图库</div>
         <div class="card-actions">
           <button
-            class="btn icon-btn"
+            class="flex px-[6px] py-[4px] rounded-[4px] bg-[#99999933] border-none"
             type="button"
             title="一键清理"
             aria-label="一键清理"
@@ -176,7 +278,7 @@ onBeforeUnmount(() => {
             <Trash2 :size="16" />
           </button>
           <button
-            class="btn icon-btn"
+            class="flex px-[6px] py-[4px] rounded-[4px] bg-[#99999933] border-none"
             type="button"
             title="刷新"
             aria-label="刷新"
@@ -193,71 +295,110 @@ onBeforeUnmount(() => {
         暂无截图。点击截图工具条“保存”会自动保存到「截图保存目录」。
       </div>
 
-      <MasonryWall v-else :items="saved" :ssr-columns="1" :column-width="240" :gap="12">
-        <template #default="{ item }">
-          <div
-            :ref="(el) => onShotEl(el, item)"
-            class="shot"
-            role="button"
-            tabindex="0"
-            @click="revealSaved(item)"
-          >
-            <div v-if="item.thumbStatus === 'error'" class="shot-img missing">无法预览</div>
-            <div v-else-if="!item.thumbUrl" class="shot-img loading">加载中…</div>
-            <img v-else class="shot-img" :src="item.thumbUrl" :alt="item.name" />
-            <button class="pin-btn" type="button" @click.stop="stickSaved(item)">贴图</button>
-            <div class="shot-name">{{ item.name }}</div>
+      <a-timeline v-else mode="right" class="shot-timeline">
+        <a-timeline-item v-for="group in timelineGroups" :key="group.key">
+          <!-- <template #label> -->
+          <div class="tl-label">
+            <div class="tl-date">{{ group.label }}</div>
+            <div class="tl-meta">{{ group.count }} 张 · {{ formatSize(group.totalBytes) }}</div>
           </div>
-        </template>
-      </MasonryWall>
+          <!-- </template> -->
+
+          <div class="day-grid">
+            <div
+              v-for="item in group.items"
+              :key="item.filePath"
+              :ref="(el) => onShotEl(el, item)"
+              class="shot"
+              role="button"
+              tabindex="0"
+              @click="onShotClick(item)"
+              @dblclick="onShotDblClick(item)"
+              @keydown.enter.prevent="stickSaved(item)"
+              @keydown.space.prevent="stickSaved(item)"
+            >
+              <div v-if="item.thumbStatus === 'error'" class="shot-img missing">无法预览</div>
+              <div v-else-if="!item.thumbUrl" class="shot-img loading">加载中…</div>
+              <img v-else class="shot-img" :src="item.thumbUrl" :alt="item.name" />
+
+              <ExternalLink
+                :size="16"
+                class="pin-btn"
+                type="button"
+                @click.stop="revealSaved(item)"
+              />
+
+              <div class="shot-info">
+                <div class="shot-name">{{ item.name }}</div>
+                <div class="shot-meta">
+                  <div class="shot-meta-time">{{ formatTime(item.mtimeMs) }}</div>
+                  <div class="shot-meta-size">{{ formatSize(item.size) }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </a-timeline-item>
+      </a-timeline>
     </section>
 
-    <div v-if="helpOpen" class="modal-overlay" @click.self="helpOpen = false">
-      <div class="modal">
-        <div class="modal-head">
-          <div class="modal-title">使用说明</div>
-          <div
-            class="icon-btn modal-close"
-            type="button"
-            title="关闭"
-            aria-label="关闭"
-            @click="helpOpen = false"
-          >
-            <X :size="16" />
-          </div>
-        </div>
-
-        <div class="modal-body">
-          <div class="modal-section">
-            <div class="modal-section-title">截屏</div>
-            <div class="modal-line">开始截图：快捷键（默认 F1）</div>
-            <div class="modal-line">取消截图：任何时刻按 Esc；或点击工具条关闭</div>
-            <div class="modal-line">使用应用截图完成选区。截图结果在系统剪贴板中。</div>
-            <div class="modal-line">未选区时，按 C 复制色值并退出（Shift 切换 HEX / RGB）</div>
-            <div class="modal-line">未选区时，右键可直接关闭截图</div>
-            <div class="modal-line">已选区时，按 F3 可一键保存并贴图</div>
-            <div class="modal-line">已选区后支持标记：直线 / 矩形 / 圆形 / 笔刷 / 打码 / 文字</div>
-            <div class="modal-line">
+    <a-modal
+      v-model:open="helpOpen"
+      title="使用说明"
+      centered
+      :footer="null"
+      :width="760"
+      :mask-closable="true"
+    >
+      <a-space
+        direction="vertical"
+        size="middle"
+        style="width: 100%; max-height: 80vh; overflow-y: scroll"
+      >
+        <a-card size="small" title="截屏">
+          <a-typography>
+            <a-typography-paragraph>开始截图：快捷键（默认 F1）</a-typography-paragraph>
+            <a-typography-paragraph
+              >取消截图：任何时刻按 Esc；或点击工具条关闭</a-typography-paragraph
+            >
+            <a-typography-paragraph>
+              使用应用截图完成选区。截图结果在系统剪贴板中。
+            </a-typography-paragraph>
+            <a-typography-paragraph>
+              未选区时，按 C 复制色值并退出（Shift 切换 HEX / RGB）
+            </a-typography-paragraph>
+            <a-typography-paragraph>未选区时，右键可直接关闭截图</a-typography-paragraph>
+            <a-typography-paragraph>已选区时，按 F3 可一键保存并贴图</a-typography-paragraph>
+            <a-typography-paragraph>
+              已选区后支持标记：直线 / 矩形 / 圆形 / 笔刷 / 打码 / 文字
+            </a-typography-paragraph>
+            <a-typography-paragraph>
               标记支持颜色、粗细、填充（矩形/圆形）、撤销重做（Ctrl+Z / Ctrl+Y）
-            </div>
-            <div class="modal-line">
+            </a-typography-paragraph>
+            <a-typography-paragraph>
               文字标记：选择“文字”工具后点击输入，Enter 确认，Shift+Enter 换行
-            </div>
-            <div class="modal-line">点击截图工具条“保存”会自动保存到「截图保存目录」</div>
-          </div>
+            </a-typography-paragraph>
+            <a-typography-paragraph>
+              点击截图工具条“保存”会自动保存到「截图保存目录」
+            </a-typography-paragraph>
+          </a-typography>
+        </a-card>
 
-          <div class="modal-section">
-            <div class="modal-section-title">贴图</div>
-            <div class="modal-line">剪贴板贴图：快捷键（默认 F3）</div>
-            <div class="modal-line">截图后完成/保存后会复制到剪贴板，此时可以再按贴图键贴图</div>
-            <div class="modal-line">贴图操作：缩放（滚轮 / + -），透明度（Ctrl + 滚轮）</div>
-            <div class="modal-line">贴图操作：旋转（1 2），翻转（3 4）</div>
-            <div class="modal-line">关闭贴图：Esc / 左键双击</div>
-            <div class="modal-line">隐藏/显示所有贴图：默认 Shift + F3</div>
-          </div>
-        </div>
-      </div>
-    </div>
+        <a-card size="small" title="贴图">
+          <a-typography>
+            <a-typography-paragraph>剪贴板贴图：快捷键（默认 F3）</a-typography-paragraph>
+            <a-typography-paragraph>
+              截图后完成/保存后会复制到剪贴板，此时可以再按贴图键贴图
+            </a-typography-paragraph>
+            <a-typography-paragraph>
+              贴图操作：缩放（滚轮 / + -），透明度（Ctrl + 滚轮）
+            </a-typography-paragraph>
+            <a-typography-paragraph>贴图操作：旋转（1 2），翻转（3 4）</a-typography-paragraph>
+            <a-typography-paragraph>关闭贴图：Esc / 左键双击</a-typography-paragraph>
+            <a-typography-paragraph>隐藏/显示所有贴图：默认 Shift + F3</a-typography-paragraph>
+          </a-typography>
+        </a-card>
+      </a-space>
+    </a-modal>
   </div>
 </template>
 
@@ -304,7 +445,7 @@ onBeforeUnmount(() => {
 }
 
 .card {
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  /* border: 1px solid rgba(255, 255, 255, 0.08); */
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.04);
   padding: 16px;
@@ -332,20 +473,37 @@ onBeforeUnmount(() => {
   gap: 8px;
 }
 
-.btn {
-  padding: 7px 10px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 245, 0.92);
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
+.shot-timeline {
+  padding-top: 4px;
 }
 
-.btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+.tl-label {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 4px;
+  line-height: 1.2;
+  margin-bottom: 10px;
+}
+
+.tl-date {
+  font-size: 12px;
+  font-weight: 800;
+  color: rgba(235, 235, 245, 0.86);
+  /* text-align: left; */
+}
+
+.tl-meta {
+  font-size: 12px;
+  color: rgba(235, 235, 245, 0.55);
+  /* text-align: left; */
+}
+
+.day-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-start;
 }
 
 .shot-img.loading {
@@ -356,26 +514,15 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 
-.btn:hover:enabled {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.icon-btn {
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
 .icon-btn :deep(svg) {
   flex-shrink: 0;
 }
 
 .shot {
   position: relative;
-  width: 100%;
+  width: 220px;
+  min-height: 60px;
+  max-width: 100%;
   padding: 0;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(0, 0, 0, 0.2);
@@ -383,22 +530,44 @@ onBeforeUnmount(() => {
   overflow: hidden;
   cursor: pointer;
   text-align: left;
+  /* opacity: 0; */
+  transition: opacity 0.12s ease;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
+.shot-info {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  background: rgba(0, 0, 0, 0.764);
+  color: rgba(255, 255, 245, 0.92);
+  width: 100%;
+  height: fit-content;
+  opacity: 0;
 }
 
 .pin-btn {
   position: absolute;
   top: 8px;
   right: 8px;
-  padding: 6px 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  z-index: 100;
+  padding: 2px;
+  border-radius: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: none;
+  /* background: transparent; */
+  /* border: 1px solid rgba(255, 255, 255, 0.16); */
   background: rgba(0, 0, 0, 0.42);
   color: rgba(255, 255, 245, 0.92);
-  font-size: 12px;
   font-weight: 700;
   cursor: pointer;
   opacity: 0;
-  transform: translateY(-2px);
   transition:
     opacity 0.12s ease,
     transform 0.12s ease,
@@ -408,6 +577,10 @@ onBeforeUnmount(() => {
 .shot:hover .pin-btn {
   opacity: 1;
   transform: translateY(0);
+}
+
+.shot:hover .shot-info {
+  opacity: 1;
 }
 
 .pin-btn:hover {
@@ -424,6 +597,8 @@ onBeforeUnmount(() => {
   max-height: 300px;
   object-fit: cover;
   display: block;
+  align-items: center;
+  justify-content: center;
 }
 
 .shot-img.missing {
@@ -441,6 +616,24 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.shot-meta {
+  padding: 0 10px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: rgba(235, 235, 245, 0.55);
+}
+
+.shot-meta-time {
+  font-variant-numeric: tabular-nums;
+}
+
+.shot-meta-size {
+  font-variant-numeric: tabular-nums;
 }
 
 .kv {
@@ -473,75 +666,5 @@ onBeforeUnmount(() => {
   font-size: 12px;
   color: rgba(235, 235, 245, 0.62);
   line-height: 18px;
-}
-
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: grid;
-  place-items: center;
-  z-index: 1000;
-}
-
-.modal {
-  width: min(760px, calc(100vw - 60px));
-  max-height: min(80vh, 820px);
-  overflow: hidden;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(18, 18, 20, 0.96);
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5);
-  display: flex;
-  flex-direction: column;
-}
-
-.modal-head {
-  padding: 14px 16px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.modal-title {
-  font-size: 14px;
-  font-weight: 800;
-  color: rgba(255, 255, 245, 0.92);
-}
-
-.modal-close {
-  border-radius: 999px;
-}
-
-.modal-body {
-  padding: 16px;
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.modal-section {
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
-  padding: 12px 12px;
-  background: rgba(255, 255, 255, 0.03);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.modal-section-title {
-  font-size: 13px;
-  font-weight: 800;
-  color: rgba(255, 255, 245, 0.9);
-}
-
-.modal-line {
-  font-size: 13px;
-  color: rgba(235, 235, 245, 0.78);
-  line-height: 19px;
 }
 </style>

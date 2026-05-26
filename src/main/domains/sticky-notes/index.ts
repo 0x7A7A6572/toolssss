@@ -1,11 +1,16 @@
 import { app, ipcMain, BrowserWindow, screen } from 'electron'
 import { randomUUID } from 'crypto'
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs'
+import { mkdirSync } from 'fs'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
-import { STICKY_NOTES_EVENTS, type StickyNote } from '../shared/sticky-notes'
+import { STICKY_NOTES_EVENTS, type StickyNote } from '@shared/sticky-notes'
+import {
+  copyStickyNotesStorageIfAbsent,
+  deleteStickyNote,
+  listStickyNotes,
+  upsertStickyNote
+} from './storage'
 
-const NOTES_FILE = 'sticky-notes.json'
 let notesDirOverride: string | null = null
 
 function broadcastNotes(notes: StickyNote[]): void {
@@ -13,7 +18,7 @@ function broadcastNotes(notes: StickyNote[]): void {
     try {
       win.webContents.send('sticky-notes:changed', notes)
     } catch {
-      // ignore
+      void 0
     }
   }
 }
@@ -33,54 +38,20 @@ function resolveNotesDir(): string {
   }
 }
 
-function getNotesFilePath(): string {
-  return join(resolveNotesDir(), NOTES_FILE)
-}
-
 export function setStickyNotesSaveDir(saveDir: string | null): void {
   const prevDir =
     typeof notesDirOverride === 'string' && notesDirOverride.trim()
       ? notesDirOverride.trim()
       : defaultNotesDir()
-  const prevPath = join(prevDir, NOTES_FILE)
 
   notesDirOverride = typeof saveDir === 'string' && saveDir.trim() ? saveDir.trim() : null
 
-  const nextPath = getNotesFilePath()
-  if (prevPath !== nextPath && existsSync(prevPath) && !existsSync(nextPath)) {
-    try {
-      const raw = readFileSync(prevPath, 'utf-8')
-      writeFileSync(nextPath, raw, 'utf-8')
-    } catch {
-      // ignore
-    }
+  const nextDir = resolveNotesDir()
+  if (prevDir !== nextDir) {
+    copyStickyNotesStorageIfAbsent(prevDir, nextDir)
   }
 
-  broadcastNotes(loadNotes())
-}
-
-function loadNotes(): StickyNote[] {
-  try {
-    const filePath = getNotesFilePath()
-    if (!existsSync(filePath)) {
-      return []
-    }
-    const raw = readFileSync(filePath, 'utf-8')
-    const parsed = JSON.parse(raw) as unknown
-    return Array.isArray(parsed) ? (parsed as StickyNote[]) : []
-  } catch (error) {
-    console.error('Failed to load sticky notes:', error)
-    return []
-  }
-}
-
-function saveNotes(notes: StickyNote[]): void {
-  try {
-    const filePath = getNotesFilePath()
-    writeFileSync(filePath, JSON.stringify(notes, null, 2), 'utf-8')
-  } catch (error) {
-    console.error('Failed to save sticky notes:', error)
-  }
+  broadcastNotes(listStickyNotes(resolveNotesDir()))
 }
 
 function loadWindowForEditor(win: BrowserWindow, query: Record<string, string>): Promise<void> {
@@ -112,14 +83,13 @@ function createStickyEditorWindow(noteId: string): void {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true
-      // devTools: false
     }
   })
 
   try {
     win.webContents.closeDevTools()
   } catch {
-    // ignore
+    void 0
   }
 
   loadWindowForEditor(win, { mode: 'note-editor', id: noteId })
@@ -140,16 +110,14 @@ export function openQuickStickyNoteEditor(): void {
     createdAt: now,
     updatedAt: now
   }
-  const notes = loadNotes()
-  notes.push(note)
-  saveNotes(notes)
+  const notes = upsertStickyNote(resolveNotesDir(), note)
   broadcastNotes(notes)
   createStickyEditorWindow(note.id)
 }
 
 export function registerStickyNotesHandlers(): void {
   ipcMain.handle(STICKY_NOTES_EVENTS.GET_ALL, () => {
-    return loadNotes()
+    return listStickyNotes(resolveNotesDir())
   })
 
   ipcMain.handle('sticky-editor:close', (event) => {
@@ -167,26 +135,21 @@ export function registerStickyNotesHandlers(): void {
   })
 
   ipcMain.handle(STICKY_NOTES_EVENTS.SAVE, (_, note: StickyNote) => {
-    const notes = loadNotes()
-    const index = notes.findIndex((n) => n.id === note.id)
-
-    if (index >= 0) {
-      notes[index] = { ...note, updatedAt: Date.now() }
-    } else {
-      notes.push({ ...note, createdAt: Date.now(), updatedAt: Date.now() })
+    const now = Date.now()
+    const updated = {
+      ...note,
+      createdAt: typeof note.createdAt === 'number' ? note.createdAt : now,
+      updatedAt: now
     }
-
-    saveNotes(notes)
+    const notes = upsertStickyNote(resolveNotesDir(), updated)
     broadcastNotes(notes)
     return notes
   })
 
   ipcMain.handle(STICKY_NOTES_EVENTS.DELETE, (_, id: string) => {
-    const notes = loadNotes()
-    const newNotes = notes.filter((n) => n.id !== id)
-    saveNotes(newNotes)
-    broadcastNotes(newNotes)
-    return newNotes
+    const notes = deleteStickyNote(resolveNotesDir(), id)
+    broadcastNotes(notes)
+    return notes
   })
 
   ipcMain.handle('sticky-editor:open', (_e, payload: unknown) => {

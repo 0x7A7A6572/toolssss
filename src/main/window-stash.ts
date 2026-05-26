@@ -3,15 +3,19 @@ import { readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
 import {
   activateExternalWindow,
+  getExternalWindowFromPoint,
   getForegroundExternalWindow,
+  getExternalWindowRootHwnd,
   getExternalWindowRect,
   hideExternalWindowToEdge,
   raiseExternalWindow,
   restoreExternalWindow,
+  setExternalWindowTopmost,
   type ExternalWindowEdge,
   type ExternalWindowRect
 } from './external-window'
 import { DEFAULT_SETTINGS, type AppSettings } from '@shared/settings'
+import { clampNumber } from '@main-shared/primitives'
 
 type StashedWindow = {
   hwnd: string
@@ -38,6 +42,13 @@ type WindowStashListItem = {
 
 const stashed = new Map<string, StashedWindow>()
 const handleNudgeRemainders = new Map<string, { dx: number; dy: number }>()
+const topmostWindows = new Set<string>()
+const topmostBusy = new Set<string>()
+const topmostOverlays = new Map<string, BrowserWindow>()
+let topmostOverlayTimer: NodeJS.Timeout | null = null
+let topmostOverlaySyncBusy = false
+const topmostLastRects = new Map<string, ExternalWindowRect>()
+const topmostDragChangedAt = new Map<string, number>()
 
 type PersistedStashItem = {
   hwnd: string
@@ -60,6 +71,7 @@ const LEAVE_MARGIN_PX = 6
 const HANDLE_GAP_PX = 8
 const HANDLE_TITLE_MAX_CHARS = 10
 const RECT_POLL_MS = 320
+const DRAG_SETTLE_MS = 200
 
 let loadWindowFn: ((win: BrowserWindow, query: Record<string, string>) => Promise<void>) | null =
   null
@@ -204,15 +216,265 @@ function getStashSettings(): AppSettings['windowStash'] {
   return s?.windowStash ?? DEFAULT_SETTINGS.windowStash
 }
 
+function getTopmostBorderSettings(): { enabled: boolean; color: string; width: number } {
+  const s = getStashSettings()
+  const enabled = Boolean(s.topmostHighlightEnabled)
+  const color =
+    normalizeHexColor(s.topmostBorderColor) ?? DEFAULT_SETTINGS.windowStash.topmostBorderColor
+  const width = clampNumber(Number(s.topmostBorderWidth), 1, 16)
+  return { enabled, color, width }
+}
+
+function topmostOverlayHtml(): string {
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'"><style>html,body{width:100%;height:100%;margin:0;background:transparent;overflow:hidden}#b{width:100%;height:100%;box-sizing:border-box;border-style:solid;border-color:rgba(0,0,0,0);border-width:0;border-radius:8px}</style></head><body><div id="b"></div><script>const el=document.getElementById('b');window.__set=(c,w)=>{try{el.style.borderColor=String(c||'');el.style.borderWidth=Math.max(0,Math.floor(Number(w)||0))+'px'}catch(e){}};</script></body></html>`
+}
+
+function ensureTopmostOverlayWindow(hwnd: string): BrowserWindow {
+  const existing = topmostOverlays.get(hwnd)
+  if (existing && !existing.isDestroyed()) return existing
+  const win = new BrowserWindow({
+    width: 100,
+    height: 100,
+    show: false,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    closable: true,
+    focusable: false,
+    skipTaskbar: true,
+    hasShadow: false,
+    alwaysOnTop: true,
+    backgroundColor: '#00000000',
+    webPreferences: {
+      sandbox: true
+    }
+  })
+  win.setAlwaysOnTop(true, 'screen-saver')
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  win.setIgnoreMouseEvents(true, { forward: true })
+  win.on('closed', () => {
+    const cur = topmostOverlays.get(hwnd)
+    if (cur === win) topmostOverlays.delete(hwnd)
+  })
+  win
+    .loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(topmostOverlayHtml())}`)
+    .catch(() => null)
+  topmostOverlays.set(hwnd, win)
+  return win
+}
+
+function applyTopmostOverlayStyle(hwnd: string, color: string, width: number): void {
+  const win = topmostOverlays.get(hwnd)
+  if (!win || win.isDestroyed()) return
+  const c = JSON.stringify(color)
+  const w = Math.max(0, Math.floor(width))
+  win.webContents
+    .executeJavaScript(`window.__set && window.__set(${c}, ${w})`, true)
+    .catch(() => null)
+}
+
+function ensureTopmostOverlayTimer(): void {
+  if (topmostOverlayTimer) return
+  topmostOverlayTimer = setInterval(() => {
+    if (topmostOverlaySyncBusy) return
+    topmostOverlaySyncBusy = true
+    void syncAllTopmostOverlays().finally(() => {
+      topmostOverlaySyncBusy = false
+    })
+  }, 90)
+}
+
+async function syncAllTopmostOverlays(): Promise<void> {
+  const cfg = getTopmostBorderSettings()
+  const targets = Array.from(topmostWindows.values())
+  if (!cfg.enabled || !targets.length) {
+    for (const [hwnd, win] of Array.from(topmostOverlays.entries())) {
+      if (win.isDestroyed()) {
+        topmostOverlays.delete(hwnd)
+        continue
+      }
+      try {
+        win.hide()
+      } catch {
+        void 0
+      }
+    }
+    return
+  }
+
+  const now = Date.now()
+  for (const hwnd of targets) {
+    const rect = await getExternalWindowRect(hwnd)
+    if (!rect) {
+      topmostWindows.delete(hwnd)
+      topmostLastRects.delete(hwnd)
+      topmostDragChangedAt.delete(hwnd)
+      const ow = topmostOverlays.get(hwnd)
+      if (ow && !ow.isDestroyed()) {
+        try {
+          ow.close()
+        } catch {
+          void 0
+        }
+      }
+      topmostOverlays.delete(hwnd)
+      continue
+    }
+
+    const lastRect = topmostLastRects.get(hwnd)
+    topmostLastRects.set(hwnd, rect)
+
+    if (
+      lastRect &&
+      (rect.left !== lastRect.left ||
+        rect.top !== lastRect.top ||
+        rect.right !== lastRect.right ||
+        rect.bottom !== lastRect.bottom)
+    ) {
+      topmostDragChangedAt.set(hwnd, now)
+      const win = topmostOverlays.get(hwnd)
+      if (win && !win.isDestroyed() && win.isVisible()) {
+        try {
+          win.hide()
+        } catch {
+          void 0
+        }
+      }
+      continue
+    }
+
+    const changedAt = topmostDragChangedAt.get(hwnd)
+    if (changedAt !== undefined && now - changedAt < DRAG_SETTLE_MS) continue
+
+    if (!lastRect && changedAt === undefined) {
+      topmostDragChangedAt.set(hwnd, now - DRAG_SETTLE_MS)
+    }
+
+    const w = Math.max(1, Math.round(rect.right - rect.left))
+    const h = Math.max(1, Math.round(rect.bottom - rect.top))
+    const win = ensureTopmostOverlayWindow(hwnd)
+    if (win.isDestroyed()) continue
+    try {
+      win.setBounds(
+        { x: Math.round(rect.left), y: Math.round(rect.top), width: w, height: h },
+        false
+      )
+    } catch {
+      void 0
+    }
+    applyTopmostOverlayStyle(hwnd, cfg.color, cfg.width)
+    try {
+      win.showInactive()
+    } catch {
+      void 0
+    }
+  }
+}
+
+function removeTopmostOverlay(hwnd: string): void {
+  topmostLastRects.delete(hwnd)
+  topmostDragChangedAt.delete(hwnd)
+  const win = topmostOverlays.get(hwnd)
+  if (!win) return
+  topmostOverlays.delete(hwnd)
+  if (win.isDestroyed()) return
+  try {
+    win.close()
+  } catch {
+    void 0
+  }
+}
+
+function stopTopmostOverlayTimerIfIdle(): void {
+  if (topmostWindows.size) return
+  if (topmostOverlayTimer) {
+    clearInterval(topmostOverlayTimer)
+    topmostOverlayTimer = null
+  }
+  topmostLastRects.clear()
+  topmostDragChangedAt.clear()
+  for (const [hwnd, win] of Array.from(topmostOverlays.entries())) {
+    topmostOverlays.delete(hwnd)
+    if (win.isDestroyed()) continue
+    try {
+      win.close()
+    } catch {
+      void 0
+    }
+  }
+}
+
+function stopTopmostOverlayTimerAndCloseAll(): void {
+  if (topmostOverlayTimer) {
+    clearInterval(topmostOverlayTimer)
+    topmostOverlayTimer = null
+  }
+  topmostLastRects.clear()
+  topmostDragChangedAt.clear()
+  for (const [hwnd, win] of Array.from(topmostOverlays.entries())) {
+    topmostOverlays.delete(hwnd)
+    if (win.isDestroyed()) continue
+    try {
+      win.close()
+    } catch {
+      void 0
+    }
+  }
+}
+
+function syncTopmostBorder(hwnd: string, topmost: boolean): void {
+  if (!topmost) {
+    removeTopmostOverlay(hwnd)
+    stopTopmostOverlayTimerIfIdle()
+    return
+  }
+  const cfg = getTopmostBorderSettings()
+  if (!cfg.enabled) {
+    removeTopmostOverlay(hwnd)
+    stopTopmostOverlayTimerIfIdle()
+    return
+  }
+  ensureTopmostOverlayTimer()
+  const win = ensureTopmostOverlayWindow(hwnd)
+  applyTopmostOverlayStyle(hwnd, cfg.color, cfg.width)
+  try {
+    win.showInactive()
+  } catch {
+    void 0
+  }
+}
+
+function broadcastTopmostAudio(kind: 'confirm' | 'cancel'): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue
+    if (win.webContents.isLoading()) continue
+    try {
+      win.webContents.send('topmost:audio', { kind })
+    } catch {
+      void 0
+    }
+  }
+}
+
+async function isExternalWindowStashedByRoot(rootHwnd: string): Promise<boolean> {
+  const id = typeof rootHwnd === 'string' ? rootHwnd.trim() : ''
+  if (!id) return false
+  if (stashed.has(id)) return true
+  for (const hwnd of stashed.keys()) {
+    if (hwnd === id) return true
+    const root = await getExternalWindowRootHwnd(hwnd)
+    if (root === id) return true
+  }
+  return false
+}
+
 function normalizeHexColor(s: string): string | null {
   const v = typeof s === 'string' ? s.trim() : ''
   if (!v) return null
   return /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(v) ? v : null
-}
-
-function clampNumber(value: number, min: number, max: number): number {
-  if (Number.isNaN(value) || !Number.isFinite(value)) return min
-  return Math.min(max, Math.max(min, value))
 }
 
 function rectContainsPoint(
@@ -285,9 +547,12 @@ function cleanupOne(hwnd: string): void {
   if (s.hoverTimer) clearInterval(s.hoverTimer)
   s.hoverTimer = null
   try {
-    if (!s.handle.isDestroyed()) s.handle.close()
-  } catch {
-    void 0
+    if (!s.handle.isDestroyed()) {
+      // BUG: 必须等待窗口销毁完成，否则整个程序直接崩溃
+      setTimeout(() => s.handle.close(), 500)
+    }
+  } catch (e) {
+    console.error('Error closing window', hwnd, e)
   }
   stashed.delete(hwnd)
   broadcastChanged()
@@ -668,6 +933,65 @@ export function initWindowStash(opts: {
   })
 }
 
+export async function toggleTopmostWindowAtCursor(): Promise<void> {
+  if (process.platform !== 'win32') return
+  const cur = screen.getCursorScreenPoint()
+  const hit = await getExternalWindowFromPoint({ x: cur.x, y: cur.y })
+  if (!hit) return
+  const hwnd = hit.hwnd.trim()
+  if (!hwnd) return
+  if (topmostBusy.has(hwnd)) return
+  topmostBusy.add(hwnd)
+  try {
+    const nextTopmost = !topmostWindows.has(hwnd)
+    if (nextTopmost) {
+      const stashedConflict = await isExternalWindowStashedByRoot(hwnd)
+      if (stashedConflict) return
+    }
+    const ok = await setExternalWindowTopmost(hwnd, nextTopmost)
+    if (!ok) {
+      topmostWindows.delete(hwnd)
+      removeTopmostOverlay(hwnd)
+      stopTopmostOverlayTimerIfIdle()
+      return
+    }
+    if (nextTopmost) topmostWindows.add(hwnd)
+    else topmostWindows.delete(hwnd)
+    try {
+      syncTopmostBorder(hwnd, nextTopmost)
+    } catch {
+      void 0
+    }
+    broadcastTopmostAudio(nextTopmost ? 'confirm' : 'cancel')
+  } finally {
+    topmostBusy.delete(hwnd)
+  }
+}
+
+export function applyTopmostWindowSettingsToRuntime(): void {
+  const cfg = getTopmostBorderSettings()
+  if (!cfg.enabled) {
+    stopTopmostOverlayTimerAndCloseAll()
+    return
+  }
+  ensureTopmostOverlayTimer()
+  for (const hwnd of Array.from(topmostWindows.values())) syncTopmostBorder(hwnd, true)
+}
+
+export async function clearAllTopmostWindows(): Promise<void> {
+  const hwnds = Array.from(topmostWindows.values())
+  topmostWindows.clear()
+  for (const hwnd of hwnds) {
+    try {
+      await setExternalWindowTopmost(hwnd, false)
+    } catch {
+      void 0
+    }
+    removeTopmostOverlay(hwnd)
+  }
+  stopTopmostOverlayTimerAndCloseAll()
+}
+
 export async function stashForegroundToEdge(edge: ExternalWindowEdge): Promise<void> {
   const fg = await getForegroundExternalWindow()
   if (!fg) return
@@ -678,6 +1002,9 @@ export async function stashForegroundToEdge(edge: ExternalWindowEdge): Promise<v
     await restore(hwnd, true)
     return
   }
+
+  const root = await getExternalWindowRootHwnd(hwnd)
+  if (topmostWindows.has(root ?? hwnd)) return
 
   const cfg = getStashSettings()
   const ret = await hideExternalWindowToEdge({
@@ -735,31 +1062,35 @@ export async function stashForegroundToEdge(edge: ExternalWindowEdge): Promise<v
 }
 
 export async function restore(hwnd: string, activate: boolean): Promise<void> {
-  const s = stashed.get(hwnd)
-  if (!s) return
-  const wasPeeking = s.peeking
-  if (s.hoverTimer) clearInterval(s.hoverTimer)
-  s.hoverTimer = null
-  s.hoverBusy = false
-  s.peeking = false
-  s.peekGraceUntilMs = 0
+  try {
+    const s = stashed.get(hwnd)
+    if (!s) return
+    const wasPeeking = s.peeking
+    if (s.hoverTimer) clearInterval(s.hoverTimer)
+    s.hoverTimer = null
+    s.hoverBusy = false
+    s.peeking = false
+    s.peekGraceUntilMs = 0
 
-  if (wasPeeking) {
-    const rect = await getExternalWindowRect(hwnd)
-    if (rect) s.originalRect = rect
-  }
+    if (wasPeeking) {
+      const rect = await getExternalWindowRect(hwnd)
+      if (rect) s.originalRect = rect
+    }
 
-  const cfg = getStashSettings()
-  const ret = await restoreExternalWindow({
-    hwnd,
-    rect: s.originalRect,
-    animate: Boolean(cfg.animate),
-    durationMs: cfg.durationMs
-  })
-  cleanupOne(hwnd)
-  await persistMutate((items) => items.filter((it) => it.hwnd !== hwnd))
-  if (activate && ret.ok) {
-    await activateExternalWindow(hwnd)
+    const cfg = getStashSettings()
+    const ret = await restoreExternalWindow({
+      hwnd,
+      rect: s.originalRect,
+      animate: Boolean(cfg.animate),
+      durationMs: cfg.durationMs
+    })
+    cleanupOne(hwnd)
+    await persistMutate((items) => items.filter((it) => it.hwnd !== hwnd))
+    if (activate && ret.ok) {
+      await activateExternalWindow(hwnd)
+    }
+  } catch (error) {
+    console.error('restore failed', error)
   }
 }
 

@@ -6,7 +6,7 @@ import {
   Circle,
   Grid3X3,
   X,
-  MousePointer2,
+  SquareDashedMousePointer,
   PaintBucket,
   Palette,
   Slash,
@@ -75,12 +75,26 @@ const windowRects = ref<Array<{ x: number; y: number; width: number; height: num
 )
 const autoBounds = ref(false)
 const autoBoundsEnabled = ref(true)
+const autoSnapPending = ref(false)
+const autoSnapPointerId = ref<number | null>(null)
+const autoSnapDown = ref<Point | null>(null)
+const autoSnapDragThreshold = 4
+
+function clearAutoSnapPending(): void {
+  autoSnapPending.value = false
+  autoSnapPointerId.value = null
+  autoSnapDown.value = null
+}
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const imageRef = ref<HTMLImageElement | null>(null)
 
 const viewportWidth = ref(window.innerWidth)
 const viewportHeight = ref(window.innerHeight)
+
+const toolbarRef = ref<HTMLElement | null>(null)
+const toolbarWidth = ref(420)
+const toolbarHeight = ref(80)
 
 const bounds = ref<Bounds | null>(null)
 const imageReady = ref(false)
@@ -297,15 +311,6 @@ function clampPointToBounds(p: Point, b: Bounds): Point {
   return { x: clamp(p.x, b.x, b.x + b.width), y: clamp(p.y, b.y, b.y + b.height) }
 }
 
-function hexToRgba(hex: string, alpha: number): string {
-  const h = hex.replace('#', '').trim()
-  if (h.length !== 6) return `rgba(255, 255, 255, ${alpha})`
-  const r = Number.parseInt(h.slice(0, 2), 16)
-  const g = Number.parseInt(h.slice(2, 4), 16)
-  const b = Number.parseInt(h.slice(4, 6), 16)
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`
-}
-
 function canAnnotate(): boolean {
   const b = bounds.value
   return Boolean(b && imageReady.value && b.width >= 1 && b.height >= 1)
@@ -488,7 +493,7 @@ function renderOp(
     ctx.beginPath()
     ctx.rect(r.x, r.y, r.width, r.height)
     if (op.mode === 'fill') {
-      ctx.fillStyle = hexToRgba(op.color, 0.22)
+      ctx.fillStyle = op.color
       ctx.fill()
     }
     ctx.strokeStyle = op.color
@@ -507,7 +512,7 @@ function renderOp(
     ctx.beginPath()
     drawEllipsePath(ctx, op.from, op.to)
     if (op.mode === 'fill') {
-      ctx.fillStyle = hexToRgba(op.color, 0.22)
+      ctx.fillStyle = op.color
       ctx.fill()
     }
     ctx.strokeStyle = op.color
@@ -603,6 +608,16 @@ function updateViewport(): void {
   viewportHeight.value = window.innerHeight
   overlayDirty = true
   requestFrame()
+  void nextTick(() => measureToolbarSize())
+}
+
+function measureToolbarSize(): void {
+  const el = toolbarRef.value
+  if (!el) return
+  const w = el.offsetWidth
+  const h = el.offsetHeight
+  if (w > 0) toolbarWidth.value = w
+  if (h > 0) toolbarHeight.value = h
 }
 
 function ensureOverlayContext(): { ctx: CanvasRenderingContext2D; dpr: number } | null {
@@ -952,7 +967,6 @@ function applyPointer(p: Point): void {
 
 function onPointerDown(e: PointerEvent): void {
   if (!url.value) return
-  autoBounds.value = false
   pointerAltKey = e.altKey
   if (e.button === 2) {
     if (!bounds.value) {
@@ -982,6 +996,24 @@ function onPointerDown(e: PointerEvent): void {
   requestFrame()
 
   const b = bounds.value
+  if (
+    autoBounds.value &&
+    b &&
+    b.width > 0 &&
+    b.height > 0 &&
+    tool.value === 'select' &&
+    !e.altKey &&
+    isPointInBounds(p, b)
+  ) {
+    autoSnapPending.value = true
+    autoSnapPointerId.value = e.pointerId
+    autoSnapDown.value = p
+    return
+  }
+
+  clearAutoSnapPending()
+  autoBounds.value = false
+
   if (!b || b.width <= 0 || b.height <= 0) {
     dragMode.value = 'new'
     dragStart.value = p
@@ -1087,14 +1119,14 @@ function onContextMenu(e: MouseEvent): void {
 }
 
 function onDblClick(e: MouseEvent): void {
-  if (!autoBoundsEnabled.value) return
+  const b = bounds.value
+  if (!b || b.width < 1 || b.height < 1 || !imageReady.value) return
   if (!autoBounds.value) return
-  if (!bounds.value) return
   e.preventDefault()
+  clearAutoSnapPending()
   autoBounds.value = false
   autoBoundsEnabled.value = false
-  overlayDirty = true
-  requestFrame()
+  void onOk()
 }
 
 function onPointerMove(e: PointerEvent): void {
@@ -1104,8 +1136,31 @@ function onPointerMove(e: PointerEvent): void {
   pendingPointerY = clamp(e.clientY, 0, viewportHeight.value)
   hasPendingPointer = true
   magnifierDirty = true
-  if (dragMode.value === null && drawingPointerId === null) {
-    const p = { x: pendingPointerX, y: pendingPointerY }
+  const p = { x: pendingPointerX, y: pendingPointerY }
+
+  if (
+    autoSnapPending.value &&
+    autoSnapPointerId.value === e.pointerId &&
+    autoSnapDown.value
+  ) {
+    const down = autoSnapDown.value
+    const dx = p.x - down.x
+    const dy = p.y - down.y
+    if (dx * dx + dy * dy >= autoSnapDragThreshold * autoSnapDragThreshold) {
+      clearAutoSnapPending()
+      autoBounds.value = false
+      dragMode.value = 'new'
+      dragStart.value = down
+      dragStartBounds.value = null
+      setBounds({ x: down.x, y: down.y, width: 0, height: 0 })
+      applyPointer(p)
+      overlayDirty = true
+      requestFrame()
+      return
+    }
+  }
+
+  if (dragMode.value === null && drawingPointerId === null && !autoSnapPending.value) {
     if (autoBoundsEnabled.value && (!bounds.value || autoBounds.value)) {
       let hit: { x: number; y: number; width: number; height: number } | null = null
       for (const r of windowRects.value) {
@@ -1162,6 +1217,12 @@ function onPointerUp(e?: PointerEvent): void {
     } catch (err) {
       console.error(err)
     }
+  }
+  if (e && autoSnapPending.value && e.pointerId === autoSnapPointerId.value) {
+    clearAutoSnapPending()
+    overlayDirty = true
+    requestFrame()
+    return
   }
   if (e && drawingPointerId !== null && e.pointerId === drawingPointerId) {
     drawingPointerId = null
@@ -1320,8 +1381,15 @@ function onKeyDown(e: KeyboardEvent): void {
 const toolbarStyle = computed(() => {
   const b = bounds.value
   if (!b || !imageReady.value || b.width < 1 || b.height < 1) return { display: 'none' }
-  const top = clamp(b.y + b.height + 10, 10, viewportHeight.value - 80)
-  const left = clamp(b.x, 10, viewportWidth.value - 260)
+  const margin = 10
+  const w = toolbarWidth.value
+  const h = toolbarHeight.value
+  let left = b.x
+  if (left + w > viewportWidth.value - margin) {
+    left = viewportWidth.value - margin - w
+  }
+  left = clamp(left, margin, Math.max(margin, viewportWidth.value - margin - w))
+  const top = clamp(b.y + b.height + margin, margin, viewportHeight.value - h - margin)
   return { top: `${top}px`, left: `${left}px` }
 })
 
@@ -1345,6 +1413,7 @@ const onCapture = (d: Display, dataURL: string): void => {
   imageReady.value = false
   autoBounds.value = false
   autoBoundsEnabled.value = true
+  clearAutoSnapPending()
   magnifierPos.value = null
   lastPointer.value = null
   ops.value = []
@@ -1369,6 +1438,7 @@ const onReset = (): void => {
   imageReady.value = false
   autoBounds.value = false
   autoBoundsEnabled.value = true
+  clearAutoSnapPending()
   magnifierPos.value = null
   lastPointer.value = null
   ops.value = []
@@ -1384,6 +1454,10 @@ const onReset = (): void => {
 
 watch(url, () => {
   imageReady.value = false
+})
+
+watch([bounds, showColorPicker, imageReady], () => {
+  void nextTick(() => measureToolbarSize())
 })
 
 const onSetLang = (next: Partial<Lang>): void => {
@@ -1486,6 +1560,8 @@ const docClickCapture = (e: MouseEvent): void => {
   })
 }
 
+let toolbarResizeObserver: ResizeObserver | null = null
+
 onMounted(() => {
   window.screenshots.on('capture', captureListener)
   window.screenshots.on('reset', onReset)
@@ -1506,7 +1582,14 @@ onMounted(() => {
     canvas.addEventListener('pointercancel', onPointerUp)
   }
 
-  void nextTick()
+  void nextTick(() => {
+    measureToolbarSize()
+    const toolbar = toolbarRef.value
+    if (toolbar) {
+      toolbarResizeObserver = new ResizeObserver(() => measureToolbarSize())
+      toolbarResizeObserver.observe(toolbar)
+    }
+  })
   window.screenshots.ready()
   requestFrame()
 })
@@ -1525,6 +1608,9 @@ onBeforeUnmount(() => {
 
   window.removeEventListener('resize', updateViewport)
   window.removeEventListener('keydown', onKeyDown)
+
+  toolbarResizeObserver?.disconnect()
+  toolbarResizeObserver = null
 
   const c = canvasRef.value
   if (c) {
@@ -1600,7 +1686,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div class="toolbar" :style="toolbarStyle">
+    <div ref="toolbarRef" class="toolbar" :style="toolbarStyle">
       <div v-if="canAnnotate()" class="tools">
         <div class="tools-row">
           <button
@@ -1611,7 +1697,7 @@ onBeforeUnmount(() => {
             aria-label="选择/移动"
             @click="setTool('select')"
           >
-            <MousePointer2 :size="iconSize" />
+            <SquareDashedMousePointer :size="iconSize" />
           </button>
           <button
             class="icon-btn"
@@ -1846,11 +1932,11 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px;
+  padding: 5px;
   border-radius: 10px;
-  background: rgba(20, 20, 20, 0.6);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  background: rgb(54, 54, 54);
+  /* backdrop-filter: blur(6px); */
+  /* -webkit-backdrop-filter: blur(6px); */
   z-index: 3;
   pointer-events: auto;
 }
@@ -1858,6 +1944,7 @@ onBeforeUnmount(() => {
 .tools {
   display: flex;
   flex-direction: column;
+  justify-content: flex-start;
   align-items: center;
   gap: 6px;
   margin-right: 6px;
@@ -1881,8 +1968,10 @@ onBeforeUnmount(() => {
   height: 30px;
   padding: 0;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.06);
+  border: none;
+  /* border: 1px solid rgba(255, 255, 255, 0.14); */
+  /* background: rgba(255, 255, 255, 0.06); */
+  background-color: transparent;
   color: rgba(255, 255, 245, 0.92);
   cursor: pointer;
   display: inline-flex;
@@ -1926,7 +2015,8 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   border-radius: 6px;
-  border: 1px solid rgba(0, 0, 0, 0.35);
+  border: none;
+  /* border: 1px solid rgba(0, 0, 0, 0.35); */
   z-index: -1;
 }
 
@@ -1944,7 +2034,8 @@ onBeforeUnmount(() => {
   gap: 6px;
   padding: 6px;
   border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: none;
+  /* border: 1px solid rgba(255, 255, 255, 0.14); */
   background: rgba(17, 17, 17, 0.92);
 }
 
@@ -1952,19 +2043,21 @@ onBeforeUnmount(() => {
   width: 18px;
   height: 18px;
   border-radius: 5px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: none;
+  /* border: 1px solid rgba(255, 255, 255, 0.18); */
   padding: 0;
   cursor: pointer;
 }
 
 .swatch.active {
   outline: 2px solid rgba(255, 255, 255, 0.9);
-  outline-offset: 2px;
+  outline-offset: 1px;
 }
 
 .stroke {
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: none;
+  /* border: 1px solid rgba(255, 255, 255, 0.14); */
   background: rgba(255, 255, 255, 0.06);
   display: flex;
   align-items: center;
@@ -2006,7 +2099,7 @@ onBeforeUnmount(() => {
 
 .stroke-range:focus-visible::-webkit-slider-thumb {
   outline: 2px solid rgba(255, 255, 255, 0.85);
-  outline-offset: 2px;
+  outline-offset: 1px;
 }
 
 .stroke-dot-wrap {
@@ -2030,7 +2123,7 @@ onBeforeUnmount(() => {
   min-height: 34px;
   max-width: 420px;
   padding: 6px 8px;
-  border-radius: 8px;
+  border-radius: 4px;
   border: 1px solid rgba(255, 255, 255, 0.18);
   background: rgba(0, 0, 0, 0.35);
   color: rgba(255, 255, 255, 0.95);
@@ -2085,38 +2178,5 @@ onBeforeUnmount(() => {
   text-align: center;
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.12);
-}
-
-.btn {
-  height: 34px;
-  padding: 0 12px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.92);
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.btn:hover {
-  background: rgba(255, 255, 255, 0.14);
-}
-
-.btn:active {
-  transform: translateY(1px);
-}
-
-.btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.btn.danger {
-  border-color: rgba(255, 80, 80, 0.35);
-  background: rgba(255, 80, 80, 0.12);
-}
-
-.btn.danger:hover {
-  background: rgba(255, 80, 80, 0.18);
 }
 </style>

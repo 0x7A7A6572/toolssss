@@ -1,5 +1,4 @@
-import { createApp, h } from 'vue'
-import ConfirmDialog from '../components/ConfirmDialog.vue'
+import { Modal } from 'ant-design-vue'
 
 export interface ConfirmOptions {
   title?: string
@@ -8,22 +7,15 @@ export interface ConfirmOptions {
 }
 
 export default function confirm(message: string, options: ConfirmOptions = {}): Promise<boolean> {
-  const container = document.createElement('div')
-  document.body.appendChild(container)
   return new Promise<boolean>((resolve) => {
-    const app = createApp({
-      render() {
-        return h(ConfirmDialog, {
-          ...options,
-          message,
-          onClose(ok: boolean) {
-            resolve(Boolean(ok))
-            app.unmount()
-            if (container.parentNode) container.parentNode.removeChild(container)
-          }
-        })
-      }
+    Modal.confirm({
+      title: options.title ?? '确认操作',
+      content: message,
+      okText: options.confirmText ?? '确定',
+      cancelText: options.cancelText ?? '取消',
+      centered: true,
+      onOk: () => resolve(true),
+      onCancel: () => resolve(false)
     })
-    app.mount(container)
   })
 }

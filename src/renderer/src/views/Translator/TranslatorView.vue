@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { ArrowLeftRight, Copy, Wand2 } from 'lucide-vue-next'
+import { ArrowLeftRight, Copy, /* Wand2,  */ X } from 'lucide-vue-next'
 import { TRANSLATOR_EVENTS } from '@shared/translator'
-import type { AppSettings } from '@shared/settings'
 import confirm from '@renderer/utils/confirm'
+import { useSettingsStore } from '@renderer/state/settings'
 import {
   appendTranslationHistory,
   clearTranslationHistory,
@@ -22,12 +22,19 @@ const targetItems: Array<{ title: string; value: string }> = [
   ...Languages
 ]
 
+function toSelectOptions(
+  items: Array<{ title: string; value: string }>
+): Array<{ label: string; value: string }> {
+  return items.map((i) => ({ label: i.title, value: i.value }))
+}
+
 const inputText = ref('')
 const outputText = ref('')
 const loading = ref(false)
 const errorText = ref('')
 
-const settings = ref<AppSettings | null>(null)
+const settingsStore = useSettingsStore()
+const settings = computed(() => settingsStore.settings.value)
 
 const source = ref('auto')
 const target = ref('zh')
@@ -37,7 +44,6 @@ const historyItems = ref<TranslationHistoryItem[]>([])
 const canTranslate = computed(() => inputText.value.trim().length > 0 && !loading.value)
 const missingConfigHint = computed(() => {
   const s = settings.value
-  if (!s) return ''
   if (s.translate.provider === 'ai') {
     if (!s.ai.enabled) return 'AI 未启用，请到「全局设置」开启。'
     if (!s.ai.baseUrl.trim()) return '未配置 AI Base URL，请到「全局设置」完善。'
@@ -69,15 +75,15 @@ function formatTime(ts: number): string {
   }
 }
 
-async function copyText(text: string): Promise<void> {
-  const t = text.trim()
-  if (!t) return
-  try {
-    await navigator.clipboard.writeText(t)
-  } catch {
-    return
-  }
-}
+// async function copyText(text: string): Promise<void> {
+//   const t = text.trim()
+//   if (!t) return
+//   try {
+//     await navigator.clipboard.writeText(t)
+//   } catch {
+//     return
+//   }
+// }
 
 async function deleteHistoryItem(id: string): Promise<void> {
   historyItems.value = removeTranslationHistoryItem(id)
@@ -91,10 +97,9 @@ async function clearHistory(): Promise<void> {
 }
 
 async function refreshSettings(): Promise<void> {
-  const s = (await window.electron.ipcRenderer.invoke('settings:get')) as AppSettings
-  settings.value = s
-  source.value = s.translate?.defaultSource || 'auto'
-  target.value = s.translate?.defaultTarget || 'zh'
+  await settingsStore.refresh()
+  source.value = settings.value.translate?.defaultSource || 'auto'
+  target.value = settings.value.translate?.defaultTarget || 'zh'
 }
 
 function swapLanguages(): void {
@@ -144,9 +149,6 @@ async function copyResult(): Promise<void> {
 onMounted(() => {
   refreshSettings().catch(() => null)
   refreshHistory()
-  window.electron.ipcRenderer.on('settings:changed', (_: unknown, s: unknown) => {
-    settings.value = s as AppSettings
-  })
 })
 </script>
 
@@ -160,33 +162,21 @@ onMounted(() => {
     <section class="card">
       <div class="row">
         <div class="label">源语言</div>
-        <v-select
-          v-model="source"
-          class="select"
-          :items="sourceItems"
-          item-title="title"
-          item-value="value"
-        />
+        <a-select v-model:value="source" class="select" :options="toSelectOptions(sourceItems)" />
 
-        <button class="swap" type="button" @click="swapLanguages">
-          <ArrowLeftRight :size="16" />
-        </button>
+        <!-- <button class="swap" type="button" > -->
+        <ArrowLeftRight :size="16" @click="swapLanguages" />
+        <!-- </button> -->
 
         <div class="label">目标语言</div>
-        <v-select
-          v-model="target"
-          class="select"
-          :items="targetItems"
-          item-title="title"
-          item-value="value"
-        />
+        <a-select v-model:value="target" class="select" :options="toSelectOptions(targetItems)" />
 
         <div class="spacer" />
 
-        <button class="btn primary" type="button" :disabled="!canTranslate" @click="translate">
-          <Wand2 :size="16" />
+        <a-button type="primary" :disabled="!canTranslate" @click="translate">
+          <!-- <Wand2 :size="16" /> -->
           {{ loading ? '翻译中...' : '翻译' }}
-        </button>
+        </a-button>
       </div>
     </section>
 
@@ -233,15 +223,12 @@ onMounted(() => {
             <div class="history-time">{{ formatTime(item.createdAt) }}</div>
             <div class="history-lang">{{ item.source || 'auto' }} → {{ item.target }}</div>
             <div class="spacer" />
-            <button class="mini-btn" type="button" @click="copyText(item.output)">复制</button>
-            <button class="mini-btn danger" type="button" @click="deleteHistoryItem(item.id)">
-              删除
-            </button>
+            <X class="point" :size="18" @click="deleteHistoryItem(item.id)" />
           </div>
           <div class="history-text">
-            <div class="history-label">原文</div>
+            <div class="history-label">原</div>
             <div class="history-content">{{ item.input }}</div>
-            <div class="history-label">译文</div>
+            <div class="history-label">译</div>
             <div class="history-content">{{ item.output }}</div>
           </div>
         </div>
@@ -276,7 +263,7 @@ onMounted(() => {
 }
 
 .card {
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  /* border: 1px solid rgba(255, 255, 255, 0.08); */
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.04);
   padding: 12px;
@@ -323,7 +310,7 @@ onMounted(() => {
 .btn {
   height: 34px;
   padding: 0 12px;
-  border-radius: 10px;
+  border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.03);
   color: rgba(235, 235, 245, 0.88);
@@ -354,7 +341,7 @@ onMounted(() => {
 }
 
 .panel {
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  /* border: 1px solid rgba(255, 255, 255, 0.08); */
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.04);
   padding: 12px;
@@ -427,7 +414,7 @@ onMounted(() => {
 }
 
 .history {
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  /* border: 1px solid rgba(255, 255, 255, 0.08); */
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.04);
   padding: 12px;
@@ -462,7 +449,8 @@ onMounted(() => {
 }
 
 .history-item {
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  /* border: 1px solid rgba(255, 255, 255, 0.08); */
+  border: none;
   border-radius: 12px;
   background: rgba(0, 0, 0, 0.15);
   padding: 10px;
@@ -490,15 +478,16 @@ onMounted(() => {
 }
 
 .mini-btn {
-  height: 28px;
-  padding: 0 10px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.03);
-  color: rgba(235, 235, 245, 0.88);
+  font-weight: bold;
+  padding: 2px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
   font-weight: 700;
   font-size: 12px;
+  border: none;
 }
 
 .mini-btn:hover {
@@ -512,24 +501,34 @@ onMounted(() => {
 
 .history-text {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  flex-direction: row;
+  /* gap: 6px; */
 }
 
 .history-label {
-  font-size: 12px;
-  color: rgba(235, 235, 245, 0.62);
+  font-weight: bold;
+  font-size: 16px;
+  background: #ffffff40;
+  border: none;
+  display: flex;
+  /* align-items: center; */
+  padding: 3px 6px;
+  border-top-left-radius: 8px;
+  border-bottom-left-radius: 8px;
 }
 
 .history-content {
   white-space: pre-wrap;
   word-break: break-word;
   padding: 10px;
-  border-radius: 10px;
+  border: none;
+  border-top-right-radius: 8px;
+  border-bottom-right-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.06);
   background: rgba(0, 0, 0, 0.18);
   color: rgba(235, 235, 245, 0.9);
   font-size: 13px;
   line-height: 18px;
+  margin-right: 10px;
 }
 </style>

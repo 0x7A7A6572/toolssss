@@ -1,13 +1,4 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
-import EyeProtection from '../views/EyeProtection/EyeProtection.vue'
-import LandingView from '../views/Landing/LandingView.vue'
-import OtherTools from '../views/OtherTools/OtherTools.vue'
-import ScriptLibrary from '../views/ScriptLibrary/ScriptLibrary.vue'
-import SettingsView from '../views/Settings/SettingsView.vue'
-import SnipPaste from '../views/SnipPaste/SnipPaste.vue'
-import StickyNotes from '../views/StickyNotes/StickyNotes.vue'
-import TranslatorView from '../views/Translator/TranslatorView.vue'
-import WindowStashView from '../views/WindowStash/WindowStashView.vue'
 
 const routes = [
   {
@@ -17,47 +8,47 @@ const routes = [
   {
     path: '/landing',
     name: 'Landing',
-    component: LandingView
+    component: () => import('../views/Landing/LandingView.vue')
   },
   {
     path: '/sticky-notes',
     name: 'StickyNotes',
-    component: StickyNotes
+    component: () => import('../views/StickyNotes/StickyNotes.vue')
   },
   {
     path: '/eye-protection',
     name: 'EyeProtection',
-    component: EyeProtection
+    component: () => import('../views/EyeProtection/EyeProtection.vue')
   },
   {
     path: '/other-tools',
     name: 'OtherTools',
-    component: OtherTools
-  },
-  {
-    path: '/script-library',
-    name: 'ScriptLibrary',
-    component: ScriptLibrary
+    component: () => import('../views/OtherTools/OtherTools.vue')
   },
   {
     path: '/snip-paste',
     name: 'SnipPaste',
-    component: SnipPaste
+    component: () => import('../views/SnipPaste/SnipPaste.vue')
   },
   {
     path: '/translator',
     name: 'Translator',
-    component: TranslatorView
+    component: () => import('../views/Translator/TranslatorView.vue')
   },
   {
     path: '/window-stash',
     name: 'WindowStash',
-    component: WindowStashView
+    component: () => import('../views/WindowStash/WindowStashView.vue')
+  },
+  {
+    path: '/scheduled-tasks',
+    name: 'ScheduledTasks',
+    component: () => import('../views/ScheduledTasks/ScheduledTasks.vue')
   },
   {
     path: '/settings',
     name: 'Settings',
-    component: SettingsView
+    component: () => import('../views/Settings/SettingsView.vue')
   }
 ]
 

@@ -5,6 +5,7 @@ import { Pencil } from 'lucide-vue-next'
 const props = defineProps<{
   modelValue: string
   placeholder?: string
+  disabled?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -40,6 +41,11 @@ const currentShortcutDisplay = computed(() => {
   if (!props.modelValue) return []
   return props.modelValue.split('+')
 })
+
+function onDisplayClick(): void {
+  if (props.disabled) return
+  startRecording()
+}
 
 function startRecording(): void {
   isRecording.value = true
@@ -139,9 +145,9 @@ function clear(): void {
 
 <template>
   <div class="shortcut-input">
-    <div class="display" @click="startRecording">
+    <div class="display" :class="{ disabled: props.disabled }" @click="onDisplayClick">
       <template v-if="currentShortcutDisplay.length > 0">
-        <span v-for="k in currentShortcutDisplay" :key="k" class="key-badge small">{{ k }}</span>
+        <a-tag v-for="k in currentShortcutDisplay" :key="k" class="key-badge small">{{ k }}</a-tag>
       </template>
       <span v-else class="placeholder">{{ placeholder || '点击设置快捷键' }}</span>
       <span class="edit-icon">
@@ -149,30 +155,28 @@ function clear(): void {
       </span>
     </div>
 
-    <Teleport to="body">
-      <div v-if="isRecording" class="modal-overlay" @click.self="cancel">
-        <div class="modal">
-          <div class="modal-header">
-            <div class="modal-title">激活快捷键</div>
-            <div class="modal-subtitle">按组合键以更改此快捷键</div>
-          </div>
+    <a-modal :open="isRecording" centered :footer="null" @cancel="cancel">
+      <div class="modal">
+        <div class="modal-header">
+          <div class="modal-title">激活快捷键</div>
+          <div class="modal-subtitle">按组合键以更改此快捷键</div>
+        </div>
 
-          <div class="modal-body">
-            <div class="keys-display">
-              <span v-if="displayKeys.length === 0" class="waiting">按下键盘...</span>
-              <span v-for="k in displayKeys" :key="k" class="key-badge large">{{ k }}</span>
-            </div>
-            <div class="hint">只有以 Windows 键、Ctrl、Alt 或 Shift 开头的快捷键才有效。</div>
+        <div class="modal-body">
+          <div class="keys-display">
+            <span v-if="displayKeys.length === 0" class="waiting">按下键盘...</span>
+            <a-tag v-for="k in displayKeys" :key="k" class="key-badge large">{{ k }}</a-tag>
           </div>
+          <div class="hint">只有以 Windows 键、Ctrl、Alt 或 Shift 开头的快捷键才有效。</div>
+        </div>
 
-          <div class="modal-footer">
-            <button class="btn primary" @click="save">保存</button>
-            <button class="btn" @click="clear">重置</button>
-            <button class="btn" @click="cancel">取消</button>
-          </div>
+        <div class="modal-footer">
+          <a-button type="primary" @click="save">保存</a-button>
+          <a-button @click="clear">重置</a-button>
+          <a-button @click="cancel">取消</a-button>
         </div>
       </div>
-    </Teleport>
+    </a-modal>
   </div>
 </template>
 
@@ -184,11 +188,10 @@ function clear(): void {
 .display {
   display: flex;
   align-items: center;
-  gap: 4px;
+  /* gap: 4px; */
   padding: 6px 10px;
   border-radius: 6px;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(0, 0, 0, 0.2);
   cursor: pointer;
   /* min-width: 120px; */
   min-height: 32px;
@@ -197,7 +200,17 @@ function clear(): void {
 
 .display:hover {
   border-color: rgba(59, 130, 246, 0.5);
-  background: rgba(255, 255, 255, 0.04);
+  /* background: rgba(255, 255, 255, 0.04); */
+}
+
+.display.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.display.disabled:hover {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.2);
 }
 
 .placeholder {
@@ -236,34 +249,18 @@ function clear(): void {
   border-radius: 8px;
 }
 
-/* Modal Styles */
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(4px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 9999;
-}
-
 .modal {
-  background: #1e293b;
-  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
   width: 480px;
-  padding: 24px;
   display: flex;
   flex-direction: column;
   gap: 24px;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
 }
 
 .modal-header {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
 }
 
 .modal-title {
@@ -308,30 +305,5 @@ function clear(): void {
   display: flex;
   gap: 12px;
   justify-content: flex-end;
-}
-
-.btn {
-  padding: 8px 16px;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.05);
-  color: #fff;
-  cursor: pointer;
-  font-size: 14px;
-}
-
-.btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.btn.primary {
-  background: var(--color-text);
-  color: #000;
-  border-color: transparent;
-  font-weight: 600;
-}
-
-.btn.primary:hover {
-  background: #22e6ea;
 }
 </style>

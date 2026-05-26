@@ -1,4 +1,18 @@
+import type { AiProviderKey } from './ai-providers'
+
 export type AlarmReason = 'alarm' | 'break'
+export type AiProvider = AiProviderKey | 'custom'
+export type AiProfileSource = 'provider' | 'custom'
+
+export interface AiProfile {
+  id: string
+  name: string
+  source: AiProfileSource
+  provider: AiProvider
+  baseUrl: string
+  model: string
+  apiKeySet: boolean
+}
 
 export interface AppSettings {
   general: {
@@ -6,7 +20,6 @@ export interface AppSettings {
     autoStart: boolean
   }
   snip: {
-    enabled: boolean
     provider: 'app'
     saveDir: string
     suspendEyeOverlay: boolean
@@ -15,6 +28,7 @@ export interface AppSettings {
     saveDir: string
   }
   shortcuts: Record<string, string>
+  shortcutsEnabled: Record<string, boolean>
   translate: {
     provider: 'baidu' | 'bing' | 'ai'
     defaultSource: string
@@ -32,10 +46,16 @@ export interface AppSettings {
   }
   ai: {
     enabled: boolean
-    provider: 'openai' | 'gmini' | 'kimi' | 'qwen' | 'custom'
+    provider: AiProvider
     baseUrl: string
     model: string
     apiKeySet: boolean
+    activeProfileId: string
+    profiles: AiProfile[]
+  }
+  funFact: {
+    title: string
+    prompt: string
   }
   eye: {
     enabled: boolean
@@ -54,6 +74,14 @@ export interface AppSettings {
     disableInFullscreen: boolean
     closeOnEnd: boolean
   }
+  scheduledTasks: {
+    shutdown: {
+      enabled: boolean
+      mode: 'once' | 'daily'
+      time: string
+      onceDayOffset: 0 | 1
+    }
+  }
   windowStash: {
     handleColors: Record<'left' | 'top' | 'right' | 'bottom', string>
     handleOpacity: number
@@ -61,6 +89,9 @@ export interface AppSettings {
     showHandleDrag: boolean
     animate: boolean
     durationMs: number
+    topmostHighlightEnabled: boolean
+    topmostBorderColor: string
+    topmostBorderWidth: number
   }
 }
 
@@ -69,15 +100,18 @@ export type SettingsPatch = Partial<{
   snip: Partial<AppSettings['snip']>
   stickyNotes: Partial<AppSettings['stickyNotes']>
   shortcuts: Partial<AppSettings['shortcuts']>
+  shortcutsEnabled: Partial<AppSettings['shortcutsEnabled']>
   translate: Partial<Omit<AppSettings['translate'], 'baidu' | 'bing'>> & {
     baidu?: Partial<AppSettings['translate']['baidu']>
     bing?: Partial<AppSettings['translate']['bing']>
   }
   ai: Partial<AppSettings['ai']>
+  funFact: Partial<AppSettings['funFact']>
   eye: Partial<AppSettings['eye']>
   reminderSeconds: number
   alarm: Partial<AppSettings['alarm']>
   break: Partial<AppSettings['break']>
+  scheduledTasks: Partial<AppSettings['scheduledTasks']>
   windowStash: Partial<AppSettings['windowStash']>
 }>
 
@@ -87,7 +121,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
     autoStart: false
   },
   snip: {
-    enabled: true,
     provider: 'app',
     saveDir: '',
     suspendEyeOverlay: false
@@ -105,7 +138,21 @@ export const DEFAULT_SETTINGS: AppSettings = {
     stashLeft: 'Ctrl+Shift+1',
     stashTop: 'Ctrl+Shift+2',
     stashRight: 'Ctrl+Shift+3',
-    stashBottom: 'Ctrl+Shift+4'
+    stashBottom: 'Ctrl+Shift+4',
+    toggleTopmostWindow: 'Ctrl+Alt+T'
+  },
+  shortcutsEnabled: {
+    toggleEye: false,
+    translateSelection: true,
+    snipStart: true,
+    stickerPaste: true,
+    stickersToggleHidden: true,
+    stickyNotesPopup: false,
+    stashLeft: true,
+    stashTop: true,
+    stashRight: true,
+    stashBottom: true,
+    toggleTopmostWindow: true
   },
   translate: {
     provider: 'baidu',
@@ -125,9 +172,16 @@ export const DEFAULT_SETTINGS: AppSettings = {
   ai: {
     enabled: false,
     provider: 'openai',
-    baseUrl: 'https://api.openai.com',
-    model: 'gpt-4o-mini',
-    apiKeySet: false
+    baseUrl: '',
+    model: '',
+    apiKeySet: false,
+    activeProfileId: '',
+    profiles: []
+  },
+  funFact: {
+    title: '每日冷知识',
+    prompt:
+      '给我一条“{title}”，日期：{ymd}。\n要求：1) 1-3 句；2) 不要列表；3) 不要标题符号；4) 不要输出多余解释。'
   },
   eye: {
     enabled: false,
@@ -146,6 +200,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
     disableInFullscreen: true,
     closeOnEnd: true
   },
+  scheduledTasks: {
+    shutdown: {
+      enabled: false,
+      mode: 'once',
+      time: '23:30',
+      onceDayOffset: 0
+    }
+  },
   windowStash: {
     handleColors: {
       left: '#22c55e',
@@ -157,6 +219,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
     showHandleTitle: true,
     showHandleDrag: true,
     animate: true,
-    durationMs: 180
+    durationMs: 180,
+    topmostHighlightEnabled: true,
+    topmostBorderColor: '#3b82f6',
+    topmostBorderWidth: 3
   }
 }

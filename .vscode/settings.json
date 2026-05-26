@@ -1,4 +1,12 @@
 {
+  "files.watcherExclude": {
+    "**/dist/**": true,
+    "**/out/**": true
+  },
+  "search.exclude": {
+    "**/dist": true,
+    "**/out": true
+  },
   "[typescript]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode"
   },
@@ -11,5 +19,7 @@
   "cSpell.words": [
     "lucide",
     "toolssss"
-  ]
+  ],
+  "commentTranslate.targetLanguage": "zh-CN",
+  "svn.ignoreMissingSvnWarning": true
 }

@@ -1,50 +1,16 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { WeatherTool } from '../../utils/weather'
-import type { WeatherDashboard } from '@shared/weather'
+import type { WeatherDashboard, WeatherProvinceCity } from '@shared/weather'
 import { DEFAULT_SETTINGS, type AppSettings } from '@shared/settings'
-import { RefreshCw, Settings, Sparkles } from 'lucide-vue-next'
-import LazyCascader from '../../components/LazyCascader.vue'
+import { useSettingsStore } from '@renderer/state/settings'
+import { PencilLine, Settings, Sparkles, Plus } from 'lucide-vue-next'
 import SevenDayTempChart from '../../components/SevenDayTempChart.vue'
+import WeatherHourlyTrendsChart, {
+  type HourlyMetricKey
+} from '../../components/WeatherHourlyTrendsChart.vue'
 import { LegalHoliday, SolarDay } from 'tyme4ts'
 import answerBookData from '../../../../libs/book-of-answers.json'
-
-const PROVINCES: Array<{ name: string; code: string }> = [
-  { name: '北京', code: 'BJ' },
-  { name: '天津', code: 'TJ' },
-  { name: '上海', code: 'SH' },
-  { name: '重庆', code: 'CQ' },
-  { name: '河北', code: 'HE' },
-  { name: '山西', code: 'SX' },
-  { name: '内蒙古', code: 'NM' },
-  { name: '辽宁', code: 'LN' },
-  { name: '吉林', code: 'JL' },
-  { name: '黑龙江', code: 'HL' },
-  { name: '江苏', code: 'JS' },
-  { name: '浙江', code: 'ZJ' },
-  { name: '安徽', code: 'AH' },
-  { name: '福建', code: 'FJ' },
-  { name: '江西', code: 'JX' },
-  { name: '山东', code: 'SD' },
-  { name: '河南', code: 'HA' },
-  { name: '湖北', code: 'HB' },
-  { name: '湖南', code: 'HN' },
-  { name: '广东', code: 'GD' },
-  { name: '广西', code: 'GX' },
-  { name: '海南', code: 'HI' },
-  { name: '四川', code: 'SC' },
-  { name: '贵州', code: 'GZ' },
-  { name: '云南', code: 'YN' },
-  { name: '西藏', code: 'XZ' },
-  { name: '陕西', code: 'SN' },
-  { name: '甘肃', code: 'GS' },
-  { name: '青海', code: 'QH' },
-  { name: '宁夏', code: 'NX' },
-  { name: '新疆', code: 'XJ' },
-  { name: '香港', code: 'HK' },
-  { name: '澳门', code: 'MO' },
-  { name: '台湾', code: 'TW' }
-]
 
 const DEFAULT_STATION_ID = '59431'
 const stationId = ref<string>(localStorage.getItem('weather.stationId') ?? DEFAULT_STATION_ID)
@@ -54,6 +20,21 @@ const loadingSate = reactive({
 })
 const errorText = ref<string | null>(null)
 const dashboard = ref<WeatherDashboard | null>(null)
+const weatherType = ref<string>('recently')
+const hourlyActiveKey = ref<HourlyMetricKey>('temperatureC')
+const hourlyTrends = computed(() => dashboard.value?.hourlyTrends ?? null)
+
+const hourlyLegend = [
+  { key: 'temperatureC' as const, label: '气温' },
+  { key: 'precipitationMm' as const, label: '降水' },
+  { key: 'windSpeedMs' as const, label: '风速' },
+  { key: 'humidityPercent' as const, label: '湿度' },
+  { key: 'cloudPercent' as const, label: '云量' }
+]
+
+function toggleHourlyMetric(key: HourlyMetricKey): void {
+  hourlyActiveKey.value = key
+}
 
 const provCode = ref<string>(localStorage.getItem('weather.provCode') ?? 'JS')
 const cities = ref<Array<{ id: string; name: string }>>([])
@@ -62,10 +43,47 @@ const citiesLoading = ref(false)
 const citiesErrorText = ref<string | null>(null)
 const lastRefreshMs = ref<number>(0)
 const lastRefreshKey = ref<string>('')
-const MIN_INTERVAL_MS = 60 * 1000
-const cascValue = ref<Array<string | number>>([])
 const cityPickerOpen = ref(false)
 const paydayDialogOpen = ref(false)
+const provinces = ref<WeatherProvinceCity[]>([])
+const provincesLoading = ref(false)
+const provincesErrorText = ref<string | null>(null)
+const cityQuery = ref<string>('')
+const cityDropdownOpen = ref(false)
+
+const filteredCities = computed(() => {
+  const q = cityQuery.value.trim()
+  if (!q) return cities.value
+  const qUpper = q.toUpperCase()
+  return cities.value.filter((c) => c.name.includes(q) || c.id.toUpperCase().includes(qUpper))
+})
+
+const provinceGroups = computed(() => {
+  const map = new Map<string, WeatherProvinceCity[]>()
+  for (const p of provinces.value) {
+    const letter = (p.id?.[0] || '#').toUpperCase()
+    const list = map.get(letter)
+    if (list) list.push(p)
+    else map.set(letter, [p])
+  }
+  return Array.from(map.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([letter, list]) => ({
+      letter,
+      items: [...list].sort((x, y) => x.name.localeCompare(y.name, 'zh-Hans-CN'))
+    }))
+})
+
+const provinceLetters = computed(() => provinceGroups.value.map((g) => g.letter))
+const provinceListEl = ref<HTMLElement | null>(null)
+
+function scrollToProvinceLetter(letter: string): void {
+  const container = provinceListEl.value
+  if (!container) return
+  const target = container.querySelector(`[data-letter="${letter}"]`) as HTMLElement | null
+  if (!target) return
+  container.scrollTo({ top: target.offsetTop, behavior: 'smooth' })
+}
 
 const PAYDAY_KEY = 'workCalendar.paydayDay'
 const paydayDay = ref<number>(normalizePaydayDay(localStorage.getItem(PAYDAY_KEY)))
@@ -92,7 +110,8 @@ const answerSpotlightStyle = computed<Record<string, string>>(() => ({
   '--answer-spot-y': `${answerSpotlightY.value}px`
 }))
 
-const settings = ref<AppSettings>(structuredClone(DEFAULT_SETTINGS))
+const settingsStore = useSettingsStore()
+const settings = computed(() => settingsStore.settings.value)
 
 const FUN_FACT_YMD_KEY = 'ai.funFact.ymd'
 const FUN_FACT_TEXT_KEY = 'ai.funFact.text'
@@ -133,6 +152,58 @@ const aiReady = computed(() => {
   return Boolean(ai.enabled && ai.apiKeySet && ai.baseUrl.trim() && ai.model.trim())
 })
 
+const funFactTitle = computed(() => {
+  const v = settings.value.funFact?.title
+  return (typeof v === 'string' ? v.trim() : '') || DEFAULT_SETTINGS.funFact.title
+})
+
+const funFactEditOpen = ref(false)
+const funFactTitleDraft = ref('')
+const funFactPromptDraft = ref('')
+const funFactEditSaving = ref(false)
+const funFactEditErrorText = ref('')
+
+function openFunFactEditor(): void {
+  funFactEditErrorText.value = ''
+  funFactTitleDraft.value =
+    (typeof settings.value.funFact?.title === 'string'
+      ? settings.value.funFact.title
+      : ''
+    ).trim() || DEFAULT_SETTINGS.funFact.title
+  funFactPromptDraft.value =
+    typeof settings.value.funFact?.prompt === 'string'
+      ? settings.value.funFact.prompt
+      : DEFAULT_SETTINGS.funFact.prompt
+  funFactEditOpen.value = true
+}
+
+function closeFunFactEditor(): void {
+  funFactEditOpen.value = false
+  funFactEditSaving.value = false
+  funFactEditErrorText.value = ''
+}
+
+async function saveFunFactEditor(): Promise<void> {
+  funFactEditSaving.value = true
+  funFactEditErrorText.value = ''
+  try {
+    const title = funFactTitleDraft.value.trim()
+    const prompt = funFactPromptDraft.value.replace(/\r\n/g, '\n')
+    const ret = (await window.electron.ipcRenderer.invoke('settings:update', {
+      funFact: {
+        title,
+        prompt
+      }
+    })) as AppSettings
+    settingsStore.replace(ret)
+    closeFunFactEditor()
+  } catch (e) {
+    funFactEditErrorText.value = e instanceof Error ? e.message : '保存失败'
+  } finally {
+    funFactEditSaving.value = false
+  }
+}
+
 function normalizeCachedFunFact(): void {
   if (!funFactYmd.value) return
   if (funFactYmd.value === funFactTodayYmd.value) return
@@ -142,13 +213,8 @@ function normalizeCachedFunFact(): void {
   localStorage.removeItem(FUN_FACT_TEXT_KEY)
 }
 
-const onSettingsChanged = (_: unknown, s: unknown): void => {
-  settings.value = s as AppSettings
-}
-
 async function refreshSettings(): Promise<void> {
-  const result = await window.electron.ipcRenderer.invoke('settings:get')
-  settings.value = result as AppSettings
+  await settingsStore.refresh()
 }
 
 function endFunFactLoading(): void {
@@ -204,7 +270,7 @@ function onFunFactCancelled(_event: unknown, payload: unknown): void {
 
 async function refreshDailyFunFact(force: boolean): Promise<void> {
   loadingSate.daily = true
-  normalizeCachedFunFact()
+  // normalizeCachedFunFact()
   if (!aiReady.value) {
     funFactErrorText.value = '请到「全局设置」启用 AI 并配置 Base URL / Key / Model'
     endFunFactLoading()
@@ -242,65 +308,82 @@ async function refreshDailyFunFact(force: boolean): Promise<void> {
   }
 }
 
+let autoFunFactRequested = false
+function maybeAutoRefreshFunFact(): void {
+  if (autoFunFactRequested) return
+  if (!settingsStore.ready.value) return
+  if (stackActive.value !== 'funFact') return
+  if (funFactLoading.value) return
+  if (funFactStreamId.value) return
+  autoFunFactRequested = true
+  normalizeCachedFunFact()
+  refreshDailyFunFact(false).catch(() => null)
+}
+
+watch(
+  () => stackActive.value,
+  () => {
+    maybeAutoRefreshFunFact()
+  }
+)
+
 function openCityPicker(): void {
   cityPickerOpen.value = true
+  if (provinces.value.length === 0) {
+    loadProvinces().catch(() => null)
+    return
+  }
 }
 
 function closeCityPicker(): void {
   cityPickerOpen.value = false
+  cityQuery.value = ''
+  cityDropdownOpen.value = false
 }
 
 function onKeydown(e: KeyboardEvent): void {
   if (e.key !== 'Escape') return
+  if (cityDropdownOpen.value) {
+    closeCityDropdown()
+    return
+  }
   closeCityPicker()
   closePaydayDialog()
+  closeFunFactEditor()
 }
 
-const provinceOptions = computed(() =>
-  PROVINCES.map((p) => ({
-    label: p.name,
-    value: p.code
-  }))
-)
-
-async function lazyLoadCities(
-  children: { value?: unknown; label?: unknown },
-  resolve: (children: Array<{ label: string; value: string }>) => void
-): Promise<void> {
-  const code = String(children.value || '')
-    .trim()
-    .toUpperCase()
-  const list = await WeatherTool.getProvinceCities(code)
-  resolve(list.map((c) => ({ label: c.name, value: c.id })))
-}
-
-const onCascChange = (payload: {
-  value: unknown[]
-  labels: string[]
-  selectedNodes: unknown[]
-}): void => {
-  const arr: unknown[] = Array.isArray(payload?.value) ? payload.value : []
-  const pv = typeof arr[0] === 'string' ? (arr[0] as string) : provCode.value
-  const city = typeof arr[1] === 'string' ? (arr[1] as string) : null
-  provCode.value = pv
-  localStorage.setItem('weather.provCode', pv)
-  if (city) {
-    chosenCityId.value = city
-    stationId.value = city
-    localStorage.setItem('weather.stationId', stationId.value)
-    refresh().catch(() => null)
-    closeCityPicker()
+async function loadProvinces(): Promise<void> {
+  provincesLoading.value = true
+  provincesErrorText.value = null
+  try {
+    const list = await WeatherTool.getProvinces()
+    provinces.value = list
+    const current = provCode.value
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z]/g, '')
+    const next = list.some((p) => p.id === current) ? current : (list[0]?.id ?? '')
+    if (next) {
+      provCode.value = next
+      localStorage.setItem('weather.provCode', next)
+    }
+  } catch {
+    provinces.value = []
+    provincesErrorText.value = '省份列表加载失败'
+  } finally {
+    provincesLoading.value = false
   }
 }
 
-async function loadCities(): Promise<void> {
-  const code = provCode.value
+async function loadCitiesForProvince(inputCode: string): Promise<void> {
+  const code = inputCode
     .trim()
     .toUpperCase()
     .replace(/[^A-Z]/g, '')
   if (!code) return
   provCode.value = code
   localStorage.setItem('weather.provCode', code)
+  cityQuery.value = ''
   citiesLoading.value = true
   citiesErrorText.value = null
   try {
@@ -322,6 +405,49 @@ async function loadCities(): Promise<void> {
   }
 }
 
+function selectProvince(code: string): void {
+  const next = code
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z]/g, '')
+  if (!next) return
+  if (provCode.value !== next) {
+    chosenCityId.value = null
+    cityQuery.value = ''
+  }
+  openCityDropdown()
+  loadCitiesForProvince(next).catch(() => null)
+}
+
+function selectCity(cityId: string): void {
+  const v = String(cityId || '').trim()
+  if (!v) return
+  chosenCityId.value = v
+  stationId.value = v
+  localStorage.setItem('weather.stationId', v)
+  refresh().catch(() => null)
+  closeCityPicker()
+}
+
+function openCityDropdown(): void {
+  cityDropdownOpen.value = true
+  cityQuery.value = ''
+  if (provinces.value.length === 0) {
+    loadProvinces()
+      .then(() => loadCitiesForProvince(provCode.value))
+      .catch(() => null)
+    return
+  }
+  if (cities.value.length === 0) {
+    loadCitiesForProvince(provCode.value).catch(() => null)
+  }
+}
+
+function closeCityDropdown(): void {
+  cityDropdownOpen.value = false
+  cityQuery.value = ''
+}
+
 const todayWeatherEmoji = computed(() => {
   const text = dashboard.value?.days?.[0]?.dayText ?? ''
   if (!text) return '🌤️'
@@ -334,6 +460,72 @@ const todayWeatherEmoji = computed(() => {
   if (text.includes('晴')) return '☀️'
   return '🌤️'
 })
+
+const emojiPullY = ref(0)
+const emojiPulling = ref(false)
+const emojiPointerId = ref<number | null>(null)
+const emojiStartClientY = ref(0)
+const EMOJI_PULL_MAX_PX = 84
+const EMOJI_PULL_TRIGGER_PX = 52
+
+const emojiPullReady = computed(() => emojiPullY.value >= EMOJI_PULL_TRIGGER_PX)
+
+function onEmojiPointerDown(e: PointerEvent): void {
+  if (!dashboard.value) return
+  if (loadingSate.weather) return
+  if (e.pointerType === 'mouse' && e.button !== 0) return
+  const el = e.currentTarget as HTMLElement | null
+  if (!el) return
+  emojiPointerId.value = e.pointerId
+  emojiStartClientY.value = e.clientY
+  emojiPulling.value = true
+  try {
+    el.setPointerCapture(e.pointerId)
+  } catch {
+    emojiPointerId.value = null
+    emojiPulling.value = false
+    emojiPullY.value = 0
+  }
+}
+
+function onEmojiPointerMove(e: PointerEvent): void {
+  if (!emojiPulling.value) return
+  if (emojiPointerId.value !== e.pointerId) return
+  const dy = e.clientY - emojiStartClientY.value
+  if (dy <= 0) {
+    emojiPullY.value = 0
+    return
+  }
+  const dampened = dy * 0.58
+  emojiPullY.value = Math.min(EMOJI_PULL_MAX_PX, dampened)
+}
+
+function endEmojiPull(triggerRefresh: boolean): void {
+  const shouldRefresh =
+    triggerRefresh &&
+    emojiPullY.value >= EMOJI_PULL_TRIGGER_PX &&
+    dashboard.value !== null &&
+    !loadingSate.weather
+  emojiPulling.value = false
+  emojiPointerId.value = null
+  emojiPullY.value = 0
+  if (shouldRefresh) refresh().catch(() => null)
+}
+
+function onEmojiPointerUp(e: PointerEvent): void {
+  if (emojiPointerId.value !== e.pointerId) return
+  endEmojiPull(true)
+}
+
+function onEmojiPointerCancel(e: PointerEvent): void {
+  if (emojiPointerId.value !== e.pointerId) return
+  endEmojiPull(false)
+}
+
+function onEmojiPointerLostCapture(e: PointerEvent): void {
+  if (emojiPointerId.value !== e.pointerId) return
+  endEmojiPull(false)
+}
 
 function normalizePaydayDay(raw: unknown): number {
   const n = Number.parseInt(String(raw ?? ''), 10)
@@ -488,13 +680,13 @@ const nextHoliday = computed(() => {
 })
 
 async function refresh(): Promise<void> {
-  if (
-    lastRefreshKey.value === stationId.value &&
-    Date.now() - lastRefreshMs.value < MIN_INTERVAL_MS
-  ) {
-    errorText.value = '刷新过于频繁，请稍后再试'
-    return
-  }
+  // if (
+  //   lastRefreshKey.value === stationId.value &&
+  //   Date.now() - lastRefreshMs.value < MIN_INTERVAL_MS
+  // ) {
+  //   errorText.value = '刷新过于频繁，请稍后再试'
+  //   return
+  // }
   loadingSate.weather = true
   errorText.value = null
   try {
@@ -517,7 +709,6 @@ async function refresh(): Promise<void> {
 
 onMounted(() => {
   window.addEventListener('keydown', onKeydown)
-  window.electron.ipcRenderer.on('settings:changed', onSettingsChanged)
   window.electron.ipcRenderer.on('ai:funfact:daily:chunk', onFunFactChunk)
   window.electron.ipcRenderer.on('ai:funfact:daily:done', onFunFactDone)
   window.electron.ipcRenderer.on('ai:funfact:daily:error', onFunFactError)
@@ -529,33 +720,22 @@ onMounted(() => {
   refreshSettings()
     .then(() => {
       normalizeCachedFunFact()
-      if (
-        aiReady.value &&
-        (!funFactText.value.trim() || funFactYmd.value !== funFactTodayYmd.value)
-      )
-        refreshDailyFunFact(false).catch(() => null)
+      maybeAutoRefreshFunFact()
     })
     .catch(() => null)
-  loadCities()
-    .then(() => {
-      if (chosenCityId.value) {
-        stationId.value = chosenCityId.value
-        localStorage.setItem('weather.stationId', stationId.value)
-      }
-      refresh().catch(() => null)
-    })
-    .catch(() => {
-      refresh().catch(() => null)
-    })
+  if (chosenCityId.value) {
+    stationId.value = chosenCityId.value
+    localStorage.setItem('weather.stationId', stationId.value)
+  }
+  refresh().catch(() => null)
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
-  window.electron.ipcRenderer.removeListener('settings:changed', onSettingsChanged)
-  window.electron.ipcRenderer.removeListener('ai:funfact:daily:chunk', onFunFactChunk)
-  window.electron.ipcRenderer.removeListener('ai:funfact:daily:done', onFunFactDone)
-  window.electron.ipcRenderer.removeListener('ai:funfact:daily:error', onFunFactError)
-  window.electron.ipcRenderer.removeListener('ai:funfact:daily:cancelled', onFunFactCancelled)
+  // window.electron.ipcRenderer.removeListener('ai:funfact:daily:chunk', onFunFactChunk)
+  // window.electron.ipcRenderer.removeListener('ai:funfact:daily:done', onFunFactDone)
+  // window.electron.ipcRenderer.removeListener('ai:funfact:daily:error', onFunFactError)
+  // window.electron.ipcRenderer.removeListener('ai:funfact:daily:cancelled', onFunFactCancelled)
   if (funFactStreamId.value) {
     window.electron.ipcRenderer
       .invoke('ai:funfact:daily:cancel', { id: funFactStreamId.value })
@@ -571,133 +751,192 @@ onUnmounted(() => {
 <template>
   <div class="page-content">
     <header class="header">
-      <!-- <div class="title">工具首页</div>
-      <div class="subtitle">天气（今日 / 近7日 / 3小时降雨预警）</div> -->
+      <div class="flex flex-col">
+        <div class="title">Hello</div>
+        <div class="subtitle">...</div>
+      </div>
+      <div class="ctrl-btns">
+        <!-- <img src="/avatar.png" alt="avatar" /> -->
+        <!-- <div class="avatar-box">
+          <User class="text-#666666" :size="24" />
+        </div> -->
+      </div>
     </header>
 
     <section class="card">
-      <div class="card-head">
-        <div class="actions">
-          <button
-            v-if="!dashboard"
-            class="btn"
-            type="button"
-            :disabled="citiesLoading || loadingSate.weather"
-            title="选择城市"
-            @click="openCityPicker"
-          >
-            城市
-          </button>
-          <button class="btn" :disabled="loadingSate.weather" title="刷新" @click="refresh">
-            <RefreshCw v-if="!loadingSate.weather" :size="16" />
-            <div v-else class="loading-spinner"></div>
-          </button>
-        </div>
-      </div>
-
-      <div v-if="citiesErrorText" class="hint">{{ citiesErrorText }}</div>
-      <div v-if="errorText" class="error">{{ errorText }}</div>
-
-      <div v-if="dashboard" class="weather-layout">
+      <div class="weather-layout">
         <div class="left-col">
           <div class="block has-emoji">
-            <div v-if="dashboard" class="weather-emoji" aria-hidden="true">
-              {{ todayWeatherEmoji }}
+            <div
+              class="weather-emoji"
+              :class="{
+                'is-dragging': emojiPulling,
+                'is-ready': emojiPullReady,
+                'is-loading': loadingSate.weather
+              }"
+              :style="{ transform: `translate(-50%, ${emojiPullY}px)` }"
+              aria-hidden="true"
+              @pointerdown.prevent="onEmojiPointerDown"
+              @pointermove.prevent="onEmojiPointerMove"
+              @pointerup.prevent="onEmojiPointerUp"
+              @pointercancel.prevent="onEmojiPointerCancel"
+              @lostpointercapture="onEmojiPointerLostCapture"
+            >
+              <div v-if="loadingSate.weather" class="weather-emoji-spinner" />
+              <template v-else>{{ todayWeatherEmoji }}</template>
             </div>
 
-            <div class="block-title">今日</div>
-            <div class="now-main">
-              <button class="location location-btn" type="button" @click="openCityPicker">
-                <span>{{ dashboard.now.locationName }}</span>
-                <span class="location-caret">▾</span>
-              </button>
-              <div class="temp">
-                <span class="temp-value">{{
-                  dashboard.now.temperatureC === null ? '—' : Math.round(dashboard.now.temperatureC)
-                }}</span>
-                <span class="temp-unit">℃</span>
+            <div class="weather-content">
+              <div class="block-title">今日</div>
+              <div class="now-main">
+                <button class="location location-btn" type="button" @click="openCityPicker">
+                  <span>{{ dashboard?.now?.locationName }}</span>
+                  <span class="location-caret">▾</span>
+                </button>
+                <div class="temp">
+                  <span class="temp-value">{{
+                    dashboard?.now?.temperatureC == null
+                      ? '—'
+                      : Math.round(dashboard?.now?.temperatureC ?? 0)
+                  }}</span>
+                  <span class="temp-unit">℃</span>
+                </div>
+              </div>
+              <div class="meta">
+                <div class="meta-row">
+                  <span class="meta-k">体感</span>
+                  <span class="meta-v">{{
+                    dashboard?.now?.feelsLikeC == null
+                      ? '—'
+                      : `${Math.round(dashboard?.now?.feelsLikeC ?? 0)}℃`
+                  }}</span>
+                </div>
+                <div class="meta-row">
+                  <span class="meta-k">湿度</span>
+                  <span class="meta-v">{{
+                    dashboard?.now?.humidityPercent == null
+                      ? '—'
+                      : `${Math.round(dashboard?.now?.humidityPercent ?? 0)}%`
+                  }}</span>
+                </div>
+                <div class="meta-row">
+                  <span class="meta-k">气压</span>
+                  <span class="meta-v">{{
+                    dashboard?.now?.pressureHpa == null
+                      ? '—'
+                      : `${Math.round(dashboard?.now?.pressureHpa ?? 0)}hPa`
+                  }}</span>
+                </div>
+                <div class="meta-row">
+                  <span class="meta-k">降水</span>
+                  <span class="meta-v">{{
+                    dashboard?.now?.precipitationMm == null
+                      ? '—'
+                      : `${dashboard?.now?.precipitationMm ?? 0}mm`
+                  }}</span>
+                </div>
+                <div class="meta-row">
+                  <span class="meta-k">风</span>
+                  <span class="meta-v">{{
+                    dashboard?.now?.windDirectionText && dashboard?.now?.windScaleText
+                      ? `${dashboard?.now?.windDirectionText} ${dashboard?.now?.windScaleText}`
+                      : '—'
+                  }}</span>
+                </div>
+                <!-- <div class="meta-row">
+                  <span class="meta-k">更新</span>
+                  <span class="meta-v">{{ dashboard?.now?.lastUpdateText ?? '—' }}</span>
+                </div> -->
               </div>
             </div>
-            <div class="meta">
-              <div class="meta-row">
-                <span class="meta-k">体感</span>
-                <span class="meta-v">{{
-                  dashboard.now.feelsLikeC === null
-                    ? '—'
-                    : `${Math.round(dashboard.now.feelsLikeC)}℃`
-                }}</span>
-              </div>
-              <div class="meta-row">
-                <span class="meta-k">湿度</span>
-                <span class="meta-v">{{
-                  dashboard.now.humidityPercent === null
-                    ? '—'
-                    : `${Math.round(dashboard.now.humidityPercent)}%`
-                }}</span>
-              </div>
-              <div class="meta-row">
-                <span class="meta-k">气压</span>
-                <span class="meta-v">{{
-                  dashboard.now.pressureHpa === null
-                    ? '—'
-                    : `${Math.round(dashboard.now.pressureHpa)}hPa`
-                }}</span>
-              </div>
-              <div class="meta-row">
-                <span class="meta-k">降水</span>
-                <span class="meta-v">{{
-                  dashboard.now.precipitationMm === null
-                    ? '—'
-                    : `${dashboard.now.precipitationMm}mm`
-                }}</span>
-              </div>
-              <div class="meta-row">
-                <span class="meta-k">风</span>
-                <span class="meta-v">{{
-                  dashboard.now.windDirectionText && dashboard.now.windScaleText
-                    ? `${dashboard.now.windDirectionText} ${dashboard.now.windScaleText}`
-                    : '—'
-                }}</span>
-              </div>
-              <div class="meta-row">
-                <span class="meta-k">更新</span>
-                <span class="meta-v">{{ dashboard.now.lastUpdateText ?? '—' }}</span>
+          </div>
+          <div class="block border-none">
+            <div class="block-title">
+              <span>3小时降雨预警</span>
+              <div class="warning-line">
+                <span class="badge" :class="{ danger: dashboard?.threeHour?.willRain }">
+                  {{ dashboard?.threeHour?.willRain ? '可能降雨' : '无降雨' }}
+                </span>
+                <span v-if="dashboard?.threeHour?.willRain" class="warning-hint">
+                  最大 {{ dashboard?.threeHour?.maxPrecipitationMm ?? 0 }}mm
+                </span>
               </div>
             </div>
           </div>
         </div>
 
         <div class="right-col">
-          <div class="block">
+          <!-- <div class="block border-none">
             <div class="block-title">
               <span>3小时降雨预警</span>
               <div class="warning-line">
-                <span class="badge" :class="{ danger: dashboard.threeHour.willRain }">
-                  {{ dashboard.threeHour.willRain ? '可能降雨' : '无降雨' }}
+                <span class="badge" :class="{ danger: dashboard?.threeHour?.willRain }">
+                  {{ dashboard?.threeHour?.willRain ? '可能降雨' : '无降雨' }}
                 </span>
-                <span v-if="dashboard.threeHour.willRain" class="warning-hint">
-                  最大 {{ dashboard.threeHour.maxPrecipitationMm }}mm
+                <span v-if="dashboard?.threeHour?.willRain" class="warning-hint">
+                  最大 {{ dashboard?.threeHour?.maxPrecipitationMm ?? 0 }}mm
                 </span>
               </div>
             </div>
-
-            <!-- <div v-if="next3Hours.length > 0" class="hour-list">
-              <div v-for="it in next3Hours" :key="it.atText" class="hour-item">
-                <span class="hour-at">{{ it.atText }}</span>
-                <span class="hour-p">{{ it.precipitationText }}</span>
-              </div>
-            </div>
-            <div v-else class="empty">未解析到未来3小时数据</div> -->
-          </div>
-          <div class="block">
+          </div> -->
+          <div class="block border-none">
             <div class="block-title">
-              <span>近7日天气</span>
+              <span>
+                <a-segmented
+                  v-model:value="weatherType"
+                  size="small"
+                  :options="[
+                    { label: '7日天气', value: 'recently' },
+                    { label: '24小时天气', value: 'now' }
+                  ]"
+                />
+              </span>
               <span class="legend">
-                <span class="lg lg-high"></span>
-                <span class="lg lg-low"></span>
+                <template v-if="weatherType === 'recently'">
+                  <span class="lg lg-high"></span>
+                  <span class="lg lg-low"></span>
+                </template>
+                <template v-else>
+                  <a-tooltip v-for="it in hourlyLegend" :key="it.key" placement="topLeft">
+                    <template #title>
+                      <span>{{ it.label }}</span>
+                    </template>
+                    <span
+                      :key="it.key"
+                      :class="['lg', it.key, hourlyActiveKey === it.key ? 'active' : '']"
+                      :label="it.label"
+                      @click="toggleHourlyMetric(it.key)"
+                    ></span>
+                  </a-tooltip>
+                  <!-- <span
+                    v-for="it in hourlyLegend"
+                    :key="it.key"
+                    class="lg"
+                    :label="it.label"
+                    @click="toggleHourlyMetric(it.key)"
+                  ></span> -->
+                  <!-- <button
+                    v-for="it in hourlyLegend"
+                    :key="it.key"
+                    class="legend-item"
+                    type="button"
+                    :class="{ active: hourlyActiveKey === it.key }"
+                    @click="toggleHourlyMetric(it.key)"
+                  >
+                    {{ it.label }}
+                  </button> -->
+                </template>
               </span>
             </div>
-            <SevenDayTempChart v-if="dashboard.days.length > 0" :days="dashboard.days" />
+            <SevenDayTempChart
+              v-if="weatherType === 'recently' && (dashboard?.days?.length ?? 0) > 0"
+              :days="dashboard?.days ?? []"
+            />
+            <WeatherHourlyTrendsChart
+              v-else-if="weatherType === 'now' && hourlyTrends"
+              :trends="hourlyTrends"
+              :active-key="hourlyActiveKey"
+            />
             <div v-else class="empty">暂无数据</div>
           </div>
         </div>
@@ -816,10 +1055,20 @@ onUnmounted(() => {
             :disabled="stackActive === 'funFact'"
             @click="setStackActive('funFact')"
           >
-            <div class="fun-fact-title">每日冷知识</div>
+            <div class="fun-fact-title">
+              {{ funFactTitle }}
+              <button
+                class="bg-transparent border-none"
+                type="button"
+                :disabled="funFactLoading"
+                @click.stop="openFunFactEditor"
+              >
+                <PencilLine :size="14" />
+              </button>
+            </div>
             <div v-if="stackActive === 'funFact'" class="actions">
               <button
-                class="btn no-bg"
+                class="bg-transparent border-none"
                 type="button"
                 :disabled="funFactLoading || !aiReady"
                 @click.stop="refreshDailyFunFact(true)"
@@ -841,76 +1090,454 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <Teleport to="body">
-      <div v-if="cityPickerOpen" class="picker-overlay" @click.self="closeCityPicker">
-        <div class="picker-card">
-          <div class="picker-title">选择城市</div>
-          <LazyCascader
-            v-model="cascValue"
-            :options="provinceOptions"
-            :lazy-load="lazyLoadCities"
-            :lazy-load-level="0"
-            :props-config="{
-              label: 'label',
-              value: 'value',
-              children: 'children',
-              disabled: 'disabled'
-            }"
-            @change="onCascChange"
-          />
-          <div class="picker-actions">
-            <button class="btn" type="button" @click="closeCityPicker">关闭</button>
+    <div>
+      <section class="disabled card work-calendar-card border-dashed border-color-[#660000]">
+        <div class="work-calendar-head">
+          <div class="work-calendar-title">自定义模块</div>
+          <div class="work-calendar-btn" type="button" @click="openPaydayDialog">
+            <!-- 每月{{ paydayDay }}日 -->
+            <!-- <Settings :size="18" /> -->
           </div>
         </div>
-      </div>
-      <div v-if="cityPickerOpen" class="picker-backdrop" />
 
-      <div v-if="paydayDialogOpen" class="picker-overlay" @click.self="closePaydayDialog">
-        <div class="picker-card">
-          <div class="picker-title">设置发薪日</div>
-          <div class="payday-form">
-            <span class="payday-label">每月</span>
-            <input
-              v-model="paydayInput"
-              class="input payday-input"
-              type="number"
-              min="1"
-              max="31"
-            />
-            <span class="payday-label">日</span>
+        <div class="flex-auto w-fill h-fill flex items-center justify-center">
+          <Plus :size="60" />
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <a-modal :open="cityPickerOpen" centered :footer="null" @cancel="closeCityPicker">
+    <div class="city-picker">
+      <div class="picker-title mb-[10px]">选择城市</div>
+      <div v-if="provincesLoading" class="picker-loading">
+        <div class="loading-spinner"></div>
+      </div>
+      <div v-else-if="provincesErrorText" class="error">{{ provincesErrorText }}</div>
+      <div v-else-if="provinceGroups.length === 0" class="empty">暂无省份数据</div>
+      <div v-else class="province-index-layout">
+        <div class="province-index-left">
+          <!-- <div class="city-trigger-row">
+            <button class="city-trigger-btn" type="button" @click="openCityDropdown">
+              城市：{{ chosenCityName || '点击选择' }}
+            </button>
+          </div> -->
+
+          <div ref="provinceListEl" class="province-index-list">
+            <div
+              v-for="g in provinceGroups"
+              :key="g.letter"
+              class="province-group"
+              :data-letter="g.letter"
+            >
+              <div class="province-group-head">{{ g.letter }}</div>
+              <div class="province-group-grid">
+                <button
+                  v-for="p in g.items"
+                  :key="p.id"
+                  class="province-btn"
+                  :class="{ active: p.id === provCode }"
+                  type="button"
+                  @click="selectProvince(p.id)"
+                >
+                  {{ p.name }}
+                </button>
+              </div>
+            </div>
           </div>
-          <div class="hint">范围 1-31，超过当月天数会按当月最后一天算</div>
-          <div class="picker-actions">
-            <button class="btn" type="button" @click="closePaydayDialog">取消</button>
-            <button class="btn" type="button" @click="savePaydayDay">保存</button>
+          <div class="province-letter-index" aria-hidden="true">
+            <button
+              v-for="l in provinceLetters"
+              :key="l"
+              class="letter-btn"
+              type="button"
+              @click="scrollToProvinceLetter(l)"
+            >
+              {{ l }}
+            </button>
           </div>
+
+          <div
+            v-if="cityDropdownOpen"
+            class="city-dropdown-backdrop"
+            @click="closeCityDropdown"
+          ></div>
+          <transition name="city-drop" appear>
+            <div v-if="cityDropdownOpen" class="city-pop city-dropdown">
+              <div class="city-list-head">城市</div>
+              <div v-if="citiesLoading" class="picker-loading">
+                <div class="loading-spinner"></div>
+              </div>
+              <div v-else-if="citiesErrorText" class="error">{{ citiesErrorText }}</div>
+              <template v-else>
+                <div class="city-search mb-[10px]">
+                  <a-input
+                    v-model:value="cityQuery"
+                    allow-clear
+                    placeholder="搜索城市（名称/代码）"
+                  />
+                </div>
+                <div v-if="filteredCities.length === 0" class="empty">没有匹配的城市</div>
+                <div v-else class="city-grid">
+                  <button
+                    v-for="c in filteredCities"
+                    :key="c.id"
+                    class="city-btn"
+                    :class="{ active: c.id === chosenCityId }"
+                    type="button"
+                    @click="selectCity(c.id)"
+                  >
+                    {{ c.name }}
+                  </button>
+                </div>
+              </template>
+            </div>
+          </transition>
         </div>
       </div>
-      <div v-if="paydayDialogOpen" class="picker-backdrop" />
-    </Teleport>
-  </div>
+      <div class="picker-actions mt-[10px]">
+        <a-button @click="closeCityPicker">关闭</a-button>
+      </div>
+    </div>
+  </a-modal>
+
+  <a-modal :open="paydayDialogOpen" centered :footer="null" @cancel="closePaydayDialog">
+    <div class="picker-title">设置发薪日</div>
+    <div class="payday-form mt-[10px]">
+      <span class="payday-label">每月</span>
+      <a-input v-model:value="paydayInput" class="payday-input" type="number" />
+      <span class="payday-label">日</span>
+    </div>
+    <div class="hint mt-[10px]">范围 1-31，超过当月天数会按当月最后一天算</div>
+    <div class="picker-actions">
+      <a-button @click="closePaydayDialog">取消</a-button>
+      <a-button type="primary" @click="savePaydayDay">保存</a-button>
+    </div>
+  </a-modal>
+
+  <a-modal
+    :open="funFactEditOpen"
+    :width="560"
+    centered
+    :mask-closable="!funFactEditSaving"
+    :keyboard="!funFactEditSaving"
+    :closable="!funFactEditSaving"
+    :footer="null"
+    @cancel="closeFunFactEditor"
+  >
+    <div class="picker-title">编辑冷知识</div>
+    <div class="funfact-form">
+      <div class="funfact-field">
+        <div class="funfact-label">标题</div>
+        <a-input v-model:value="funFactTitleDraft" placeholder="例如：每日冷知识" />
+      </div>
+      <div class="funfact-field">
+        <div class="funfact-label">提示词</div>
+        <a-textarea
+          v-model:value="funFactPromptDraft"
+          class="funfact-textarea"
+          :rows="6"
+          placeholder="支持变量：{ymd}、{title}"
+        />
+        <div class="hint">支持变量：{ymd}（日期）、{title}（标题）。</div>
+      </div>
+      <div v-if="funFactEditErrorText" class="error">{{ funFactEditErrorText }}</div>
+    </div>
+    <div class="picker-actions">
+      <a-button :disabled="funFactEditSaving" @click="closeFunFactEditor">取消</a-button>
+      <a-button type="primary" :loading="funFactEditSaving" @click="saveFunFactEditor"
+        >保存</a-button
+      >
+    </div>
+  </a-modal>
 </template>
 
-<style scoped>
+<style lang="scss" scoped>
+.ant-segmented {
+  background: #2d2d2d;
+  font-size: smaller;
+}
+.ant-segmented .ant-segmented-item-selected {
+  background: #2d2d2d;
+}
+
+.border-none {
+  border: none;
+}
+
 .page-content {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  height: 100%;
-  overflow-y: auto;
+  /* height: 100%; */
+  overflow-y: visible;
   /* 隐藏滚动条 */
   scrollbar-width: none; /* Firefox */
   -ms-overflow-style: none; /* IE/Edge */
 }
 
-.header {
+.picker-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 64px;
+}
+
+.city-search {
+  margin-bottom: 10px;
+}
+
+.empty {
+  padding: 10px 0;
+  color: rgba(0, 0, 0, 0.45);
+  text-align: center;
+}
+
+.province-index-layout {
+  display: flex;
+  gap: 12px;
+  max-height: 70vh;
+  overflow: hidden;
+}
+
+.province-index-left {
+  position: relative;
+  flex: 1 1 auto;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  height: 70vh;
+}
+
+.province-index-list {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding-right: 24px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.province-index-list::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.province-group {
+  padding-bottom: 10px;
+}
+
+.province-group-head {
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0.65;
+  padding: 6px 0;
+}
+
+.province-group-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.province-letter-index {
+  position: absolute;
+  right: 2px;
+  top: 44px;
+  bottom: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
+  padding: 8px 0;
+}
+
+.letter-btn {
+  border: none;
+  background: none;
+  padding: 2px 4px;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.letter-btn:hover {
+  opacity: 1;
+}
+
+.city-pop {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(48, 48, 48, 0.96);
+  border-radius: 12px;
+  padding: 10px;
+  box-shadow:
+    0 18px 55px rgba(0, 0, 0, 0.45),
+    0 2px 0 rgba(255, 255, 255, 0.04) inset;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.city-dropdown-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+}
+
+.city-dropdown {
+  position: absolute;
+  left: 0;
+  right: 24px;
+  top: 44px;
+  bottom: 0;
+  z-index: 10;
+}
+
+.city-trigger-row {
+  flex: none;
+  padding: 0 24px 10px 0;
+}
+
+.city-trigger-btn {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(235, 235, 245, 0.92);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.city-trigger-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.city-trigger-btn:active {
+  transform: translateY(1px);
+}
+
+.city-drop-enter-active,
+.city-drop-leave-active {
+  transition:
+    transform 170ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 170ms ease;
+  will-change: transform, opacity;
+}
+
+.city-drop-enter-from,
+.city-drop-leave-to {
+  transform: translateY(-12px);
+  opacity: 0;
+}
+
+.city-drop-enter-to,
+.city-drop-leave-from {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .city-drop-enter-active,
+  .city-drop-leave-active {
+    transition: none;
+  }
+}
+
+.province-btn {
+  border: none;
+  background: none;
+  border-radius: 10px;
+  padding: 10px 8px;
+  font-size: 13px;
+  line-height: 1.1;
+  cursor: pointer;
+  transition:
+    transform 80ms ease,
+    border-color 120ms ease,
+    background 120ms ease;
+}
+
+.province-btn:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.province-btn.active {
+  color: rgba(22, 119, 255, 0.832);
+  /* border-color: rgba(22, 119, 255, 0.55); */
+  /* background: rgba(22, 119, 255, 0.08); */
+}
+
+.city-list-head {
+  font-size: 13px;
+  /* color: rgba(0, 0, 0, 0.65); */
+}
+
+.city-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding-right: 2px;
+}
+
+.city-dropdown .city-grid {
+  flex: 1 1 auto;
+  overflow: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.city-dropdown .city-grid::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.city-btn {
+  border: none;
+  background: none;
+  border-radius: 10px;
+  padding: 10px 8px;
+  font-size: 13px;
+  line-height: 1.1;
+  cursor: pointer;
+  transition:
+    transform 80ms ease,
+    border-color 120ms ease,
+    background 120ms ease;
+}
+
+.city-btn:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.city-btn.active {
+  /* border-color: rgba(22, 119, 255, 0.55);
+  background: rgba(22, 119, 255, 0.08); */
+  color: rgba(22, 119, 255, 0.832);
+}
+
+.header {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.ctrl-btns {
+  .avatar-box {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background-color: #f5f5f5bb;
+  }
 }
 
 .title {
-  font-size: 24px;
+  font-size: 28px;
   font-weight: 700;
   line-height: 28px;
 }
@@ -939,7 +1566,7 @@ onUnmounted(() => {
 }
 
 .card {
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  /* border: 1px solid rgba(255, 255, 255, 0.08); */
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.04);
   padding: 16px;
@@ -948,6 +1575,11 @@ onUnmounted(() => {
   gap: 12px;
   position: relative;
   z-index: 1;
+
+  &.disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
 }
 
 @keyframes emoji-bounce {
@@ -965,15 +1597,45 @@ onUnmounted(() => {
 .weather-emoji {
   position: absolute;
   left: 50%;
-  transform: translateX(-50%);
   top: -7rem;
   font-size: 10rem;
-  z-index: 0;
+  z-index: 2;
+  /* line-height: 1; */
+  display: flex;
+  align-items: center;
+  justify-content: center;
   /* opacity: 1; */
-  pointer-events: none;
+  pointer-events: auto;
   user-select: none;
   animation: emoji-bounce 5.5s infinite;
-  transition: transform 0.3s ease-in-out;
+  transition: transform 0.26s cubic-bezier(0.2, 0.7, 0.2, 1);
+  touch-action: none;
+  cursor: grab;
+}
+
+.weather-emoji.is-dragging {
+  animation-play-state: paused;
+  transition: none;
+  cursor: grabbing;
+}
+
+.weather-emoji.is-loading {
+  animation-play-state: paused;
+  cursor: default;
+}
+
+.weather-emoji-spinner {
+  width: 50px;
+  height: 50px;
+  border: 8px solid rgba(255, 255, 255, 0.22);
+  border-top-color: rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+.weather-content {
+  position: relative;
+  z-index: 1;
 }
 
 .card-head {
@@ -1019,29 +1681,6 @@ onUnmounted(() => {
   color: rgba(235, 235, 245, 0.62);
 }
 
-.btn {
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--ev-c-text-1);
-  padding: 6px 10px;
-  border-radius: 8px;
-  font-size: 12px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.btn.no-bg {
-  background: transparent;
-  border: none;
-}
-
-.btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
 .location-btn {
   border: 0;
   background: transparent;
@@ -1064,11 +1703,11 @@ onUnmounted(() => {
 }
 
 .picker-overlay {
-  position: fixed;
+  position: absolute;
   inset: 0;
   display: grid;
   place-items: center;
-  z-index: 10000;
+  z-index: 1;
 }
 
 .picker-backdrop {
@@ -1076,7 +1715,7 @@ onUnmounted(() => {
   inset: 0;
   background: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(4px);
-  z-index: 9999;
+  z-index: 1;
 }
 
 .picker-card {
@@ -1084,7 +1723,7 @@ onUnmounted(() => {
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 12px;
   padding: 18px;
-  background: rgba(17, 24, 39, 0.9);
+  background: rgb(0 0 0 / 58%);
   color: var(--ev-c-text-1);
   z-index: 10001;
   display: flex;
@@ -1092,6 +1731,35 @@ onUnmounted(() => {
   gap: 12px;
   top: 10%;
   position: absolute;
+  z-index: 2;
+}
+
+.funfact-editor-card {
+  width: min(560px, calc(100vw - 64px));
+}
+
+.funfact-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.funfact-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.funfact-label {
+  font-size: 13px;
+  color: rgba(235, 235, 245, 0.72);
+  font-weight: 700;
+}
+
+.funfact-textarea {
+  min-height: 140px;
+  resize: vertical;
+  line-height: 18px;
 }
 
 .picker-title {
@@ -1130,7 +1798,7 @@ onUnmounted(() => {
 
 .work-calendar-card {
   width: min(360px, 100%);
-  /* height: 240px; */
+  height: 230px;
   align-self: flex-start;
   padding: 14px;
   gap: 12px;
@@ -1260,6 +1928,8 @@ onUnmounted(() => {
 }
 
 .fun-fact-title {
+  display: flex;
+  align-items: center;
   font-size: 14px;
   font-weight: 800;
   color: rgba(235, 235, 245, 0.92);
@@ -1283,6 +1953,10 @@ onUnmounted(() => {
   color: rgba(235, 235, 245, 0.92);
   white-space: pre-wrap;
   line-height: 1.35;
+  max-height: 86px;
+  overflow-y: scroll;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
 }
 
 .tips {
@@ -1422,7 +2096,7 @@ onUnmounted(() => {
 }
 
 .work-calendar-row {
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  /* border: 1px solid rgba(255, 255, 255, 0.08); */
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.03);
   padding: 10px 12px;
@@ -1479,7 +2153,7 @@ onUnmounted(() => {
   color: rgba(235, 235, 245, 0.62);
 }
 
-.picker-card :deep(.lazy-cascader) {
+.city-picker :deep(.lazy-cascader) {
   width: 100%;
 }
 
@@ -1501,9 +2175,12 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  flex: 1;
+  flex: auto;
+  flex-grow: 0;
+  min-width: 350px;
 }
 .right-col {
+  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -1512,13 +2189,13 @@ onUnmounted(() => {
 
 .block {
   position: relative;
-  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.03);
   padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  height: 100%;
   /* min-height: 170px; */
 }
 
@@ -1604,7 +2281,7 @@ onUnmounted(() => {
   font-size: 12px;
   font-weight: 700;
   background: rgba(144, 238, 144, 0.15);
-  border: 1px solid rgba(144, 238, 144, 0.25);
+  /* border: 1px solid rgba(144, 238, 144, 0.25); */
   color: rgba(144, 238, 144, 0.95);
 }
 
@@ -1646,6 +2323,28 @@ onUnmounted(() => {
   align-items: center;
 }
 
+.legend-item {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(235, 235, 245, 0.72);
+  font-size: 12px;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.legend-item:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.legend-item.active {
+  border-color: rgba(0, 220, 255, 0.35);
+  background: rgba(0, 220, 255, 0.14);
+  color: rgba(235, 235, 245, 0.9);
+}
+
 .lg {
   width: 10px;
   height: 10px;
@@ -1653,6 +2352,52 @@ onUnmounted(() => {
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.06);
   color: rgba(235, 235, 245, 0.72);
+
+  &.temperatureC {
+    background-color: rgba(0, 221, 255, 0.3);
+    border-color: rgba(0, 220, 255, 0.25);
+    &.active {
+      background-color: rgba(0, 220, 255, 0.95);
+      border-color: rgba(0, 220, 255, 0.25);
+      box-shadow: 0 0 0 2px rgba(0, 220, 255, 0.3);
+    }
+  }
+  &.precipitationMm {
+    background-color: rgba(60, 180, 120, 0.3);
+    border-color: rgba(60, 180, 120, 0.25);
+    &.active {
+      background-color: rgba(60, 180, 120, 0.95);
+      border-color: rgba(60, 180, 120, 0.25);
+      box-shadow: 0 0 0 2px rgba(60, 180, 120, 0.3);
+    }
+  }
+  &.windSpeedMs {
+    background-color: rgba(255, 198, 0, 0.3);
+    border-color: rgba(255, 198, 0, 0.25);
+    &.active {
+      background-color: rgba(255, 198, 0, 0.95);
+      border-color: rgba(255, 198, 0, 0.25);
+      box-shadow: 0 0 0 2px rgba(255, 198, 0, 0.3);
+    }
+  }
+  &.humidityPercent {
+    background-color: rgba(180, 140, 255, 0.3);
+    border-color: rgba(180, 140, 255, 0.25);
+    &.active {
+      background-color: rgba(180, 140, 255, 0.95);
+      border-color: rgba(180, 140, 255, 0.25);
+      box-shadow: 0 0 0 2px rgba(180, 140, 255, 0.3);
+    }
+  }
+  &.cloudPercent {
+    background-color: rgba(255, 120, 120, 0.3);
+    border-color: rgba(255, 120, 120, 0.25);
+    &.active {
+      background-color: rgba(255, 120, 120, 0.95);
+      border-color: rgba(255, 120, 120, 0.25);
+      box-shadow: 0 0 0 2px rgba(255, 120, 120, 0.3);
+    }
+  }
 }
 
 .lg-high {

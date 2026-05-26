@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { House, Settings2 } from 'lucide-vue-next'
 import { Minus, Square, X } from 'lucide-vue-next'
+import { DownloadOutlined } from '@ant-design/icons-vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -14,16 +15,76 @@ const tabs = [
   { id: 'Translator', label: '快捷翻译', path: '/translator' },
   { id: 'SnipPaste', label: '截屏贴图', path: '/snip-paste' },
   { id: 'WindowStash', label: '窗口收纳', path: '/window-stash' },
-  // { id: 'ScriptLibrary', label: '脚本库', path: '/script-library' },
+  { id: 'ScheduledTasks', label: '定时任务', path: '/scheduled-tasks' },
   { id: 'Landing', label: '关于', path: '/landing' }
 ]
 
-const hasUpdate = ref(false)
+type UpdateState = {
+  status:
+    | 'idle'
+    | 'checking'
+    | 'available'
+    | 'not-available'
+    | 'downloading'
+    | 'downloaded'
+    | 'error'
+    | 'unsupported'
+  hasUpdate: boolean
+  version: string | null
+  percent: number | null
+  message: string | null
+}
+
+const update = ref<UpdateState | null>(null)
+const hasUpdate = computed(() => Boolean(update.value?.hasUpdate))
 const maximized = ref(false)
 const onUpdateStatus = (_: unknown, payload: unknown): void => {
   if (!payload || typeof payload !== 'object') return
-  const p = payload as { hasUpdate?: unknown }
-  hasUpdate.value = Boolean(p.hasUpdate)
+  const p = payload as Partial<UpdateState>
+  if (typeof p.status !== 'string') return
+  update.value = {
+    status: p.status as UpdateState['status'],
+    hasUpdate: Boolean(p.hasUpdate),
+    version: typeof p.version === 'string' ? p.version : null,
+    percent: typeof p.percent === 'number' ? p.percent : null,
+    message: typeof p.message === 'string' ? p.message : null
+  }
+}
+
+const updateDialogOpen = ref(false)
+const updateDialogDismissed = ref(false)
+const updateIsDownloading = computed(() => update.value?.status === 'downloading')
+const updateIsDownloaded = computed(() => update.value?.status === 'downloaded')
+
+watch(
+  () => update.value?.status,
+  (s) => {
+    if (s === 'available' && !updateDialogDismissed.value) updateDialogOpen.value = true
+    if (s === 'downloading') updateDialogOpen.value = true
+    if (s === 'downloaded') updateDialogOpen.value = true
+  }
+)
+
+function postponeUpdate(): void {
+  if (updateIsDownloading.value) return
+  updateDialogOpen.value = false
+  updateDialogDismissed.value = true
+}
+
+async function startUpdateDownload(): Promise<void> {
+  try {
+    await window.electron.ipcRenderer.invoke('update:download')
+  } catch {
+    void 0
+  }
+}
+
+async function installUpdate(): Promise<void> {
+  try {
+    await window.electron.ipcRenderer.invoke('update:install')
+  } catch {
+    void 0
+  }
 }
 
 function selectTab(path: string): void {
@@ -37,6 +98,7 @@ function toggleMaximize(): void {
   window.electron.ipcRenderer.send('window:control', { action: 'toggleMaximize' })
 }
 function closeWindow(): void {
+  if (updateIsDownloading.value) return
   window.electron.ipcRenderer.send('window:control', { action: 'close' })
 }
 
@@ -67,6 +129,65 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="layout">
+    <a-modal
+      :open="updateDialogOpen"
+      :width="320"
+      :mask-closable="!updateIsDownloading"
+      :keyboard="!updateIsDownloading"
+      :closable="!updateIsDownloading"
+      :footer="null"
+      @cancel="postponeUpdate"
+    >
+      <div class="update-card rounded-[18px]">
+        <div class="update-title">
+          <div class="update-title-main">
+            <DownloadOutlined style="font-size: 24px" />
+            <span>发现新版本：{{ update?.version || '' }}</span>
+          </div>
+          <div v-if="update?.status" class="update-sub">
+            <span v-if="update?.status === 'downloading'">
+              正在下载更新…
+              {{ typeof update?.percent === 'number' ? Math.round(update.percent) : 0 }}%
+            </span>
+            <span v-else-if="update?.status === 'downloaded'">下载完成，重启即可安装</span>
+            <span v-else-if="update?.status === 'available'">是否立即更新？</span>
+            <span v-else-if="update?.status === 'error'"
+              >更新失败：{{ update?.message || '未知错误' }}</span
+            >
+          </div>
+        </div>
+
+        <div class="update-progress">
+          <a-progress
+            v-if="updateIsDownloading"
+            :percent="typeof update?.percent === 'number' ? Math.round(update.percent) : 0"
+            :show-info="false"
+          />
+        </div>
+
+        <div class="update-actions">
+          <a-button :disabled="updateIsDownloading" @click="postponeUpdate">稍后更新</a-button>
+          <a-button
+            v-if="updateIsDownloaded"
+            type="primary"
+            :disabled="updateIsDownloading"
+            @click="installUpdate"
+          >
+            立即重启
+          </a-button>
+          <a-button
+            v-else
+            type="primary"
+            :loading="updateIsDownloading"
+            :disabled="updateIsDownloading"
+            @click="startUpdateDownload"
+          >
+            立即更新
+          </a-button>
+        </div>
+      </div>
+    </a-modal>
+
     <div class="window-titlebar">
       <div class="titlebar-drag"></div>
       <div class="titlebar-actions">
@@ -93,6 +214,7 @@ onBeforeUnmount(() => {
           type="button"
           aria-label="关闭"
           title="关闭"
+          :disabled="updateIsDownloading"
           @click="closeWindow"
         >
           <X :size="16" />
@@ -119,7 +241,7 @@ onBeforeUnmount(() => {
         <component :is="tab.type === 'icon' ? tab.label : 'div'" />
         <div v-if="tab.type !== 'icon'" style="display: flex; align-items: center">
           <div class="pre-icon" :class="{ active: route.path === tab.path }"></div>
-          <span>{{ tab.label }}</span>
+          <span class="section-title">{{ tab.label }}</span>
           <span v-if="tab.id === 'Landing' && hasUpdate" class="dot" />
         </div>
       </button>
@@ -147,8 +269,10 @@ onBeforeUnmount(() => {
   height: 100vh;
   width: 100%;
   display: grid;
-  grid-template-columns: 170px 1fr;
+  grid-template-columns: 60px 1fr;
   background-color: black;
+  white-space: nowrap;
+  position: relative;
 }
 
 .window-titlebar {
@@ -162,13 +286,13 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   -webkit-app-region: drag;
   z-index: 1000;
-  background: linear-gradient(
+  /* background: linear-gradient(
     270deg,
-    /* black 100px, */ #3370d32e 50px,
+    #3370d32e 50px,
     #5957dc4a 100px,
     black 250px,
     transparent 50%
-  );
+  ); */
 }
 .titlebar-drag {
   flex: 1;
@@ -191,6 +315,13 @@ onBeforeUnmount(() => {
   color: rgba(235, 235, 245, 0.82);
   cursor: pointer;
 }
+.titlebar-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.titlebar-btn:disabled:hover {
+  background: none;
+}
 .titlebar-btn:hover {
   background: rgba(255, 255, 255, 0.1);
 }
@@ -201,7 +332,7 @@ onBeforeUnmount(() => {
 
 .sidebar {
   height: 100vh;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  /* border-right: 1px solid rgba(255, 255, 255, 0.08); */
   padding: 18px 12px 18px;
   display: flex;
   flex-direction: column;
@@ -254,9 +385,33 @@ onBeforeUnmount(() => {
 .tab .pre-icon {
   width: 16px;
   height: 16px;
-  margin-right: 6px;
+  /* margin-right: 6px; */
   background-color: rgba(235, 235, 245, 0.24);
   border-radius: 4px;
+}
+
+.sidebar {
+  &:hover {
+    .section-title {
+      width: auto;
+      opacity: 1;
+      z-index: 1000;
+    }
+  }
+  .section-title {
+    position: absolute;
+    opacity: 0;
+    /* width: 0px; */
+    margin-left: 20px;
+    transition: all 0.7s;
+    padding: 4px 8px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    background: linear-gradient(270deg, rgba(83, 83, 83, 0.616) 0%, rgba(255, 255, 255, 0.04) 100%);
+  }
 }
 
 .tab .pre-icon.active {
@@ -273,32 +428,67 @@ onBeforeUnmount(() => {
 }
 
 .settings-tab {
-  width: 50px;
-  height: 50px;
+  width: 40px;
+  height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .tab:hover {
-  background: rgba(255, 255, 255, 0.04);
+  /* background: rgba(255, 255, 255, 0.04); */
+  color: rgba(255, 255, 252, 0.92);
 }
 
 .tab.active {
-  border-color: rgba(59, 130, 246, 0.5);
+  /* border-color: rgba(59, 130, 246, 0.5); */
   background: rgba(59, 130, 246, 0.12);
   color: rgba(255, 255, 245, 0.92);
+  .section-title {
+    background: linear-gradient(270deg, rgba(35, 145, 255, 0.616), transparent);
+    font-weight: 700;
+  }
 }
 
 .page {
-  height: 100vh;
+  /* min-height: 100vh; */
   width: 100%;
-  padding: 60px 24px 24px;
+  padding: 24px 24px;
   display: flex;
   flex-direction: column;
   overflow-y: scroll;
   /* 隐藏滚动条 */
   scrollbar-width: none; /* Firefox */
   -ms-overflow-style: none; /* IE/Edge */
+  background: #222222;
+  border-top-left-radius: 15px;
+  border-top-right-radius: 15px;
+  margin-top: 35px;
+}
+
+.update-card {
+  /* background: rgba(20, 20, 22, 0.96); */
+}
+.update-title {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 0;
+}
+.update-title-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+}
+.update-sub {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: rgba(235, 235, 245, 0.72);
+}
+.update-actions {
+  padding: 16px 18px 18px;
 }
 </style>

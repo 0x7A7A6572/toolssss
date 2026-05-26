@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch, toRaw } from 'vue'
 import { DEFAULT_SETTINGS, type AppSettings, type SettingsPatch } from '@shared/settings'
-import { PencilLine } from 'lucide-vue-next'
+import { PencilLine, X } from 'lucide-vue-next'
+import AppSwitch from '../../components/AppSwitch.vue'
+import { useSettingsStore } from '@renderer/state/settings'
 
 type Edge = 'left' | 'right' | 'top' | 'bottom'
 type StashedItem = {
@@ -13,7 +15,14 @@ type StashedItem = {
 }
 
 const items = ref<StashedItem[]>([])
-const stashSettings = ref<AppSettings['windowStash']>(structuredClone(DEFAULT_SETTINGS.windowStash))
+function cloneWindowStashSettings(v: AppSettings['windowStash']): AppSettings['windowStash'] {
+  return { ...v, handleColors: { ...v.handleColors } }
+}
+
+const stashSettings = ref<AppSettings['windowStash']>(
+  cloneWindowStashSettings(DEFAULT_SETTINGS.windowStash)
+)
+const settingsStore = useSettingsStore()
 const HANDLE_EDGES: Edge[] = ['left', 'top', 'right', 'bottom']
 const durationMsDraft = ref(stashSettings.value.durationMs)
 const opacityDraft = ref(stashSettings.value.handleOpacity)
@@ -24,10 +33,32 @@ const colorMenus = ref<Record<Edge, boolean>>({
   right: false,
   bottom: false
 })
+const topmostColorDraft = ref(stashSettings.value.topmostBorderColor)
+const topmostColorMenuOpen = ref(false)
+const topmostWidthDraft = ref(stashSettings.value.topmostBorderWidth)
 
 const itemAliasDrafts = ref<Record<string, string>>({})
 const itemColorDrafts = ref<Record<string, string>>({})
 const itemColorMenus = ref<Record<string, boolean>>({})
+
+const PRESET_COLORS: string[] = [
+  '#22c55e88',
+  '#3b82f688',
+  '#f59e0b88',
+  '#ef444488',
+  '#a855f788',
+  '#14b8a688',
+  '#94a3b888',
+  '#00000088',
+  '#ffffff88'
+]
+
+function normalizeHexColorInput(s: string): string | null {
+  const raw = typeof s === 'string' ? s.trim() : ''
+  if (!raw) return null
+  const v = raw.startsWith('#') ? raw : `#${raw}`
+  return /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(v) ? v : null
+}
 
 watch(
   () => stashSettings.value.durationMs,
@@ -48,6 +79,25 @@ watch(
   (v) => {
     colorDrafts.value = { ...v }
   }
+)
+watch(
+  () => stashSettings.value.topmostBorderColor,
+  (v) => {
+    topmostColorDraft.value = v
+  }
+)
+watch(
+  () => stashSettings.value.topmostBorderWidth,
+  (v) => {
+    topmostWidthDraft.value = v
+  }
+)
+watch(
+  () => settingsStore.settings.value.windowStash,
+  (v) => {
+    stashSettings.value = cloneWindowStashSettings(toRaw(v))
+  },
+  { deep: true, immediate: true }
 )
 
 watch(
@@ -94,26 +144,19 @@ async function refresh(): Promise<void> {
   }
 }
 
-async function refreshSettings(): Promise<void> {
-  try {
-    const ret = (await window.electron.ipcRenderer.invoke('settings:get')) as AppSettings
-    stashSettings.value = ret.windowStash
-  } catch {
-    stashSettings.value = structuredClone(DEFAULT_SETTINGS.windowStash)
-  }
-}
-
 async function update(patch: SettingsPatch): Promise<void> {
   try {
-    const ret = (await window.electron.ipcRenderer.invoke('settings:update', patch)) as AppSettings
-    stashSettings.value = ret.windowStash
+    await settingsStore.update(patch)
+    stashSettings.value = cloneWindowStashSettings(toRaw(settingsStore.settings.value.windowStash))
   } catch {
     void 0
   }
 }
 
 function setColor(edge: Edge, color: string): void {
-  const next = { ...stashSettings.value.handleColors, [edge]: color }
+  const normalized = normalizeHexColorInput(color)
+  if (!normalized) return
+  const next = { ...stashSettings.value.handleColors, [edge]: normalized }
   stashSettings.value = { ...stashSettings.value, handleColors: next }
   update({ windowStash: { handleColors: next } }).catch(() => null)
 }
@@ -156,6 +199,35 @@ function setShowHandleTitle(v: boolean): void {
 function setShowHandleDrag(v: boolean): void {
   stashSettings.value = { ...stashSettings.value, showHandleDrag: v }
   update({ windowStash: { showHandleDrag: v } }).catch(() => null)
+}
+
+function setTopmostHighlightEnabled(v: boolean): void {
+  const next = Boolean(v)
+  stashSettings.value = { ...stashSettings.value, topmostHighlightEnabled: next }
+  update({ windowStash: { topmostHighlightEnabled: next } }).catch(() => null)
+}
+
+function onTopmostColorMenuChange(open: boolean): void {
+  if (open) topmostColorDraft.value = stashSettings.value.topmostBorderColor
+}
+
+function cancelTopmostColor(): void {
+  topmostColorDraft.value = stashSettings.value.topmostBorderColor
+  topmostColorMenuOpen.value = false
+}
+
+function applyTopmostColor(): void {
+  const normalized = normalizeHexColorInput(topmostColorDraft.value)
+  if (!normalized) return
+  stashSettings.value = { ...stashSettings.value, topmostBorderColor: normalized }
+  update({ windowStash: { topmostBorderColor: normalized } }).catch(() => null)
+  topmostColorMenuOpen.value = false
+}
+
+function setTopmostBorderWidth(v: number): void {
+  const next = Math.max(1, Math.min(16, Math.round(Number(v))))
+  stashSettings.value = { ...stashSettings.value, topmostBorderWidth: next }
+  update({ windowStash: { topmostBorderWidth: next } }).catch(() => null)
 }
 
 function restore(hwnd: string): void {
@@ -202,7 +274,9 @@ function cancelItemColor(hwnd: string): void {
 }
 
 function applyItemColor(hwnd: string): void {
-  void updateItemMeta(hwnd, { handleColor: itemColorDrafts.value[hwnd] ?? '' })
+  const normalized = normalizeHexColorInput(itemColorDrafts.value[hwnd] ?? '')
+  if (!normalized) return
+  void updateItemMeta(hwnd, { handleColor: normalized })
   itemColorMenus.value[hwnd] = false
 }
 
@@ -217,7 +291,6 @@ const onChanged = (_: unknown, payload: unknown): void => {
 
 onMounted(() => {
   void refresh()
-  void refreshSettings()
   window.electron.ipcRenderer.on('window-stash:changed', onChanged)
 })
 
@@ -230,24 +303,15 @@ onBeforeUnmount(() => {
   <div class="page-content">
     <header class="header">
       <div class="title">窗口收纳</div>
-      <div class="subtitle">Ctrl + Shift + 1/2/3/4：左/上/右/下贴边收纳</div>
+      <div class="subtitle">
+        Ctrl + Shift + 1/2/3/4：左/上/右/下贴边收纳 · Ctrl + Alt + T：置顶/取消置顶
+      </div>
     </header>
 
     <div class="card-container-flex">
       <section class="card">
         <div class="card-head">
           <div class="card-title">外露标签样式</div>
-          <div class="card-actions">
-            <div class="head-action-label">动画</div>
-            <label class="switch">
-              <input
-                type="checkbox"
-                :checked="stashSettings.animate"
-                @change="setAnimate(($event.target as HTMLInputElement).checked)"
-              />
-              <span class="slider" />
-            </label>
-          </div>
         </div>
 
         <div class="row colors">
@@ -255,54 +319,67 @@ onBeforeUnmount(() => {
           <div class="handle-grid">
             <div v-for="e in HANDLE_EDGES" :key="e" class="handle-item">
               <div class="handle-label">{{ edgeLabel(e) }}</div>
-              <v-menu
-                v-model="colorMenus[e]"
-                :close-on-content-click="false"
-                :offset="8"
-                location="bottom"
-                @update:model-value="(open) => onColorMenuChange(e, open)"
+              <a-popover
+                trigger="click"
+                placement="bottom"
+                :open="colorMenus[e]"
+                @update:open="
+                  (open) => {
+                    colorMenus[e] = open
+                    onColorMenuChange(e, open)
+                  }
+                "
               >
-                <template #activator="{ props }">
-                  <button
-                    v-bind="props"
-                    class="color-btn"
-                    type="button"
-                    :style="{ backgroundColor: stashSettings.handleColors[e] }"
-                    :title="stashSettings.handleColors[e]"
-                    :aria-label="`选择${edgeLabel(e)}侧颜色`"
-                  />
-                </template>
-
-                <v-card class="color-pop">
-                  <v-color-picker
-                    v-model="colorDrafts[e]"
-                    :modes="['rgba']"
-                    show-swatches
-                    hide-inputs
-                  />
-                  <div class="color-actions">
-                    <v-btn variant="text" density="compact" @click="cancelColor(e)">取消</v-btn>
-                    <v-btn color="primary" variant="flat" density="compact" @click="applyColor(e)">
-                      应用
-                    </v-btn>
+                <template #content>
+                  <div class="color-pop">
+                    <div class="color-palette">
+                      <div
+                        v-for="c in PRESET_COLORS"
+                        :key="c"
+                        class="palette-swatch"
+                        type="button"
+                        :style="{ backgroundColor: c }"
+                        :title="c"
+                        @click="colorDrafts[e] = c"
+                      />
+                    </div>
+                    <a-input v-model:value="colorDrafts[e]" placeholder="#RRGGBB / #RRGGBBAA" />
+                    <div class="color-actions">
+                      <a-button size="small" @click="cancelColor(e)">取消</a-button>
+                      <a-button size="small" type="primary" @click="applyColor(e)">应用</a-button>
+                    </div>
                   </div>
-                </v-card>
-              </v-menu>
+                </template>
+                <button
+                  class="color-btn"
+                  type="button"
+                  :style="{ backgroundColor: stashSettings.handleColors[e] }"
+                  :title="stashSettings.handleColors[e]"
+                  :aria-label="`选择${edgeLabel(e)}侧颜色`"
+                />
+              </a-popover>
             </div>
           </div>
+        </div>
+
+        <div class="flex justify-between">
+          <div class="label">动画</div>
+          <AppSwitch
+            :model-value="stashSettings.animate"
+            @update:model-value="setAnimate($event)"
+          />
         </div>
 
         <div class="row">
           <div class="label">动画时长</div>
           <div class="slider-wrap">
-            <v-slider
-              v-model="durationMsDraft"
-              min="60"
-              max="500"
-              step="10"
-              hide-details
-              density="compact"
-              @end="setDurationMs(durationMsDraft)"
+            <a-slider
+              v-model:value="durationMsDraft"
+              :min="30"
+              :max="200"
+              :step="30"
+              show-label
+              @after-change="(v) => setDurationMs(Array.isArray(v) ? v[0] : v)"
             />
           </div>
           <div class="value">{{ durationMsDraft }}ms</div>
@@ -311,91 +388,187 @@ onBeforeUnmount(() => {
         <div class="row">
           <div class="label">透明度</div>
           <div class="slider-wrap">
-            <v-slider
-              v-model="opacityDraft"
-              min="0"
-              max="1"
-              step="0.05"
-              hide-details
-              density="compact"
-              @end="setHandleOpacity(opacityDraft)"
+            <a-slider
+              v-model:value="opacityDraft"
+              :min="0"
+              :max="1"
+              :step="0.05"
+              @after-change="(v) => setHandleOpacity(Array.isArray(v) ? v[0] : v)"
             />
           </div>
           <div class="value">{{ Math.round(opacityDraft * 100) }}%</div>
         </div>
-      </section>
-      <section class="card">
-        <div class="card-head">
-          <div class="card-title">外露标签内容</div>
-        </div>
-
         <div class="row">
           <div class="label">显示标题</div>
           <div />
-          <label class="switch">
-            <input
-              type="checkbox"
-              :checked="stashSettings.showHandleTitle"
-              @change="setShowHandleTitle(($event.target as HTMLInputElement).checked)"
-            />
-            <span class="slider" />
-          </label>
+          <AppSwitch
+            :model-value="stashSettings.showHandleTitle"
+            @update:model-value="setShowHandleTitle($event)"
+          />
         </div>
 
         <div class="row">
           <div class="label">显示拖拽</div>
           <div />
-          <label class="switch">
-            <input
-              type="checkbox"
-              :checked="stashSettings.showHandleDrag"
-              @change="setShowHandleDrag(($event.target as HTMLInputElement).checked)"
+          <AppSwitch
+            :model-value="stashSettings.showHandleDrag"
+            @update:model-value="setShowHandleDrag($event)"
+          />
+        </div>
+
+        <div class="row">
+          <div class="label">双击标签关闭收纳</div>
+          <div />
+          <AppSwitch :model-value="true" :disabled="true" />
+        </div>
+
+        <div class="divider"></div>
+        <div class="section-title">置顶窗口</div>
+
+        <div class="row">
+          <div class="label">高亮边框</div>
+          <div />
+          <AppSwitch
+            :model-value="stashSettings.topmostHighlightEnabled"
+            @update:model-value="setTopmostHighlightEnabled($event)"
+          />
+        </div>
+
+        <div class="row colors">
+          <div class="label">边框颜色</div>
+          <div class="handle-grid">
+            <a-popover
+              trigger="click"
+              placement="bottom"
+              :open="topmostColorMenuOpen"
+              @update:open="
+                (open) => {
+                  topmostColorMenuOpen = open
+                  onTopmostColorMenuChange(open)
+                }
+              "
+            >
+              <template #content>
+                <div class="color-pop">
+                  <div class="color-palette">
+                    <button
+                      v-for="c in PRESET_COLORS"
+                      :key="c"
+                      class="palette-swatch"
+                      type="button"
+                      :style="{ backgroundColor: c }"
+                      :title="c"
+                      @click="topmostColorDraft = c"
+                    />
+                  </div>
+                  <a-input v-model:value="topmostColorDraft" placeholder="#RRGGBB / #RRGGBBAA" />
+                  <div class="color-actions">
+                    <a-button size="small" @click="cancelTopmostColor()">取消</a-button>
+                    <a-button size="small" type="primary" @click="applyTopmostColor()"
+                      >应用</a-button
+                    >
+                  </div>
+                </div>
+              </template>
+              <button
+                class="color-btn only"
+                type="button"
+                :style="{ backgroundColor: stashSettings.topmostBorderColor }"
+                :title="stashSettings.topmostBorderColor"
+                aria-label="设置置顶窗口边框颜色"
+              />
+            </a-popover>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="label">边框宽度</div>
+          <div class="slider-wrap">
+            <a-slider
+              v-model:value="topmostWidthDraft"
+              :min="1"
+              :max="16"
+              :step="1"
+              @after-change="(v) => setTopmostBorderWidth(Array.isArray(v) ? v[0] : v)"
             />
-            <span class="slider" />
-          </label>
+          </div>
+          <div class="value">{{ topmostWidthDraft }}px</div>
         </div>
       </section>
-    </div>
-
-    <section class="card">
-      <div class="card-head">
-        <div class="card-title">已收纳窗口</div>
-      </div>
-
-      <div v-if="!items.length" class="empty">暂无收纳窗口</div>
-
-      <div v-for="it in items" :key="it.hwnd" class="stash-item">
-        <div class="stash-left">
-          <div class="name">
-            <PencilLine :size="13"></PencilLine>
-            <input
-              class="text alias"
-              type="text"
-              :value="itemAliasDrafts[it.hwnd] ?? ''"
-              :placeholder="it.title"
-              @input="onAliasInput(it.hwnd, ($event.target as HTMLInputElement).value)"
-              @change="applyAlias(it.hwnd)"
-              @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
-            />
-            <!-- {{ it.handleAlias?.trim() ? it.handleAlias : it.title || it.hwnd }} -->
-          </div>
-          <div class="meta">
-            贴边：{{ edgeLabel(it.edge) }}
-            <span v-if="it.handleAlias?.trim() && it.title?.trim()"> · 原标题：{{ it.title }}</span>
-          </div>
+      <section class="card">
+        <div class="card-head">
+          <div class="card-title">已收纳窗口</div>
         </div>
 
-        <div class="stash-controls">
-          <v-menu
-            v-model="itemColorMenus[it.hwnd]"
-            :close-on-content-click="false"
-            :offset="8"
-            location="bottom"
-            @update:model-value="(open) => onItemColorMenuChange(it, open)"
-          >
-            <template #activator="{ props }">
+        <div v-if="!items.length" class="empty">暂无收纳窗口</div>
+
+        <div v-for="it in items" :key="it.hwnd" class="stash-item">
+          <div class="stash-left">
+            <div class="name">
+              <PencilLine :size="13"></PencilLine>
+              <input
+                class="text alias"
+                type="text"
+                :value="itemAliasDrafts[it.hwnd] ?? ''"
+                :placeholder="it.title"
+                @input="onAliasInput(it.hwnd, ($event.target as HTMLInputElement).value)"
+                @change="applyAlias(it.hwnd)"
+                @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
+              />
+              <!-- {{ it.handleAlias?.trim() ? it.handleAlias : it.title || it.hwnd }} -->
+            </div>
+            <div class="meta">
+              <span>贴边：{{ edgeLabel(it.edge) }}</span>
+              <span v-if="it.handleAlias?.trim() && it.title?.trim()">
+                · 原标题：{{ it.title }}</span
+              >
+            </div>
+          </div>
+
+          <div class="stash-controls">
+            <a-popover
+              trigger="click"
+              placement="bottom"
+              :open="itemColorMenus[it.hwnd]"
+              @update:open="
+                (open) => {
+                  itemColorMenus[it.hwnd] = open
+                  onItemColorMenuChange(it, open)
+                }
+              "
+            >
+              <template #content>
+                <div class="color-pop">
+                  <div class="color-palette">
+                    <button
+                      v-for="c in PRESET_COLORS"
+                      :key="c"
+                      class="palette-swatch"
+                      type="button"
+                      :style="{ backgroundColor: c }"
+                      :title="c"
+                      @click="itemColorDrafts[it.hwnd] = c"
+                    />
+                  </div>
+                  <a-input
+                    v-model:value="itemColorDrafts[it.hwnd]"
+                    size="small"
+                    placeholder="#RRGGBB / #RRGGBBAA"
+                  />
+                  <div class="color-actions">
+                    <a-button type="text" size="small" @click="clearItemColor(it.hwnd)"
+                      >跟随</a-button
+                    >
+                    <a-button type="text" size="small" @click="cancelItemColor(it.hwnd)"
+                      >取消</a-button
+                    >
+                    <a-button type="primary" size="small" @click="applyItemColor(it.hwnd)"
+                      >应用</a-button
+                    >
+                  </div>
+                </div>
+              </template>
               <button
-                v-bind="props"
                 class="color-btn only"
                 type="button"
                 :style="{
@@ -406,38 +579,15 @@ onBeforeUnmount(() => {
                 :title="it.handleColor?.trim() ? `独立颜色：${it.handleColor}` : '跟随贴边颜色'"
                 aria-label="设置外露标签颜色"
               />
-            </template>
+            </a-popover>
 
-            <v-card class="color-pop">
-              <v-color-picker
-                v-model="itemColorDrafts[it.hwnd]"
-                :modes="['rgba']"
-                show-swatches
-                hide-inputs
-              />
-              <div class="color-actions">
-                <v-btn variant="text" density="compact" @click="clearItemColor(it.hwnd)"
-                  >跟随</v-btn
-                >
-                <v-btn variant="text" density="compact" @click="cancelItemColor(it.hwnd)"
-                  >取消</v-btn
-                >
-                <v-btn
-                  color="primary"
-                  variant="text"
-                  density="compact"
-                  @click="applyItemColor(it.hwnd)"
-                >
-                  应用
-                </v-btn>
-              </div>
-            </v-card>
-          </v-menu>
-
-          <button class="btn restore-btn" type="button" @click="restore(it.hwnd)">退出收纳</button>
+            <X :size="18" @click="restore(it.hwnd)"></X>
+          </div>
         </div>
-      </div>
-    </section>
+      </section>
+    </div>
+
+    <!-- <section class="card"></section> -->
   </div>
 </template>
 
@@ -476,13 +626,25 @@ onBeforeUnmount(() => {
 }
 
 .card {
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  /* border: 1px solid rgba(255, 255, 255, 0.08); */
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.04);
   padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 6px 0;
+}
+
+.section-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ev-c-text-1);
 }
 
 .card-title {
@@ -546,11 +708,11 @@ onBeforeUnmount(() => {
 }
 
 .color-btn {
-  width: 44px;
-  height: 28px;
+  width: 18px;
+  height: 18px;
   padding: 0;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
+  border-radius: 3px;
   cursor: pointer;
 }
 
@@ -562,6 +724,24 @@ onBeforeUnmount(() => {
 
 .color-pop {
   padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 220px;
+}
+
+.color-palette {
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  gap: 6px;
+}
+
+.palette-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  cursor: pointer;
 }
 
 .color-actions {
@@ -587,27 +767,28 @@ onBeforeUnmount(() => {
 }
 
 .handle-grid {
-  grid-column: 2 / span 2;
+  display: flex;
+  /* grid-column: 2 / span 2;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr)); */
   gap: 10px;
 }
 
 .handle-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  /* justify-content: space-between; */
   gap: 10px;
   border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(0, 0, 0, 0.12);
-  padding: 8px 10px;
+  /* border: 1px solid rgba(255, 255, 255, 0.1); */
+  /* background: rgba(0, 0, 0, 0.12); */
+  /* padding: 8px 10px; */
 }
 
 .handle-label {
   font-size: 12px;
   color: var(--ev-c-text-2);
-  font-weight: 700;
+  /* font-weight: 700; */
 }
 
 .switch {
@@ -684,9 +865,9 @@ onBeforeUnmount(() => {
   font-weight: 800;
   font-size: 13px;
   overflow: hidden;
-  text-overflow: ellipsis;
+  /* text-overflow: ellipsis; */
   white-space: nowrap;
-  max-width: 680px;
+  max-width: 180px;
 }
 
 .meta {
@@ -733,8 +914,8 @@ onBeforeUnmount(() => {
 }
 
 .text.alias {
-  width: 220px;
-  max-width: 40vw;
+  width: 160px;
+  max-width: 160px;
   margin-left: 10px;
 }
 

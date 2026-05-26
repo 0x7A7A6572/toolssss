@@ -1,6 +1,8 @@
 import { exec, spawn, type ChildProcessWithoutNullStreams } from 'child_process'
 import { createInterface } from 'readline'
 import { promisify } from 'util'
+import { PINNED_BORDER_RUNNER_PS, WINDOW_RECT_EVENT_RUNNER_PS } from '@libs/win32/powershellRunners'
+import { clampNumber } from '@main-shared/primitives'
 
 const execAsync = promisify(exec)
 
@@ -8,11 +10,8 @@ export type ExternalWindowEdge = 'left' | 'right' | 'top' | 'bottom'
 export type ExternalWindowMatch = 'contains' | 'equals'
 export type ExternalWindowRect = { left: number; top: number; right: number; bottom: number }
 export type ExternalWindowMatchEntry = { hwnd: string; title: string }
-
-function clampNumber(value: number, min: number, max: number): number {
-  if (Number.isNaN(value) || !Number.isFinite(value)) return min
-  return Math.min(max, Math.max(min, value))
-}
+export type ExternalWindowRectChange = { hwnd: string; rect: ExternalWindowRect }
+export type ExternalWindowPinnedBorderSettings = { color: string; width: number }
 
 function encodePowerShellCommand(script: string): string {
   return Buffer.from(script, 'utf16le').toString('base64')
@@ -123,9 +122,7 @@ class PowerShellBridge {
     if (this.closed) return
     this.closed = true
     const err = error ?? new Error('PowerShell 已退出')
-    for (const [, p] of this.pending) {
-      p.reject(err)
-    }
+    for (const [, p] of this.pending) p.reject(err)
     this.pending.clear()
   }
 }
@@ -140,6 +137,335 @@ export function disposeExternalWindowPowerShell(): void {
   psBridgeSta = null
 }
 
+class ExternalWindowRectEventBridge {
+  private proc: ChildProcessWithoutNullStreams
+  private closed = false
+  private onChange: (evt: ExternalWindowRectChange) => void
+
+  constructor(onChange: (evt: ExternalWindowRectChange) => void) {
+    this.onChange = onChange
+
+    const runner = WINDOW_RECT_EVENT_RUNNER_PS
+
+    const encoded = encodePowerShellCommand(runner)
+    const args: string[] = [
+      '-NoLogo',
+      '-NoProfile',
+      '-NonInteractive',
+      '-NoExit',
+      '-EncodedCommand',
+      encoded
+    ]
+    this.proc = spawn('powershell', args, {
+      windowsHide: true,
+      stdio: ['pipe', 'pipe', 'pipe']
+    }) as ChildProcessWithoutNullStreams
+
+    const rl = createInterface({ input: this.proc.stdout })
+    rl.on('line', (line) => this.onLine(line))
+    this.proc.on('exit', () => this.dispose())
+    this.proc.on('error', () => this.dispose())
+  }
+
+  add(hwnd: string): void {
+    const id = typeof hwnd === 'string' ? hwnd.trim() : ''
+    if (!id) return
+    if (this.closed) return
+    try {
+      this.proc.stdin.write(`ADD|${id}\n`)
+    } catch {
+      void 0
+    }
+  }
+
+  remove(hwnd: string): void {
+    const id = typeof hwnd === 'string' ? hwnd.trim() : ''
+    if (!id) return
+    if (this.closed) return
+    try {
+      this.proc.stdin.write(`DEL|${id}\n`)
+    } catch {
+      void 0
+    }
+  }
+
+  dispose(): void {
+    if (this.closed) return
+    this.closed = true
+    try {
+      this.proc.stdin.write(`__EXIT__\n`)
+    } catch {
+      void 0
+    }
+    try {
+      this.proc.stdin.end()
+    } catch {
+      void 0
+    }
+  }
+
+  private onLine(line: string): void {
+    const s = typeof line === 'string' ? line.trim() : ''
+    if (!s) return
+    if (!s.startsWith('EVT|')) return
+    const b64 = s.slice(4)
+    if (!b64) return
+    try {
+      const json = Buffer.from(b64, 'base64').toString('utf8')
+      const parsed = JSON.parse(json) as unknown
+      if (!parsed || typeof parsed !== 'object') return
+      const p = parsed as { hwnd?: unknown; rect?: unknown }
+      const hwnd = typeof p.hwnd === 'string' ? p.hwnd : ''
+      if (!hwnd) return
+      const rectRaw =
+        p.rect && typeof p.rect === 'object' ? (p.rect as Record<string, unknown>) : null
+      if (!rectRaw) return
+      const left = Number(rectRaw['left'])
+      const top = Number(rectRaw['top'])
+      const right = Number(rectRaw['right'])
+      const bottom = Number(rectRaw['bottom'])
+      if (![left, top, right, bottom].every((n) => Number.isFinite(n))) return
+      this.onChange({ hwnd, rect: { left, top, right, bottom } })
+    } catch {
+      void 0
+    }
+  }
+}
+
+let rectEventBridge: ExternalWindowRectEventBridge | null = null
+
+export function ensureExternalWindowRectEvents(
+  onChange: (evt: ExternalWindowRectChange) => void
+): void {
+  if (process.platform !== 'win32') return
+  if (rectEventBridge) return
+  rectEventBridge = new ExternalWindowRectEventBridge(onChange)
+}
+
+export function watchExternalWindowRect(hwnd: string, watch: boolean): void {
+  if (process.platform !== 'win32') return
+  if (!rectEventBridge) return
+  if (watch) rectEventBridge.add(hwnd)
+  else rectEventBridge.remove(hwnd)
+}
+
+export function disposeExternalWindowRectEvents(): void {
+  rectEventBridge?.dispose()
+  rectEventBridge = null
+}
+
+class ExternalWindowPinnedBorderBridge {
+  private proc: ChildProcessWithoutNullStreams
+  private closed = false
+  private onClosed: (() => void) | null
+
+  constructor(onClosed: () => void) {
+    this.onClosed = onClosed
+    const runner = PINNED_BORDER_RUNNER_PS
+    const bootstrap = `
+      $in = [Console]::In
+      [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+      $ErrorActionPreference = 'Stop'
+      $sb = New-Object System.Text.StringBuilder
+      while ($true) {
+        $line = $in.ReadLine()
+        if ($null -eq $line) { exit 0 }
+        if ($line -eq '__RUNNER_END__') { break }
+        [void]$sb.AppendLine($line)
+      }
+      $code = $sb.ToString()
+      try {
+        &([ScriptBlock]::Create($code))
+      } catch {
+        [Console]::Error.WriteLine(($_ | Out-String))
+        exit 1
+      }
+    `
+    const encoded = encodePowerShellCommand(bootstrap)
+    const args: string[] = [
+      '-STA',
+      '-NoLogo',
+      '-NoProfile',
+      '-NonInteractive',
+      '-EncodedCommand',
+      encoded
+    ]
+    this.proc = spawn('powershell', args, {
+      windowsHide: true,
+      stdio: ['pipe', 'pipe', 'pipe']
+    }) as ChildProcessWithoutNullStreams
+    try {
+      this.proc.stdin.write(`${runner}\n__RUNNER_END__\n`)
+    } catch {
+      void 0
+    }
+    this.proc.stdout.on('data', () => void 0)
+    this.proc.stderr.on('data', (d: Buffer) => {
+      const msg = d.toString('utf8').trim()
+      if (msg) console.error('[pinned-border]', msg)
+    })
+    this.proc.on('exit', () => {
+      this.onClosed?.()
+      this.onClosed = null
+      this.dispose()
+    })
+    this.proc.on('error', (e) => {
+      console.error('[pinned-border] process error', e)
+      this.onClosed?.()
+      this.onClosed = null
+      this.dispose()
+    })
+  }
+
+  add(hwnd: string, settings: ExternalWindowPinnedBorderSettings): void {
+    const id = typeof hwnd === 'string' ? hwnd.trim() : ''
+    if (!id) return
+    if (this.closed) return
+    try {
+      this.proc.stdin.write(`ADD|${id}|${settings.color}|${settings.width}\n`)
+    } catch {
+      void 0
+    }
+  }
+
+  remove(hwnd: string): void {
+    const id = typeof hwnd === 'string' ? hwnd.trim() : ''
+    if (!id) return
+    if (this.closed) return
+    try {
+      this.proc.stdin.write(`DEL|${id}\n`)
+    } catch {
+      void 0
+    }
+  }
+
+  update(hwnd: string, settings: ExternalWindowPinnedBorderSettings): void {
+    const id = typeof hwnd === 'string' ? hwnd.trim() : ''
+    if (!id) return
+    if (this.closed) return
+    try {
+      this.proc.stdin.write(`SET|${id}|${settings.color}|${settings.width}\n`)
+    } catch {
+      void 0
+    }
+  }
+
+  dispose(): void {
+    if (this.closed) return
+    this.closed = true
+    try {
+      this.proc.stdin.write(`__EXIT__\n`)
+    } catch {
+      void 0
+    }
+    try {
+      this.proc.stdin.end()
+    } catch {
+      void 0
+    }
+  }
+}
+
+let pinnedBorderBridge: ExternalWindowPinnedBorderBridge | null = null
+
+export function ensureExternalWindowPinnedBorders(): void {
+  if (process.platform !== 'win32') return
+  if (pinnedBorderBridge) return
+  try {
+    pinnedBorderBridge = new ExternalWindowPinnedBorderBridge(() => {
+      pinnedBorderBridge = null
+    })
+  } catch (e) {
+    pinnedBorderBridge = null
+    console.error('[pinned-border] failed to start', e)
+  }
+}
+
+export function pinExternalWindowBorder(
+  hwnd: string,
+  settings: ExternalWindowPinnedBorderSettings
+): void {
+  if (process.platform !== 'win32') return
+  try {
+    ensureExternalWindowPinnedBorders()
+    pinnedBorderBridge?.add(hwnd, settings)
+    setTimeout(() => {
+      pinnedBorderBridge?.add(hwnd, settings)
+    }, 300)
+  } catch {
+    void 0
+  }
+}
+
+export function unpinExternalWindowBorder(hwnd: string): void {
+  if (process.platform !== 'win32') return
+  try {
+    pinnedBorderBridge?.remove(hwnd)
+  } catch {
+    void 0
+  }
+}
+
+export function updateExternalWindowBorder(
+  hwnd: string,
+  settings: ExternalWindowPinnedBorderSettings
+): void {
+  if (process.platform !== 'win32') return
+  try {
+    pinnedBorderBridge?.update(hwnd, settings)
+  } catch {
+    void 0
+  }
+}
+
+export function disposeExternalWindowPinnedBorders(): void {
+  pinnedBorderBridge?.dispose()
+  pinnedBorderBridge = null
+}
+
+async function runPowerShellOneShot(script: string, opts?: { sta?: boolean }): Promise<string> {
+  const innerB64 = encodePowerShellCommand(script)
+  const wrapper = `
+    $inner = [System.Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('${innerB64}'))
+    $ErrorActionPreference = 'Stop'
+    try {
+      $out = &([ScriptBlock]::Create($inner)) 2>&1 | Out-String
+      $b64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes([string]$out))
+      $bytes = [System.Text.Encoding]::ASCII.GetBytes([string]$b64)
+      $stdout = [System.Console]::OpenStandardOutput()
+      $stdout.Write($bytes, 0, $bytes.Length)
+      $stdout.Flush()
+      exit 0
+    } catch {
+      $err = ($_ | Out-String)
+      $b64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes([string]$err))
+      $bytes = [System.Text.Encoding]::ASCII.GetBytes([string]$b64)
+      $stdout = [System.Console]::OpenStandardOutput()
+      $stdout.Write($bytes, 0, $bytes.Length)
+      $stdout.Flush()
+      exit 1
+    }
+  `
+  const encoded = encodePowerShellCommand(wrapper)
+  const args: string[] = []
+  if (opts?.sta) args.push('-STA')
+  args.push('-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', encoded)
+  const proc = spawn('powershell', args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+  const stdoutChunks: Buffer[] = []
+  const stderrChunks: Buffer[] = []
+  proc.stdout.on('data', (d: Buffer) => stdoutChunks.push(d))
+  proc.stderr.on('data', (d: Buffer) => stderrChunks.push(d))
+  const exitCode: number = await new Promise((resolve, reject) => {
+    proc.once('error', (e) => reject(e instanceof Error ? e : new Error('PowerShell 启动失败')))
+    proc.once('close', (code) => resolve(typeof code === 'number' ? code : 1))
+  })
+  const b64 = Buffer.concat(stdoutChunks).toString('ascii').trim()
+  const decoded = b64 ? Buffer.from(b64, 'base64').toString('utf8') : ''
+  if (exitCode === 0) return decoded
+  const stderr = Buffer.concat(stderrChunks).toString('utf8').trim()
+  throw new Error(decoded || stderr || 'PowerShell 执行失败')
+}
+
 async function runPowerShell(script: string, opts?: { sta?: boolean }): Promise<string> {
   if (process.platform === 'win32') {
     const useSta = Boolean(opts?.sta)
@@ -152,6 +478,7 @@ async function runPowerShell(script: string, opts?: { sta?: boolean }): Promise<
       bridge.dispose()
       if (useSta) psBridgeSta = null
       else psBridgeMta = null
+      return await runPowerShellOneShot(script, opts)
     }
   }
   const encoded = encodePowerShellCommand(script)
@@ -177,11 +504,15 @@ function getExternalWindowPreamblePs(): string {
           public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
           [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
           [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+          [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
+          [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT pt);
+          [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr hwnd, uint gaFlags);
           [DllImport("user32.dll", SetLastError=true, CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
           [DllImport("user32.dll", SetLastError=true)] public static extern int GetWindowTextLength(IntPtr hWnd);
           [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
           [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
           [DllImport("user32.dll", SetLastError=true)] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+          [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
           [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
           [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
           [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
@@ -196,6 +527,78 @@ function getExternalWindowPreamblePs(): string {
 "@
     }
   `
+}
+
+export async function getExternalWindowFromPoint(payload: {
+  x: number
+  y: number
+}): Promise<{ hwnd: string; title: string } | null> {
+  if (process.platform !== 'win32') return null
+  const x = clampNumber(Number(payload.x), -20000, 20000)
+  const y = clampNumber(Number(payload.y), -20000, 20000)
+  const nodePid = process.pid
+  const b64 = psJsonB64({ x, y, nodePid })
+  const script = `
+    $p = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${b64}')) | ConvertFrom-Json
+    ${getExternalWindowPreamblePs()}
+    $pt = New-Object Win32+POINT
+    $pt.X = [int]$p.x
+    $pt.Y = [int]$p.y
+    $h = [Win32]::WindowFromPoint($pt)
+    if ($h -eq [IntPtr]::Zero) { $null; return }
+    $GA_ROOTOWNER = 3
+    $root = [Win32]::GetAncestor($h, [uint32]$GA_ROOTOWNER)
+    if ($root -eq [IntPtr]::Zero) { $root = $h }
+    if (-not [Win32]::IsWindowVisible($root)) { $null; return }
+    $wpid = [uint32]0
+    [Win32]::GetWindowThreadProcessId($root, [ref]$wpid) | Out-Null
+    if ([int]$wpid -eq [int]$p.nodePid) { $null; return }
+    @{
+      hwnd = [string]([Int64]$root)
+      title = [Win32]::Title($root)
+    } | ConvertTo-Json -Compress
+  `
+  try {
+    const out = (await runPowerShell(script)).trim()
+    if (!out) return null
+    const parsed = JSON.parse(out) as unknown
+    if (!parsed || typeof parsed !== 'object') return null
+    const p = parsed as { hwnd?: unknown; title?: unknown }
+    const hwnd = typeof p.hwnd === 'string' ? p.hwnd : ''
+    const title = typeof p.title === 'string' ? p.title : ''
+    if (!hwnd) return null
+    return { hwnd, title }
+  } catch {
+    return null
+  }
+}
+
+export async function getExternalWindowRootHwnd(hwnd: string): Promise<string | null> {
+  if (process.platform !== 'win32') return null
+  const h = typeof hwnd === 'string' ? hwnd.trim() : ''
+  if (!h) return null
+  const b64 = psJsonB64({ hwnd: h })
+  const script = `
+    $p = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${b64}')) | ConvertFrom-Json
+    ${getExternalWindowPreamblePs()}
+    $h = [IntPtr]([Int64]([string]$p.hwnd))
+    if ($h -eq [IntPtr]::Zero) { $null; return }
+    $GA_ROOTOWNER = 3
+    $root = [Win32]::GetAncestor($h, [uint32]$GA_ROOTOWNER)
+    if ($root -eq [IntPtr]::Zero) { $root = $h }
+    @{ hwnd = [string]([Int64]$root) } | ConvertTo-Json -Compress
+  `
+  try {
+    const out = (await runPowerShell(script)).trim()
+    if (!out) return null
+    const parsed = JSON.parse(out) as unknown
+    if (!parsed || typeof parsed !== 'object') return null
+    const p = parsed as { hwnd?: unknown }
+    const id = typeof p.hwnd === 'string' ? p.hwnd.trim() : ''
+    return id ? id : null
+  } catch {
+    return null
+  }
 }
 
 export async function findExternalWindows(payload: {
@@ -275,7 +678,7 @@ export async function hideExternalWindowToEdge(payload: {
     payload.edge === 'right' || payload.edge === 'top' || payload.edge === 'bottom'
       ? payload.edge
       : 'left'
-  const peekPx = clampNumber(Number(payload.peekPx), 1, 400)
+  const peekPx = clampNumber(Number(payload.peekPx), 0, 400)
   const animate = Boolean(payload.animate)
   const durationMs = clampNumber(Number(payload.durationMs ?? 180), 60, 1200)
   const b64 = psJsonB64({ hwnd, edge, peekPx, animate, durationMs })
@@ -419,7 +822,10 @@ export async function restoreExternalWindow(payload: {
   }
 }
 
-export async function getForegroundExternalWindow(): Promise<{ hwnd: string; title: string } | null> {
+export async function getForegroundExternalWindow(): Promise<{
+  hwnd: string
+  title: string
+} | null> {
   if (process.platform !== 'win32') return null
   const nodePid = process.pid
   const b64 = psJsonB64({ nodePid })
@@ -431,9 +837,9 @@ export async function getForegroundExternalWindow(): Promise<{ hwnd: string; tit
       $null
       return
     }
-    $pid = [uint32]0
-    [Win32]::GetWindowThreadProcessId($h, [ref]$pid) | Out-Null
-    if ([int]$pid -eq [int]$p.nodePid) {
+    $wpid = [uint32]0
+    [Win32]::GetWindowThreadProcessId($h, [ref]$wpid) | Out-Null
+    if ([int]$wpid -eq [int]$p.nodePid) {
       $null
       return
     }
@@ -467,6 +873,74 @@ export async function activateExternalWindow(hwnd: string): Promise<boolean> {
     ${getExternalWindowPreamblePs()}
     $h = [IntPtr]([Int64]([string]$p.hwnd))
     [Win32]::SetForegroundWindow($h) | Out-Null
+    $true
+  `
+  try {
+    await runPowerShell(script)
+    return true
+  } catch {
+    return false
+  }
+}
+
+export async function raiseExternalWindow(hwnd: string): Promise<boolean> {
+  if (process.platform !== 'win32') return false
+  const h = typeof hwnd === 'string' ? hwnd.trim() : ''
+  if (!h) return false
+  const b64 = psJsonB64({ hwnd: h })
+  const script = `
+    $p = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${b64}')) | ConvertFrom-Json
+    ${getExternalWindowPreamblePs()}
+    $h = [IntPtr]([Int64]([string]$p.hwnd))
+    $GA_ROOTOWNER = 3
+    $root = [Win32]::GetAncestor($h, [uint32]$GA_ROOTOWNER)
+    if ($root -eq [IntPtr]::Zero) { $root = $h }
+    $SWP_NOSIZE = 0x0001
+    $SWP_NOMOVE = 0x0002
+    $SWP_NOACTIVATE = 0x0010
+    $SWP_SHOWWINDOW = 0x0040
+    $flags = $SWP_NOSIZE -bor $SWP_NOMOVE -bor $SWP_NOACTIVATE -bor $SWP_SHOWWINDOW
+    $HWND_TOPMOST = [IntPtr](-1)
+    $HWND_NOTOPMOST = [IntPtr](-2)
+    try {
+      [Win32]::ShowWindow($root, 4) | Out-Null
+    } catch { }
+    [Win32]::SetWindowPos($root, $HWND_TOPMOST, 0, 0, 0, 0, [uint32]$flags) | Out-Null
+    [Win32]::SetWindowPos($root, $HWND_NOTOPMOST, 0, 0, 0, 0, [uint32]$flags) | Out-Null
+    $true
+  `
+  try {
+    await runPowerShell(script)
+    return true
+  } catch {
+    return false
+  }
+}
+
+export async function setExternalWindowTopmost(hwnd: string, topmost: boolean): Promise<boolean> {
+  if (process.platform !== 'win32') return false
+  const h = typeof hwnd === 'string' ? hwnd.trim() : ''
+  if (!h) return false
+  const b64 = psJsonB64({ hwnd: h, topmost: Boolean(topmost) })
+  const script = `
+    $p = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${b64}')) | ConvertFrom-Json
+    ${getExternalWindowPreamblePs()}
+    $h = [IntPtr]([Int64]([string]$p.hwnd))
+    $GA_ROOTOWNER = 3
+    $root = [Win32]::GetAncestor($h, [uint32]$GA_ROOTOWNER)
+    if ($root -eq [IntPtr]::Zero) { $root = $h }
+    $SWP_NOSIZE = 0x0001
+    $SWP_NOMOVE = 0x0002
+    $SWP_NOACTIVATE = 0x0010
+    $SWP_SHOWWINDOW = 0x0040
+    $flags = $SWP_NOSIZE -bor $SWP_NOMOVE -bor $SWP_NOACTIVATE -bor $SWP_SHOWWINDOW
+    $HWND_TOPMOST = [IntPtr](-1)
+    $HWND_NOTOPMOST = [IntPtr](-2)
+    $after = if ([bool]$p.topmost) { $HWND_TOPMOST } else { $HWND_NOTOPMOST }
+    try {
+      [Win32]::ShowWindow($root, 4) | Out-Null
+    } catch { }
+    [Win32]::SetWindowPos($root, $after, 0, 0, 0, 0, [uint32]$flags) | Out-Null
     $true
   `
   try {
@@ -519,5 +993,24 @@ export async function getExternalWindowRect(hwnd: string): Promise<ExternalWindo
     return { left, top, right, bottom }
   } catch {
     return null
+  }
+}
+
+export async function warmupExternalWindowPowerShell(): Promise<void> {
+  if (process.platform !== 'win32') return
+  const script = `
+    ${getExternalWindowPreamblePs()}
+    [Win32]::GetForegroundWindow() | Out-Null
+    $true
+  `
+  try {
+    await runPowerShell(script)
+  } catch {
+    void 0
+  }
+  try {
+    await runPowerShell(script, { sta: true })
+  } catch {
+    void 0
   }
 }

@@ -5,13 +5,17 @@
     "src/main/**/*", 
     "src/preload/**/*",
     "src/shared/**/*",
-    "src/libs/electron-screenshots/**/*",
+    "src/libs/**/*",
     ],
   "compilerOptions": {
     "composite": true,
     "types": ["electron-vite/node"],
     "baseUrl": ".",
     "paths": {
+      "@main/*": ["src/main/*"],
+      "@main-core/*": ["src/main/core/*"],
+      "@main-shared/*": ["src/main/shared/*"],
+      "@libs/*": ["src/libs/*"],
       "@shared/*": ["src/shared/*"]
     }
   }

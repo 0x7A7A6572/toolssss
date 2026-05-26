@@ -6,6 +6,11 @@ export class WeatherTool {
     return result as WeatherDashboard | null
   }
 
+  static async getProvinces(): Promise<WeatherProvinceCity[]> {
+    const result = await window.electron.ipcRenderer.invoke(WEATHER_EVENTS.GET_PROVINCES)
+    return (result as WeatherProvinceCity[]) ?? []
+  }
+
   static async getProvinceCities(provinceCode: string): Promise<WeatherProvinceCity[]> {
     const result = await window.electron.ipcRenderer.invoke(
       WEATHER_EVENTS.GET_PROVINCE_CITIES,

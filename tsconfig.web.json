@@ -19,6 +19,9 @@
       ],
       "@shared/*": [
         "src/shared/*"
+      ],
+      "@main-shared/*": [
+        "src/main/shared/*"
       ]
     }
   }

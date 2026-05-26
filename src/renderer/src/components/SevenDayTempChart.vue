@@ -147,8 +147,9 @@ watch(seriesData, () => render(), { deep: true })
 <style scoped>
 .chart-wrap {
   width: 100%;
-  aspect-ratio: 1 / 1;
-  max-height: 130px;
+  /* aspect-ratio: 1 / 1; */
+  /* max-height: 130px; */
+  height: 100%;
 }
 
 .chart {

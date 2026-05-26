@@ -16,15 +16,7 @@
   --ev-c-text-2: rgba(235, 235, 245, 0.6);
   --ev-c-text-3: rgba(235, 235, 245, 0.38);
 
-  --ev-button-alt-border: transparent;
-  --ev-button-alt-text: var(--ev-c-text-1);
-  --ev-button-alt-bg: var(--ev-c-gray-3);
-  --ev-button-alt-hover-border: transparent;
-  --ev-button-alt-hover-text: var(--ev-c-text-1);
-  --ev-button-alt-hover-bg: var(--ev-c-gray-2);
-}
 
-:root {
   --color-background: var(--ev-c-black);
   --color-background-soft: var(--ev-c-black-soft);
   --color-background-mute: var(--ev-c-black-mute);
@@ -34,7 +26,7 @@
   --ev-control-border: rgba(255, 255, 255, 0.12);
   --ev-control-bg: rgba(0, 0, 0, 0.2);
   --ev-control-text: var(--ev-c-text-1);
-  --ev-control-radius: 10px;
+  --ev-control-radius: 8px;
   --ev-control-font-size: 13px;
   --ev-control-focus-border: rgba(59, 130, 246, 0.5);
   --ev-control-disabled-opacity: 0.6;
@@ -73,6 +65,15 @@ body {
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+input {
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: inherit;
+  /* color: var(--ev-c-text-1); */
+  outline: none;
+  background: #00000029;
 }
 
 select {
@@ -145,3 +146,19 @@ select option {
 .v-list-item-title {
   font-size: 13px !important;
 }
+
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 46px;
+  height: 26px;
+  justify-self: end;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+

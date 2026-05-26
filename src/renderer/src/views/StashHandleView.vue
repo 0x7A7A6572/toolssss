@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import type { AppSettings } from '@shared/settings'
 import { GripHorizontal, GripVertical } from 'lucide-vue-next'
+import { useSettingsStore } from '@renderer/state/settings'
+import { clampNumber } from '@main-shared/primitives'
 
 const params = new URLSearchParams(window.location.search)
 const hwnd = params.get('hwnd') ?? ''
@@ -11,12 +12,12 @@ const initialColor = params.get('color') ?? ''
 
 const vertical = computed(() => edge === 'left' || edge === 'right')
 
-const settings = ref<AppSettings | null>(null)
+const settings = computed(() => useSettingsStore().settings.value)
 const handleTitle = ref(initialTitle)
 const handleColor = ref(initialColor)
 
-const showHandleTitle = computed(() => settings.value?.windowStash?.showHandleTitle !== false)
-const showHandleDrag = computed(() => settings.value?.windowStash?.showHandleDrag !== false)
+const showHandleTitle = computed(() => settings.value.windowStash.showHandleTitle !== false)
+const showHandleDrag = computed(() => settings.value.windowStash.showHandleDrag !== false)
 
 function truncateByCodePoints(value: string, maxChars: number): string {
   const s = typeof value === 'string' ? value : ''
@@ -31,11 +32,6 @@ function normalizeHexColor(s: string): string | null {
   const v = typeof s === 'string' ? s.trim() : ''
   if (!v) return null
   return /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(v) ? v : null
-}
-
-function clampNumber(value: number, min: number, max: number): number {
-  if (Number.isNaN(value) || !Number.isFinite(value)) return min
-  return Math.min(max, Math.max(min, value))
 }
 
 function hexToRgba(hex: string): { r: number; g: number; b: number; a: number } | null {
@@ -66,8 +62,8 @@ const displayTitle = computed(() => {
 const rawBg = computed(() => {
   const byHandle = normalizeHexColor(handleColor.value)
   if (byHandle) return byHandle
-  const cfg = settings.value?.windowStash
-  const bySetting = cfg && cfg.handleColors ? normalizeHexColor(cfg.handleColors[edge]) : null
+  const cfg = settings.value.windowStash
+  const bySetting = cfg.handleColors ? normalizeHexColor(cfg.handleColors[edge]) : null
   if (bySetting) return bySetting
   if (edge === 'left') return '#22c55e88'
   if (edge === 'top') return '#f59e0b88'
@@ -77,8 +73,8 @@ const rawBg = computed(() => {
 
 const bgStyle = computed(() => {
   const rgba = hexToRgba(rawBg.value) ?? { r: 59, g: 130, b: 246, a: 0.55 }
-  const cfg = settings.value?.windowStash
-  const opacity = clampNumber(Number(cfg?.handleOpacity ?? 1), 0, 1)
+  const cfg = settings.value.windowStash
+  const opacity = clampNumber(Number(cfg.handleOpacity ?? 1), 0, 1)
   const a = clampNumber(rgba.a * opacity, 0, 1)
 
   const degMap = {
@@ -152,10 +148,6 @@ function stopDragging(ev?: PointerEvent): void {
   flushNudge()
 }
 
-const onSettingsChanged = (_: unknown, payload: unknown): void => {
-  settings.value = payload as AppSettings
-}
-
 const onHandleUpdate = (_: unknown, payload: unknown): void => {
   if (!payload || typeof payload !== 'object') return
   const p = payload as { title?: unknown; color?: unknown }
@@ -167,18 +159,10 @@ const onHandleUpdate = (_: unknown, payload: unknown): void => {
 }
 
 onMounted(() => {
-  window.electron.ipcRenderer
-    .invoke('settings:get')
-    .then((s) => {
-      settings.value = s as AppSettings
-    })
-    .catch(() => null)
-  window.electron.ipcRenderer.on('settings:changed', onSettingsChanged)
   window.electron.ipcRenderer.on('window-stash:handle:update', onHandleUpdate)
 })
 
 onBeforeUnmount(() => {
-  window.electron.ipcRenderer.removeListener('settings:changed', onSettingsChanged)
   window.electron.ipcRenderer.removeListener('window-stash:handle:update', onHandleUpdate)
   stopDragging()
 })
@@ -212,9 +196,8 @@ function startDragging(ev: PointerEvent): void {
 }
 
 function restore(): void {
-  // TODO 有bug
-  // if (!hwnd.trim()) return
-  // window.electron.ipcRenderer.send('window-stash:toggle', { hwnd, activate: true })
+  if (!hwnd.trim()) return
+  window.electron.ipcRenderer.send('window-stash:toggle', { hwnd, activate: true })
 }
 </script>
 
