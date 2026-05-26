@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, defineAsyncComponent } from 'vue'
 import { theme } from 'ant-design-vue'
-import AlarmView from './views/AlarmView.vue'
-import MainView from './views/MainView.vue'
-import OverlayView from './views/OverlayView.vue'
-import StashHandleView from './views/StashHandleView.vue'
-import StickerView from './views/StickerView.vue'
-import StickyEditorView from './views/StickyEditorView.vue'
-import TranslatorPopupView from './views/TranslatorPopupView.vue'
+const AlarmView = defineAsyncComponent(() => import('./views/AlarmView.vue'))
+const MainView = defineAsyncComponent(() => import('./views/MainView.vue'))
+const OverlayView = defineAsyncComponent(() => import('./views/OverlayView.vue'))
+const StashHandleView = defineAsyncComponent(() => import('./views/StashHandleView.vue'))
+const StickerView = defineAsyncComponent(() => import('./views/StickerView.vue'))
+const StickyEditorView = defineAsyncComponent(() => import('./views/StickyEditorView.vue'))
+const TranslatorPopupView = defineAsyncComponent(() => import('./views/TranslatorPopupView.vue'))
 const params = new URLSearchParams(window.location.search)
 const mode = params.get('mode') ?? 'main'
 

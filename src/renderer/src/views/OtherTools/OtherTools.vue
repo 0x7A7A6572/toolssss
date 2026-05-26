@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { WeatherTool } from '../../utils/weather'
 import type { WeatherDashboard, WeatherProvinceCity } from '@shared/weather'
 import { DEFAULT_SETTINGS, type AppSettings } from '@shared/settings'
@@ -307,6 +307,25 @@ async function refreshDailyFunFact(force: boolean): Promise<void> {
     endFunFactLoading()
   }
 }
+
+let autoFunFactRequested = false
+function maybeAutoRefreshFunFact(): void {
+  if (autoFunFactRequested) return
+  if (!settingsStore.ready.value) return
+  if (stackActive.value !== 'funFact') return
+  if (funFactLoading.value) return
+  if (funFactStreamId.value) return
+  autoFunFactRequested = true
+  normalizeCachedFunFact()
+  refreshDailyFunFact(false).catch(() => null)
+}
+
+watch(
+  () => stackActive.value,
+  () => {
+    maybeAutoRefreshFunFact()
+  }
+)
 
 function openCityPicker(): void {
   cityPickerOpen.value = true
@@ -701,23 +720,14 @@ onMounted(() => {
   refreshSettings()
     .then(() => {
       normalizeCachedFunFact()
-      if (
-        aiReady.value &&
-        (!funFactText.value.trim() || funFactYmd.value !== funFactTodayYmd.value)
-      )
-        refreshDailyFunFact(false).catch(() => null)
+      maybeAutoRefreshFunFact()
     })
     .catch(() => null)
-  loadProvinces()
-    .then(() => loadCitiesForProvince(provCode.value))
-    .then(() => {
-      if (chosenCityId.value) {
-        stationId.value = chosenCityId.value
-        localStorage.setItem('weather.stationId', stationId.value)
-      }
-      refresh().catch(() => null)
-    })
-    .catch(() => refresh().catch(() => null))
+  if (chosenCityId.value) {
+    stationId.value = chosenCityId.value
+    localStorage.setItem('weather.stationId', stationId.value)
+  }
+  refresh().catch(() => null)
 })
 
 onUnmounted(() => {
