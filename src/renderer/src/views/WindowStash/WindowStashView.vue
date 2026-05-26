@@ -333,7 +333,7 @@ onBeforeUnmount(() => {
                 <template #content>
                   <div class="color-pop">
                     <div class="color-palette">
-                      <button
+                      <div
                         v-for="c in PRESET_COLORS"
                         :key="c"
                         class="palette-swatch"
@@ -708,11 +708,11 @@ onBeforeUnmount(() => {
 }
 
 .color-btn {
-  width: 44px;
-  height: 28px;
+  width: 18px;
+  height: 18px;
   padding: 0;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
+  border-radius: 3px;
   cursor: pointer;
 }
 
@@ -767,9 +767,10 @@ onBeforeUnmount(() => {
 }
 
 .handle-grid {
-  grid-column: 2 / span 2;
+  display: flex;
+  /* grid-column: 2 / span 2;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr)); */
   gap: 10px;
 }
 
@@ -787,7 +788,7 @@ onBeforeUnmount(() => {
 .handle-label {
   font-size: 12px;
   color: var(--ev-c-text-2);
-  font-weight: 700;
+  /* font-weight: 700; */
 }
 
 .switch {
