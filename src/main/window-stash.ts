@@ -46,6 +46,9 @@ const topmostWindows = new Set<string>()
 const topmostBusy = new Set<string>()
 const topmostOverlays = new Map<string, BrowserWindow>()
 let topmostOverlayTimer: NodeJS.Timeout | null = null
+let topmostOverlaySyncBusy = false
+const topmostLastRects = new Map<string, ExternalWindowRect>()
+const topmostDragChangedAt = new Map<string, number>()
 
 type PersistedStashItem = {
   hwnd: string
@@ -68,6 +71,7 @@ const LEAVE_MARGIN_PX = 6
 const HANDLE_GAP_PX = 8
 const HANDLE_TITLE_MAX_CHARS = 10
 const RECT_POLL_MS = 320
+const DRAG_SETTLE_MS = 200
 
 let loadWindowFn: ((win: BrowserWindow, query: Record<string, string>) => Promise<void>) | null =
   null
@@ -275,7 +279,11 @@ function applyTopmostOverlayStyle(hwnd: string, color: string, width: number): v
 function ensureTopmostOverlayTimer(): void {
   if (topmostOverlayTimer) return
   topmostOverlayTimer = setInterval(() => {
-    void syncAllTopmostOverlays()
+    if (topmostOverlaySyncBusy) return
+    topmostOverlaySyncBusy = true
+    void syncAllTopmostOverlays().finally(() => {
+      topmostOverlaySyncBusy = false
+    })
   }, 90)
 }
 
@@ -297,10 +305,13 @@ async function syncAllTopmostOverlays(): Promise<void> {
     return
   }
 
+  const now = Date.now()
   for (const hwnd of targets) {
     const rect = await getExternalWindowRect(hwnd)
     if (!rect) {
       topmostWindows.delete(hwnd)
+      topmostLastRects.delete(hwnd)
+      topmostDragChangedAt.delete(hwnd)
       const ow = topmostOverlays.get(hwnd)
       if (ow && !ow.isDestroyed()) {
         try {
@@ -311,6 +322,35 @@ async function syncAllTopmostOverlays(): Promise<void> {
       }
       topmostOverlays.delete(hwnd)
       continue
+    }
+
+    const lastRect = topmostLastRects.get(hwnd)
+    topmostLastRects.set(hwnd, rect)
+
+    if (
+      lastRect &&
+      (rect.left !== lastRect.left ||
+        rect.top !== lastRect.top ||
+        rect.right !== lastRect.right ||
+        rect.bottom !== lastRect.bottom)
+    ) {
+      topmostDragChangedAt.set(hwnd, now)
+      const win = topmostOverlays.get(hwnd)
+      if (win && !win.isDestroyed() && win.isVisible()) {
+        try {
+          win.hide()
+        } catch {
+          void 0
+        }
+      }
+      continue
+    }
+
+    const changedAt = topmostDragChangedAt.get(hwnd)
+    if (changedAt !== undefined && now - changedAt < DRAG_SETTLE_MS) continue
+
+    if (!lastRect && changedAt === undefined) {
+      topmostDragChangedAt.set(hwnd, now - DRAG_SETTLE_MS)
     }
 
     const w = Math.max(1, Math.round(rect.right - rect.left))
@@ -335,6 +375,8 @@ async function syncAllTopmostOverlays(): Promise<void> {
 }
 
 function removeTopmostOverlay(hwnd: string): void {
+  topmostLastRects.delete(hwnd)
+  topmostDragChangedAt.delete(hwnd)
   const win = topmostOverlays.get(hwnd)
   if (!win) return
   topmostOverlays.delete(hwnd)
@@ -352,6 +394,8 @@ function stopTopmostOverlayTimerIfIdle(): void {
     clearInterval(topmostOverlayTimer)
     topmostOverlayTimer = null
   }
+  topmostLastRects.clear()
+  topmostDragChangedAt.clear()
   for (const [hwnd, win] of Array.from(topmostOverlays.entries())) {
     topmostOverlays.delete(hwnd)
     if (win.isDestroyed()) continue
@@ -368,6 +412,8 @@ function stopTopmostOverlayTimerAndCloseAll(): void {
     clearInterval(topmostOverlayTimer)
     topmostOverlayTimer = null
   }
+  topmostLastRects.clear()
+  topmostDragChangedAt.clear()
   for (const [hwnd, win] of Array.from(topmostOverlays.entries())) {
     topmostOverlays.delete(hwnd)
     if (win.isDestroyed()) continue

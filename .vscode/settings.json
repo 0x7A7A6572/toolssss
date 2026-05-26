@@ -11,5 +11,7 @@
   "cSpell.words": [
     "lucide",
     "toolssss"
-  ]
+  ],
+  "commentTranslate.targetLanguage": "zh-CN",
+  "svn.ignoreMissingSvnWarning": true
 }
