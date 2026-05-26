@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRaw, watch } from 'vue'
 import {
+  ArrowUpRight,
   Brush,
   Check,
   Circle,
@@ -62,7 +63,7 @@ const defaultLang: Lang = {
   operation_mosaic_title: 'Mosaic',
   operation_text_title: 'Text',
   operation_brush_title: 'Brush',
-  operation_arrow_title: 'Arrow',
+  operation_arrow_title: '箭头',
   operation_ellipse_title: 'Ellipse',
   operation_rectangle_title: 'Rectangle'
 }
@@ -121,7 +122,7 @@ let pointerAltKey = false
 
 const handleRadius = 6
 
-type Tool = 'select' | 'line' | 'rect' | 'ellipse' | 'brush' | 'mosaic' | 'text'
+type Tool = 'select' | 'line' | 'arrow' | 'rect' | 'ellipse' | 'brush' | 'mosaic' | 'text'
 type ToolMode = 'stroke' | 'fill'
 
 const iconSize = 14
@@ -129,6 +130,15 @@ const iconSize = 14
 type DrawLine = {
   id: number
   kind: 'line'
+  from: Point
+  to: Point
+  color: string
+  width: number
+}
+
+type DrawArrow = {
+  id: number
+  kind: 'arrow'
   from: Point
   to: Point
   color: string
@@ -180,7 +190,7 @@ type DrawText = {
   fontSize: number
 }
 
-type DrawOp = DrawLine | DrawRect | DrawEllipse | DrawBrush | DrawMosaic | DrawText
+type DrawOp = DrawLine | DrawArrow | DrawRect | DrawEllipse | DrawBrush | DrawMosaic | DrawText
 
 const tool = ref<Tool>('select')
 const toolMode = ref<ToolMode>('stroke')
@@ -388,6 +398,46 @@ function drawEllipsePath(ctx: CanvasRenderingContext2D, a: Point, b: Point): voi
   ctx.bezierCurveTo(cx + ox, cy - ry, cx + rx, cy - oy, cx + rx, cy)
 }
 
+function strokeArrow(
+  ctx: CanvasRenderingContext2D,
+  from: Point,
+  to: Point,
+  color: string,
+  width: number
+): void {
+  const dx = to.x - from.x
+  const dy = to.y - from.y
+  const len = Math.hypot(dx, dy)
+  if (len < 1) return
+
+  const ux = dx / len
+  const uy = dy / len
+  const headLen = Math.max(width * 3, 8)
+  const headWidth = Math.max(width * 2, 6)
+  const lineEndX = to.x - ux * headLen
+  const lineEndY = to.y - uy * headLen
+  const px = -uy
+  const py = ux
+
+  ctx.strokeStyle = color
+  ctx.fillStyle = color
+  ctx.lineWidth = width
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+
+  ctx.beginPath()
+  ctx.moveTo(from.x, from.y)
+  ctx.lineTo(lineEndX, lineEndY)
+  ctx.stroke()
+
+  ctx.beginPath()
+  ctx.moveTo(to.x, to.y)
+  ctx.lineTo(lineEndX + (px * headWidth) / 2, lineEndY + (py * headWidth) / 2)
+  ctx.lineTo(lineEndX - (px * headWidth) / 2, lineEndY - (py * headWidth) / 2)
+  ctx.closePath()
+  ctx.fill()
+}
+
 function ensureMosaicSampler(): CanvasRenderingContext2D | null {
   if (!mosaicSamplerCanvas) {
     mosaicSamplerCanvas = document.createElement('canvas')
@@ -462,6 +512,12 @@ function renderOp(
     ctx.moveTo(op.from.x, op.from.y)
     ctx.lineTo(op.to.x, op.to.y)
     ctx.stroke()
+    ctx.restore()
+    return
+  }
+
+  if (op.kind === 'arrow') {
+    strokeArrow(ctx, op.from, op.to, op.color, op.width)
     ctx.restore()
     return
   }
@@ -1062,6 +1118,15 @@ function onPointerDown(e: PointerEvent): void {
         color: toolColor.value,
         width: toolWidth.value
       }
+    } else if (tool.value === 'arrow') {
+      drawingOp.value = {
+        id: nextOpId++,
+        kind: 'arrow',
+        from: start,
+        to: start,
+        color: toolColor.value,
+        width: toolWidth.value
+      }
     } else if (tool.value === 'rect') {
       drawingOp.value = {
         id: nextOpId++,
@@ -1138,11 +1203,7 @@ function onPointerMove(e: PointerEvent): void {
   magnifierDirty = true
   const p = { x: pendingPointerX, y: pendingPointerY }
 
-  if (
-    autoSnapPending.value &&
-    autoSnapPointerId.value === e.pointerId &&
-    autoSnapDown.value
-  ) {
+  if (autoSnapPending.value && autoSnapPointerId.value === e.pointerId && autoSnapDown.value) {
     const down = autoSnapDown.value
     const dx = p.x - down.x
     const dy = p.y - down.y
@@ -1202,7 +1263,7 @@ function onPointerMove(e: PointerEvent): void {
         draft.points.push(p)
       }
     } else {
-      ;(draft as DrawLine | DrawRect | DrawEllipse | DrawMosaic).to = p
+      ;(draft as DrawLine | DrawArrow | DrawRect | DrawEllipse | DrawMosaic).to = p
     }
     overlayDirty = true
   }
@@ -1236,6 +1297,10 @@ function onPointerUp(e?: PointerEvent): void {
         if (r.width >= 2 && r.height >= 2) pushOp(op)
       } else if (op.kind === 'text') {
         if (op.text.trim()) pushOp(op)
+      } else if (op.kind === 'line' || op.kind === 'arrow') {
+        const dx = op.to.x - op.from.x
+        const dy = op.to.y - op.from.y
+        if (dx * dx + dy * dy >= 4) pushOp(op)
       } else {
         const r = normalizeRect(op.from, op.to)
         if (r.width >= 1 && r.height >= 1) pushOp(op)
@@ -1708,6 +1773,16 @@ onBeforeUnmount(() => {
             @click="setTool('line')"
           >
             <Slash :size="iconSize" />
+          </button>
+          <button
+            class="icon-btn"
+            type="button"
+            :class="{ active: tool === 'arrow' }"
+            :title="lang.operation_arrow_title"
+            :aria-label="lang.operation_arrow_title"
+            @click="setTool('arrow')"
+          >
+            <ArrowUpRight :size="iconSize" />
           </button>
           <button
             class="icon-btn"
