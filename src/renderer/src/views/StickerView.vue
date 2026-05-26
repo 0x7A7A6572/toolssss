@@ -306,6 +306,12 @@ onMounted(() => {
   window.electron.ipcRenderer.on('sticker:ocr:progress', onOcrProgress)
   window.electron.ipcRenderer.on('sticker:ocr:copy-selection', onOcrCopySelection)
   window.addEventListener('keydown', onKeyDown)
+  window.electron.ipcRenderer
+    .invoke('sticker:ready')
+    .then((p) => {
+      if (p) onInit(null, p)
+    })
+    .catch(() => null)
 })
 
 onBeforeUnmount(() => {

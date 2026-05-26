@@ -128,9 +128,13 @@ export function createSnipDomain(deps: Deps): {
         Boolean(data) &&
         typeof data === 'object' &&
         (data as Record<string, unknown>)['stickAfterSave'] === true
+      let stickDataUrl: string | null = null
       try {
         const img = nativeImage.createFromBuffer(buffer)
-        if (!img.isEmpty()) clipboard.writeImage(img)
+        if (!img.isEmpty()) {
+          clipboard.writeImage(img)
+          if (stickAfterSave) stickDataUrl = img.toDataURL()
+        }
       } catch {
         void 0
       }
@@ -138,7 +142,9 @@ export function createSnipDomain(deps: Deps): {
         sc.endCapture()
           .catch(() => null)
           .finally(() => {
-            if (stickAfterSave) deps.stickFromClipboard()
+            if (!stickAfterSave) return
+            if (stickDataUrl) deps.openStickerFromImageDataUrl(stickDataUrl)
+            else deps.stickFromClipboard()
           })
       })
     })

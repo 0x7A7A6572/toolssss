@@ -275,7 +275,19 @@ async function recognizeStickerImageText(dataUrl: string): Promise<StickerOcrRes
 
 const stickerWindows = new Map<number, BrowserWindow>()
 const stickerAspectRatios = new Map<number, number>()
+const pendingStickerInits = new Map<number, StickerPayload>()
 let stickersHidden = false
+
+function stashStickerInit(winId: number, payload: StickerPayload): void {
+  pendingStickerInits.set(winId, payload)
+}
+
+function takeStickerInit(winId: number): StickerPayload | null {
+  const payload = pendingStickerInits.get(winId)
+  if (!payload) return null
+  pendingStickerInits.delete(winId)
+  return payload
+}
 
 function createStickerWindow(deps: Deps, payload: StickerPayload): BrowserWindow {
   const display = screen.getPrimaryDisplay()
@@ -376,6 +388,8 @@ function createStickerWindow(deps: Deps, payload: StickerPayload): BrowserWindow
     }
   }
 
+  stashStickerInit(win.id, payload)
+
   deps.loadWindow(win, { mode: 'sticker' }).catch(() => null)
 
   win.webContents.on('context-menu', (event) => {
@@ -384,11 +398,6 @@ function createStickerWindow(deps: Deps, payload: StickerPayload): BrowserWindow
   })
 
   win.webContents.once('did-finish-load', () => {
-    try {
-      win.webContents.send('sticker:init', payload)
-    } catch {
-      void 0
-    }
     win.showInactive()
     try {
       app.focus()
@@ -400,6 +409,7 @@ function createStickerWindow(deps: Deps, payload: StickerPayload): BrowserWindow
   })
 
   win.on('closed', () => {
+    pendingStickerInits.delete(win.id)
     stickerWindows.delete(win.id)
     stickerAspectRatios.delete(win.id)
   })
@@ -558,6 +568,12 @@ export function createStickersDomain(deps: Deps): {
   }
 
   const registerIpcHandlers = (): void => {
+    ipcMain.handle('sticker:ready', (event) => {
+      const win = BrowserWindow.fromWebContents(event.sender)
+      if (!win || win.isDestroyed()) return null
+      return takeStickerInit(win.id)
+    })
+
     ipcMain.handle('sticker:close', (event) => {
       const win = BrowserWindow.fromWebContents(event.sender)
       if (!win || win.isDestroyed()) return false
