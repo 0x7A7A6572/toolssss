@@ -262,8 +262,26 @@ class ExternalWindowPinnedBorderBridge {
   constructor(onClosed: () => void) {
     this.onClosed = onClosed
     const runner = PINNED_BORDER_RUNNER_PS
-
-    const encoded = encodePowerShellCommand(runner)
+    const bootstrap = `
+      $in = [Console]::In
+      [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+      $ErrorActionPreference = 'Stop'
+      $sb = New-Object System.Text.StringBuilder
+      while ($true) {
+        $line = $in.ReadLine()
+        if ($null -eq $line) { exit 0 }
+        if ($line -eq '__RUNNER_END__') { break }
+        [void]$sb.AppendLine($line)
+      }
+      $code = $sb.ToString()
+      try {
+        &([ScriptBlock]::Create($code))
+      } catch {
+        [Console]::Error.WriteLine(($_ | Out-String))
+        exit 1
+      }
+    `
+    const encoded = encodePowerShellCommand(bootstrap)
     const args: string[] = [
       '-STA',
       '-NoLogo',
@@ -276,6 +294,11 @@ class ExternalWindowPinnedBorderBridge {
       windowsHide: true,
       stdio: ['pipe', 'pipe', 'pipe']
     }) as ChildProcessWithoutNullStreams
+    try {
+      this.proc.stdin.write(`${runner}\n__RUNNER_END__\n`)
+    } catch {
+      void 0
+    }
     this.proc.stdout.on('data', () => void 0)
     this.proc.stderr.on('data', (d: Buffer) => {
       const msg = d.toString('utf8').trim()
@@ -348,9 +371,14 @@ let pinnedBorderBridge: ExternalWindowPinnedBorderBridge | null = null
 export function ensureExternalWindowPinnedBorders(): void {
   if (process.platform !== 'win32') return
   if (pinnedBorderBridge) return
-  pinnedBorderBridge = new ExternalWindowPinnedBorderBridge(() => {
+  try {
+    pinnedBorderBridge = new ExternalWindowPinnedBorderBridge(() => {
+      pinnedBorderBridge = null
+    })
+  } catch (e) {
     pinnedBorderBridge = null
-  })
+    console.error('[pinned-border] failed to start', e)
+  }
 }
 
 export function pinExternalWindowBorder(
@@ -358,16 +386,24 @@ export function pinExternalWindowBorder(
   settings: ExternalWindowPinnedBorderSettings
 ): void {
   if (process.platform !== 'win32') return
-  ensureExternalWindowPinnedBorders()
-  pinnedBorderBridge?.add(hwnd, settings)
-  setTimeout(() => {
+  try {
+    ensureExternalWindowPinnedBorders()
     pinnedBorderBridge?.add(hwnd, settings)
-  }, 300)
+    setTimeout(() => {
+      pinnedBorderBridge?.add(hwnd, settings)
+    }, 300)
+  } catch {
+    void 0
+  }
 }
 
 export function unpinExternalWindowBorder(hwnd: string): void {
   if (process.platform !== 'win32') return
-  pinnedBorderBridge?.remove(hwnd)
+  try {
+    pinnedBorderBridge?.remove(hwnd)
+  } catch {
+    void 0
+  }
 }
 
 export function updateExternalWindowBorder(
@@ -375,7 +411,11 @@ export function updateExternalWindowBorder(
   settings: ExternalWindowPinnedBorderSettings
 ): void {
   if (process.platform !== 'win32') return
-  pinnedBorderBridge?.update(hwnd, settings)
+  try {
+    pinnedBorderBridge?.update(hwnd, settings)
+  } catch {
+    void 0
+  }
 }
 
 export function disposeExternalWindowPinnedBorders(): void {
@@ -464,6 +504,8 @@ function getExternalWindowPreamblePs(): string {
           public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
           [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
           [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+          [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
+          [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT pt);
           [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr hwnd, uint gaFlags);
           [DllImport("user32.dll", SetLastError=true, CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
           [DllImport("user32.dll", SetLastError=true)] public static extern int GetWindowTextLength(IntPtr hWnd);
@@ -485,6 +527,78 @@ function getExternalWindowPreamblePs(): string {
 "@
     }
   `
+}
+
+export async function getExternalWindowFromPoint(payload: {
+  x: number
+  y: number
+}): Promise<{ hwnd: string; title: string } | null> {
+  if (process.platform !== 'win32') return null
+  const x = clampNumber(Number(payload.x), -20000, 20000)
+  const y = clampNumber(Number(payload.y), -20000, 20000)
+  const nodePid = process.pid
+  const b64 = psJsonB64({ x, y, nodePid })
+  const script = `
+    $p = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${b64}')) | ConvertFrom-Json
+    ${getExternalWindowPreamblePs()}
+    $pt = New-Object Win32+POINT
+    $pt.X = [int]$p.x
+    $pt.Y = [int]$p.y
+    $h = [Win32]::WindowFromPoint($pt)
+    if ($h -eq [IntPtr]::Zero) { $null; return }
+    $GA_ROOTOWNER = 3
+    $root = [Win32]::GetAncestor($h, [uint32]$GA_ROOTOWNER)
+    if ($root -eq [IntPtr]::Zero) { $root = $h }
+    if (-not [Win32]::IsWindowVisible($root)) { $null; return }
+    $wpid = [uint32]0
+    [Win32]::GetWindowThreadProcessId($root, [ref]$wpid) | Out-Null
+    if ([int]$wpid -eq [int]$p.nodePid) { $null; return }
+    @{
+      hwnd = [string]([Int64]$root)
+      title = [Win32]::Title($root)
+    } | ConvertTo-Json -Compress
+  `
+  try {
+    const out = (await runPowerShell(script)).trim()
+    if (!out) return null
+    const parsed = JSON.parse(out) as unknown
+    if (!parsed || typeof parsed !== 'object') return null
+    const p = parsed as { hwnd?: unknown; title?: unknown }
+    const hwnd = typeof p.hwnd === 'string' ? p.hwnd : ''
+    const title = typeof p.title === 'string' ? p.title : ''
+    if (!hwnd) return null
+    return { hwnd, title }
+  } catch {
+    return null
+  }
+}
+
+export async function getExternalWindowRootHwnd(hwnd: string): Promise<string | null> {
+  if (process.platform !== 'win32') return null
+  const h = typeof hwnd === 'string' ? hwnd.trim() : ''
+  if (!h) return null
+  const b64 = psJsonB64({ hwnd: h })
+  const script = `
+    $p = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${b64}')) | ConvertFrom-Json
+    ${getExternalWindowPreamblePs()}
+    $h = [IntPtr]([Int64]([string]$p.hwnd))
+    if ($h -eq [IntPtr]::Zero) { $null; return }
+    $GA_ROOTOWNER = 3
+    $root = [Win32]::GetAncestor($h, [uint32]$GA_ROOTOWNER)
+    if ($root -eq [IntPtr]::Zero) { $root = $h }
+    @{ hwnd = [string]([Int64]$root) } | ConvertTo-Json -Compress
+  `
+  try {
+    const out = (await runPowerShell(script)).trim()
+    if (!out) return null
+    const parsed = JSON.parse(out) as unknown
+    if (!parsed || typeof parsed !== 'object') return null
+    const p = parsed as { hwnd?: unknown }
+    const id = typeof p.hwnd === 'string' ? p.hwnd.trim() : ''
+    return id ? id : null
+  } catch {
+    return null
+  }
 }
 
 export async function findExternalWindows(payload: {

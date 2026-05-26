@@ -13,6 +13,7 @@ type RegisterArgs = {
   isSnipCapturing: () => boolean
   snipDbg: (...args: unknown[]) => void
   stashForegroundToEdge: (edge: 'left' | 'top' | 'right' | 'bottom') => Promise<void>
+  toggleTopmostWindowAtCursor: () => Promise<void>
 }
 
 function isEnabled(settings: AppSettings, name: string): boolean {
@@ -168,6 +169,22 @@ export function registerShortcuts(args: RegisterArgs): void {
       })
     } catch (e) {
       console.error('Failed to register shortcut:', acc, e)
+    }
+  }
+
+  if (
+    isEnabled(settings, 'toggleTopmostWindow') &&
+    (settings.shortcuts as Record<string, unknown>).toggleTopmostWindow
+  ) {
+    const acc = (settings.shortcuts as Record<string, string>).toggleTopmostWindow
+    if (acc) {
+      try {
+        globalShortcut.register(acc, async () => {
+          await args.toggleTopmostWindowAtCursor()
+        })
+      } catch (e) {
+        console.error('Failed to register shortcut:', acc, e)
+      }
     }
   }
 }

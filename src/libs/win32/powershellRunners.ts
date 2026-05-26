@@ -138,7 +138,6 @@ export const PINNED_BORDER_CS = `
     using System;
     using System.Collections.Generic;
     using System.Drawing;
-    using System.Drawing.Drawing2D;
     using System.Runtime.InteropServices;
     using System.Threading;
     using System.Windows.Forms;
@@ -192,31 +191,10 @@ export const PINNED_BORDER_CS = `
           base.OnPaint(e);
           int w = Math.Max(1, this.BorderWidth);
           Rectangle rect = new Rectangle(0, 0, this.ClientSize.Width - 1, this.ClientSize.Height - 1);
-          rect.Inflate(-w / 2, -w / 2);
+          rect.Inflate(-w, -w);
           using (Pen pen = new Pen(this.BorderColor, w)) {
-            pen.Alignment = PenAlignment.Inset;
-            int radius = 8;
-            using (GraphicsPath path = RoundedRect(rect, radius)) {
-              e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-              e.Graphics.DrawPath(pen, path);
-            }
+            e.Graphics.DrawRectangle(pen, rect);
           }
-        }
-
-        static GraphicsPath RoundedRect(Rectangle bounds, int radius) {
-          int d = radius * 2;
-          GraphicsPath path = new GraphicsPath();
-          if (radius <= 0) {
-            path.AddRectangle(bounds);
-            path.CloseFigure();
-            return path;
-          }
-          path.AddArc(bounds.Left, bounds.Top, d, d, 180, 90);
-          path.AddArc(bounds.Right - d, bounds.Top, d, d, 270, 90);
-          path.AddArc(bounds.Right - d, bounds.Bottom - d, d, d, 0, 90);
-          path.AddArc(bounds.Left, bounds.Bottom - d, d, d, 90, 90);
-          path.CloseFigure();
-          return path;
         }
       }
 

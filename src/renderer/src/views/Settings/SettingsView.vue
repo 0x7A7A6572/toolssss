@@ -45,7 +45,8 @@ const shortcutLabels: Record<string, string> = {
   stashLeft: '收纳到左侧',
   stashTop: '收纳到上侧',
   stashRight: '收纳到右侧',
-  stashBottom: '收纳到下侧'
+  stashBottom: '收纳到下侧',
+  toggleTopmostWindow: '置顶/取消置顶（鼠标指向窗口）'
 }
 
 type ShortcutConflictItem = { key: string; label: string }
@@ -882,6 +883,27 @@ onMounted(() => {
 
         <div class="row">
           <div class="label shortcut-label">
+            <span>置顶/取消置顶</span>
+            <span v-if="hasExistingShortcutConflict('toggleTopmostWindow')" class="conflict-badge"
+              >冲突</span
+            >
+          </div>
+          <div class="shortcut-actions">
+            <ShortcutInput
+              :model-value="settings.shortcuts.toggleTopmostWindow"
+              :disabled="!isShortcutEnabled('toggleTopmostWindow')"
+              placeholder="未设置"
+              @update:model-value="onShortcutChange('toggleTopmostWindow', $event)"
+            />
+            <AppSwitch
+              :model-value="isShortcutEnabled('toggleTopmostWindow')"
+              @update:model-value="onShortcutEnabledChange('toggleTopmostWindow', $event)"
+            />
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="label shortcut-label">
             <span>收纳到左侧</span>
             <span v-if="hasExistingShortcutConflict('stashLeft')" class="conflict-badge">冲突</span>
           </div>
@@ -980,7 +1002,7 @@ onMounted(() => {
       <template v-if="settings.translate.provider === 'baidu'">
         <div class="row">
           <div class="label">Base URL</div>
-          <a-input
+          <input
             class="text"
             type="text"
             :value="settings.translate.baidu.baseUrl"

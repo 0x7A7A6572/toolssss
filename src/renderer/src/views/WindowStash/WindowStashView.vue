@@ -33,6 +33,9 @@ const colorMenus = ref<Record<Edge, boolean>>({
   right: false,
   bottom: false
 })
+const topmostColorDraft = ref(stashSettings.value.topmostBorderColor)
+const topmostColorMenuOpen = ref(false)
+const topmostWidthDraft = ref(stashSettings.value.topmostBorderWidth)
 
 const itemAliasDrafts = ref<Record<string, string>>({})
 const itemColorDrafts = ref<Record<string, string>>({})
@@ -75,6 +78,18 @@ watch(
   () => stashSettings.value.handleColors,
   (v) => {
     colorDrafts.value = { ...v }
+  }
+)
+watch(
+  () => stashSettings.value.topmostBorderColor,
+  (v) => {
+    topmostColorDraft.value = v
+  }
+)
+watch(
+  () => stashSettings.value.topmostBorderWidth,
+  (v) => {
+    topmostWidthDraft.value = v
   }
 )
 watch(
@@ -186,6 +201,35 @@ function setShowHandleDrag(v: boolean): void {
   update({ windowStash: { showHandleDrag: v } }).catch(() => null)
 }
 
+function setTopmostHighlightEnabled(v: boolean): void {
+  const next = Boolean(v)
+  stashSettings.value = { ...stashSettings.value, topmostHighlightEnabled: next }
+  update({ windowStash: { topmostHighlightEnabled: next } }).catch(() => null)
+}
+
+function onTopmostColorMenuChange(open: boolean): void {
+  if (open) topmostColorDraft.value = stashSettings.value.topmostBorderColor
+}
+
+function cancelTopmostColor(): void {
+  topmostColorDraft.value = stashSettings.value.topmostBorderColor
+  topmostColorMenuOpen.value = false
+}
+
+function applyTopmostColor(): void {
+  const normalized = normalizeHexColorInput(topmostColorDraft.value)
+  if (!normalized) return
+  stashSettings.value = { ...stashSettings.value, topmostBorderColor: normalized }
+  update({ windowStash: { topmostBorderColor: normalized } }).catch(() => null)
+  topmostColorMenuOpen.value = false
+}
+
+function setTopmostBorderWidth(v: number): void {
+  const next = Math.max(1, Math.min(16, Math.round(Number(v))))
+  stashSettings.value = { ...stashSettings.value, topmostBorderWidth: next }
+  update({ windowStash: { topmostBorderWidth: next } }).catch(() => null)
+}
+
 function restore(hwnd: string): void {
   if (!hwnd.trim()) return
   window.electron.ipcRenderer.send('window-stash:toggle', { hwnd, activate: true })
@@ -259,7 +303,9 @@ onBeforeUnmount(() => {
   <div class="page-content">
     <header class="header">
       <div class="title">窗口收纳</div>
-      <div class="subtitle">Ctrl + Shift + 1/2/3/4：左/上/右/下贴边收纳</div>
+      <div class="subtitle">
+        Ctrl + Shift + 1/2/3/4：左/上/右/下贴边收纳 · Ctrl + Alt + T：置顶/取消置顶
+      </div>
     </header>
 
     <div class="card-container-flex">
@@ -374,6 +420,79 @@ onBeforeUnmount(() => {
           <div class="label">双击标签关闭收纳</div>
           <div />
           <AppSwitch :model-value="true" :disabled="true" />
+        </div>
+
+        <div class="divider"></div>
+        <div class="section-title">置顶窗口</div>
+
+        <div class="row">
+          <div class="label">高亮边框</div>
+          <div />
+          <AppSwitch
+            :model-value="stashSettings.topmostHighlightEnabled"
+            @update:model-value="setTopmostHighlightEnabled($event)"
+          />
+        </div>
+
+        <div class="row colors">
+          <div class="label">边框颜色</div>
+          <div class="handle-grid">
+            <a-popover
+              trigger="click"
+              placement="bottom"
+              :open="topmostColorMenuOpen"
+              @update:open="
+                (open) => {
+                  topmostColorMenuOpen = open
+                  onTopmostColorMenuChange(open)
+                }
+              "
+            >
+              <template #content>
+                <div class="color-pop">
+                  <div class="color-palette">
+                    <button
+                      v-for="c in PRESET_COLORS"
+                      :key="c"
+                      class="palette-swatch"
+                      type="button"
+                      :style="{ backgroundColor: c }"
+                      :title="c"
+                      @click="topmostColorDraft = c"
+                    />
+                  </div>
+                  <a-input v-model:value="topmostColorDraft" placeholder="#RRGGBB / #RRGGBBAA" />
+                  <div class="color-actions">
+                    <a-button size="small" @click="cancelTopmostColor()">取消</a-button>
+                    <a-button size="small" type="primary" @click="applyTopmostColor()"
+                      >应用</a-button
+                    >
+                  </div>
+                </div>
+              </template>
+              <button
+                class="color-btn only"
+                type="button"
+                :style="{ backgroundColor: stashSettings.topmostBorderColor }"
+                :title="stashSettings.topmostBorderColor"
+                aria-label="设置置顶窗口边框颜色"
+              />
+            </a-popover>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="label">边框宽度</div>
+          <div class="slider-wrap">
+            <a-slider
+              v-model:value="topmostWidthDraft"
+              :min="1"
+              :max="16"
+              :step="1"
+              @after-change="(v) => setTopmostBorderWidth(Array.isArray(v) ? v[0] : v)"
+            />
+          </div>
+          <div class="value">{{ topmostWidthDraft }}px</div>
         </div>
       </section>
       <section class="card">
@@ -516,6 +635,18 @@ onBeforeUnmount(() => {
   gap: 12px;
 }
 
+.divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 6px 0;
+}
+
+.section-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ev-c-text-1);
+}
+
 .card-title {
   display: flex;
   align-items: center;
@@ -645,12 +776,12 @@ onBeforeUnmount(() => {
 .handle-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  /* justify-content: space-between; */
   gap: 10px;
   border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(0, 0, 0, 0.12);
-  padding: 8px 10px;
+  /* border: 1px solid rgba(255, 255, 255, 0.1); */
+  /* background: rgba(0, 0, 0, 0.12); */
+  /* padding: 8px 10px; */
 }
 
 .handle-label {

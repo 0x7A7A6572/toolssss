@@ -843,16 +843,13 @@ onUnmounted(() => {
                       : '—'
                   }}</span>
                 </div>
-                <div class="meta-row">
+                <!-- <div class="meta-row">
                   <span class="meta-k">更新</span>
                   <span class="meta-v">{{ dashboard?.now?.lastUpdateText ?? '—' }}</span>
-                </div>
+                </div> -->
               </div>
             </div>
           </div>
-        </div>
-
-        <div class="right-col">
           <div class="block border-none">
             <div class="block-title">
               <span>3小时降雨预警</span>
@@ -865,15 +862,23 @@ onUnmounted(() => {
                 </span>
               </div>
             </div>
+          </div>
+        </div>
 
-            <!-- <div v-if="next3Hours.length > 0" class="hour-list">
-              <div v-for="it in next3Hours" :key="it.atText" class="hour-item">
-                <span class="hour-at">{{ it.atText }}</span>
-                <span class="hour-p">{{ it.precipitationText }}</span>
+        <div class="right-col">
+          <!-- <div class="block border-none">
+            <div class="block-title">
+              <span>3小时降雨预警</span>
+              <div class="warning-line">
+                <span class="badge" :class="{ danger: dashboard?.threeHour?.willRain }">
+                  {{ dashboard?.threeHour?.willRain ? '可能降雨' : '无降雨' }}
+                </span>
+                <span v-if="dashboard?.threeHour?.willRain" class="warning-hint">
+                  最大 {{ dashboard?.threeHour?.maxPrecipitationMm ?? 0 }}mm
+                </span>
               </div>
             </div>
-            <div v-else class="empty">未解析到未来3小时数据</div> -->
-          </div>
+          </div> -->
           <div class="block border-none">
             <div class="block-title">
               <span>
@@ -881,8 +886,8 @@ onUnmounted(() => {
                   v-model:value="weatherType"
                   size="small"
                   :options="[
-                    { label: '近7日天气', value: 'recently' },
-                    { label: '当日天气', value: 'now' }
+                    { label: '7日天气', value: 'recently' },
+                    { label: '24小时天气', value: 'now' }
                   ]"
                 />
               </span>
@@ -2170,9 +2175,12 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  flex: 1;
+  flex: auto;
+  flex-grow: 0;
+  min-width: 350px;
 }
 .right-col {
+  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 12px;

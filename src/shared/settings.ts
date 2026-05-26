@@ -89,6 +89,9 @@ export interface AppSettings {
     showHandleDrag: boolean
     animate: boolean
     durationMs: number
+    topmostHighlightEnabled: boolean
+    topmostBorderColor: string
+    topmostBorderWidth: number
   }
 }
 
@@ -135,7 +138,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
     stashLeft: 'Ctrl+Shift+1',
     stashTop: 'Ctrl+Shift+2',
     stashRight: 'Ctrl+Shift+3',
-    stashBottom: 'Ctrl+Shift+4'
+    stashBottom: 'Ctrl+Shift+4',
+    toggleTopmostWindow: 'Ctrl+Alt+T'
   },
   shortcutsEnabled: {
     toggleEye: false,
@@ -147,7 +151,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
     stashLeft: true,
     stashTop: true,
     stashRight: true,
-    stashBottom: true
+    stashBottom: true,
+    toggleTopmostWindow: true
   },
   translate: {
     provider: 'baidu',
@@ -214,6 +219,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
     showHandleTitle: true,
     showHandleDrag: true,
     animate: true,
-    durationMs: 180
+    durationMs: 180,
+    topmostHighlightEnabled: true,
+    topmostBorderColor: '#3b82f6',
+    topmostBorderWidth: 3
   }
 }

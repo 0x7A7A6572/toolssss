@@ -35,6 +35,8 @@ import {
   warmupExternalWindowPowerShell
 } from './domains/external-window'
 import {
+  applyTopmostWindowSettingsToRuntime,
+  clearAllTopmostWindows,
   disposeAllWindowStash,
   getWindowStashPreviousExitClean,
   initWindowStash,
@@ -43,7 +45,8 @@ import {
   restoreAndClearPersistedWindowStash,
   restoreAllWindowStash,
   rehydrateWindowStashFromDisk,
-  stashForegroundToEdge
+  stashForegroundToEdge,
+  toggleTopmostWindowAtCursor
 } from './domains/window-stash'
 import { createEyeOverlayDomain } from './domains/eye-overlay'
 import { createRemindersDomain } from './domains/reminders'
@@ -160,7 +163,8 @@ function ensureShortcuts(): void {
     toggleStickersHidden: () => stickers.toggleHidden(),
     isSnipCapturing: () => snipCapturing,
     snipDbg,
-    stashForegroundToEdge
+    stashForegroundToEdge,
+    toggleTopmostWindowAtCursor
   })
 }
 
@@ -169,6 +173,7 @@ function applySettingsToRuntime(): void {
   overlay.ensureWindows()
   reminders.applySettingsToRuntime()
   applyScheduledTasks(settings, { startup: true }).catch(() => null)
+  applyTopmostWindowSettingsToRuntime()
   ensureTray()
   ensureAutoStart()
   ensureShortcuts()
@@ -306,6 +311,7 @@ app.whenReady().then(async () => {
     windowStashRestoredOnQuit = true
     e.preventDefault()
     restoreAllWindowStash()
+      .then(() => clearAllTopmostWindows())
       .catch(() => null)
       .finally(() => {
         disposeAllWindowStash()

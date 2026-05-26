@@ -237,8 +237,7 @@ watch(
 
 <style scoped>
 .chart {
-  height: 130px;
+  height: 100%;
   width: 100%;
-  max-height: 130px;
 }
 </style>

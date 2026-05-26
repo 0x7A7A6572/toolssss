@@ -164,6 +164,10 @@ export function normalizeSettings(input: unknown): AppSettings {
       base.shortcuts.stashRight = (obj.shortcuts as Record<string, string>).stashRight
     if (typeof (obj.shortcuts as Record<string, unknown>).stashBottom === 'string')
       base.shortcuts.stashBottom = (obj.shortcuts as Record<string, string>).stashBottom
+    if (typeof (obj.shortcuts as Record<string, unknown>).toggleTopmostWindow === 'string')
+      base.shortcuts.toggleTopmostWindow = (
+        obj.shortcuts as Record<string, string>
+      ).toggleTopmostWindow
   }
 
   const se = (obj as { shortcutsEnabled?: unknown }).shortcutsEnabled
@@ -189,6 +193,8 @@ export function normalizeSettings(input: unknown): AppSettings {
       base.shortcutsEnabled.stashRight = m['stashRight'] as boolean
     if (typeof m['stashBottom'] === 'boolean')
       base.shortcutsEnabled.stashBottom = m['stashBottom'] as boolean
+    if (typeof m['toggleTopmostWindow'] === 'boolean')
+      base.shortcutsEnabled.toggleTopmostWindow = m['toggleTopmostWindow'] as boolean
   }
 
   if (
@@ -331,6 +337,14 @@ export function normalizeSettings(input: unknown): AppSettings {
     if (typeof ws['animate'] === 'boolean') base.windowStash.animate = ws['animate'] as boolean
     if (typeof ws['durationMs'] === 'number')
       base.windowStash.durationMs = clampNumber(Number(ws['durationMs']), 60, 1200)
+    if (typeof ws['topmostHighlightEnabled'] === 'boolean')
+      base.windowStash.topmostHighlightEnabled = ws['topmostHighlightEnabled'] as boolean
+    if (typeof ws['topmostBorderColor'] === 'string') {
+      const c = (ws['topmostBorderColor'] as string).trim()
+      if (c) base.windowStash.topmostBorderColor = c
+    }
+    if (typeof ws['topmostBorderWidth'] === 'number')
+      base.windowStash.topmostBorderWidth = clampNumber(Number(ws['topmostBorderWidth']), 1, 16)
   }
 
   if (
@@ -395,6 +409,10 @@ export function applySettingsPatch(current: AppSettings, patch: unknown): AppSet
       next.shortcuts.stashRight = (p.shortcuts as Record<string, string>).stashRight
     if (typeof (p.shortcuts as Record<string, unknown>).stashBottom === 'string')
       next.shortcuts.stashBottom = (p.shortcuts as Record<string, string>).stashBottom
+    if (typeof (p.shortcuts as Record<string, unknown>).toggleTopmostWindow === 'string')
+      next.shortcuts.toggleTopmostWindow = (
+        p.shortcuts as Record<string, string>
+      ).toggleTopmostWindow
   }
 
   if ((p as { shortcutsEnabled?: unknown }).shortcutsEnabled) {
@@ -419,6 +437,8 @@ export function applySettingsPatch(current: AppSettings, patch: unknown): AppSet
       next.shortcutsEnabled.stashRight = se['stashRight'] as boolean
     if (typeof se['stashBottom'] === 'boolean')
       next.shortcutsEnabled.stashBottom = se['stashBottom'] as boolean
+    if (typeof se['toggleTopmostWindow'] === 'boolean')
+      next.shortcutsEnabled.toggleTopmostWindow = se['toggleTopmostWindow'] as boolean
   }
 
   if (
@@ -536,6 +556,12 @@ export function applySettingsPatch(current: AppSettings, patch: unknown): AppSet
     if (typeof ws['animate'] === 'boolean') next.windowStash.animate = ws['animate'] as boolean
     if (typeof ws['durationMs'] === 'number')
       next.windowStash.durationMs = ws['durationMs'] as number
+    if (typeof ws['topmostHighlightEnabled'] === 'boolean')
+      next.windowStash.topmostHighlightEnabled = ws['topmostHighlightEnabled'] as boolean
+    if (typeof ws['topmostBorderColor'] === 'string')
+      next.windowStash.topmostBorderColor = ws['topmostBorderColor'] as string
+    if (typeof ws['topmostBorderWidth'] === 'number')
+      next.windowStash.topmostBorderWidth = ws['topmostBorderWidth'] as number
   }
   {
     const rsv = (p as { reminderSeconds?: unknown }).reminderSeconds
