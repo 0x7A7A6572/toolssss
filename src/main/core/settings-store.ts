@@ -245,6 +245,8 @@ export function normalizeSettings(input: unknown): AppSettings {
     if (typeof ai['apiKeySet'] === 'boolean') base.ai.apiKeySet = ai['apiKeySet'] as boolean
     if (typeof ai['activeProfileId'] === 'string')
       base.ai.activeProfileId = (ai['activeProfileId'] as string).trim()
+    if (typeof ai['searchMcpCommand'] === 'string' && (ai['searchMcpCommand'] as string).trim())
+      base.ai.searchMcpCommand = (ai['searchMcpCommand'] as string).trim()
     if (Array.isArray(ai['profiles'])) {
       const profiles = (ai['profiles'] as unknown[])
         .map((item) => normalizeAiProfile(item))
@@ -484,6 +486,8 @@ export function applySettingsPatch(current: AppSettings, patch: unknown): AppSet
         .map((item) => normalizeAiProfile(item))
         .filter((item): item is AiProfile => item !== null)
     }
+    if (typeof ai['searchMcpCommand'] === 'string')
+      next.ai.searchMcpCommand = ai['searchMcpCommand'] as string
   }
 
   if (

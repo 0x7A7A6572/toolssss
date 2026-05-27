@@ -1,18 +1,21 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { marked } from 'marked'
 import type {
   CustomModuleConfig,
   CustomModuleCachedContent,
   CustomModuleRankingItem,
-  CustomModuleLinkItem
+  CustomModuleLinkItem,
+  CustomModuleSearchMeta
 } from '@shared/custom-modules'
-import { PencilLine, Sparkles, Trash2, ExternalLink } from 'lucide-vue-next'
+import { PencilLine, Sparkles, Trash2, ExternalLink, Search } from 'lucide-vue-next'
 
 const props = defineProps<{
   config: CustomModuleConfig
   content: CustomModuleCachedContent | null
   loading: boolean
   errorText: string
+  searching?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -34,69 +37,153 @@ const typeColor = computed(() => {
 })
 
 function tryParseRankings(rawText: string): CustomModuleRankingItem[] | null {
+  const cleaned = rawText
+    .replace(/```json\s*/gi, '')
+    .replace(/```\s*/g, '')
+    .trim()
+
   try {
-    const cleaned = rawText
-      .replace(/```json\s*/gi, '')
-      .replace(/```\s*/g, '')
-      .trim()
     const firstBrace = cleaned.indexOf('{')
     const lastBrace = cleaned.lastIndexOf('}')
-    if (firstBrace < 0 || lastBrace <= firstBrace) return null
-    const jsonStr = cleaned.slice(firstBrace, lastBrace + 1)
-    const data = JSON.parse(jsonStr) as { rankings?: unknown }
-    if (!data.rankings || !Array.isArray(data.rankings)) return null
-    const rankings: CustomModuleRankingItem[] = []
-    for (const item of data.rankings) {
-      if (item && typeof item === 'object') {
-        const r = item as Record<string, unknown>
-        const title = typeof r.title === 'string' ? r.title.trim() : ''
-        const items = Array.isArray(r.items)
-          ? r.items.filter((i): i is string => typeof i === 'string')
-          : []
-        if (title && items.length > 0) {
-          rankings.push({ title, items })
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+      const jsonStr = cleaned.slice(firstBrace, lastBrace + 1)
+      const data = JSON.parse(jsonStr) as { rankings?: unknown }
+      if (data.rankings && Array.isArray(data.rankings)) {
+        const rankings: CustomModuleRankingItem[] = []
+        for (const item of data.rankings) {
+          if (item && typeof item === 'object') {
+            const r = item as Record<string, unknown>
+            const title = typeof r.title === 'string' ? r.title.trim() : ''
+            const items = Array.isArray(r.items)
+              ? r.items.filter((i): i is string => typeof i === 'string')
+              : []
+            if (title && items.length > 0) {
+              rankings.push({ title, items })
+            }
+          }
+        }
+        if (rankings.length > 0) return rankings
+      }
+    }
+  } catch {
+    // full parse failed — fall through
+  }
+
+  const extracted: CustomModuleRankingItem[] = []
+  let idx = 0
+  while (idx < cleaned.length) {
+    const objStart = cleaned.indexOf('{', idx)
+    if (objStart < 0) break
+    let depth = 0
+    let objEnd = -1
+    for (let i = objStart; i < cleaned.length; i++) {
+      if (cleaned[i] === '{') depth++
+      else if (cleaned[i] === '}') {
+        depth--
+        if (depth === 0) {
+          objEnd = i
+          break
         }
       }
     }
-    return rankings.length > 0 ? rankings : null
-  } catch {
-    return null
+    if (objEnd < 0) break
+    try {
+      const obj = JSON.parse(cleaned.slice(objStart, objEnd + 1)) as Record<string, unknown>
+      const title = typeof obj.title === 'string' ? obj.title.trim() : ''
+      const items = Array.isArray(obj.items)
+        ? obj.items.filter((i): i is string => typeof i === 'string')
+        : []
+      if (title && items.length > 0) extracted.push({ title, items })
+    } catch {
+      /* skip */
+    }
+    idx = objEnd + 1
   }
+  return extracted.length > 0 ? extracted : null
 }
 
 function tryParseLinks(rawText: string): CustomModuleLinkItem[] | null {
+  const cleaned = rawText
+    .replace(/```json\s*/gi, '')
+    .replace(/```\s*/g, '')
+    .trim()
+
   try {
-    const cleaned = rawText
-      .replace(/```json\s*/gi, '')
-      .replace(/```\s*/g, '')
-      .trim()
     const firstBrace = cleaned.indexOf('{')
     const lastBrace = cleaned.lastIndexOf('}')
-    if (firstBrace < 0 || lastBrace <= firstBrace) return null
-    const jsonStr = cleaned.slice(firstBrace, lastBrace + 1)
-    const data = JSON.parse(jsonStr) as { items?: unknown }
-    if (!data.items || !Array.isArray(data.items)) return null
-    const items: CustomModuleLinkItem[] = []
-    for (const item of data.items) {
-      if (item && typeof item === 'object') {
-        const r = item as Record<string, unknown>
-        const title = typeof r.title === 'string' ? r.title.trim() : ''
-        const link = typeof r.link === 'string' ? r.link.trim() : ''
-        const description = typeof r.description === 'string' ? r.description.trim() : undefined
-        if (title && link) {
-          items.push({ title, link, description })
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+      const jsonStr = cleaned.slice(firstBrace, lastBrace + 1)
+      const data = JSON.parse(jsonStr) as { items?: unknown }
+      if (data.items && Array.isArray(data.items)) {
+        const items: CustomModuleLinkItem[] = []
+        for (const item of data.items) {
+          if (item && typeof item === 'object') {
+            const r = item as Record<string, unknown>
+            const title = typeof r.title === 'string' ? r.title.trim() : ''
+            const link = typeof r.link === 'string' ? r.link.trim() : ''
+            const description = typeof r.description === 'string' ? r.description.trim() : undefined
+            if (title && link) {
+              items.push({ title, link, description })
+            }
+          }
+        }
+        if (items.length > 0) return items
+      }
+    }
+  } catch {
+    // full parse failed — fall through
+  }
+
+  const extracted: CustomModuleLinkItem[] = []
+  let idx = 0
+  while (idx < cleaned.length) {
+    const objStart = cleaned.indexOf('{', idx)
+    if (objStart < 0) break
+    let depth = 0
+    let objEnd = -1
+    for (let i = objStart; i < cleaned.length; i++) {
+      if (cleaned[i] === '{') depth++
+      else if (cleaned[i] === '}') {
+        depth--
+        if (depth === 0) {
+          objEnd = i
+          break
         }
       }
     }
-    return items.length > 0 ? items : null
-  } catch {
-    return null
+    if (objEnd < 0) break
+    try {
+      const obj = JSON.parse(cleaned.slice(objStart, objEnd + 1)) as Record<string, unknown>
+      const title = typeof obj.title === 'string' ? obj.title.trim() : ''
+      const link = typeof obj.link === 'string' ? obj.link.trim() : ''
+      const description = typeof obj.description === 'string' ? obj.description.trim() : undefined
+      if (title && link) extracted.push({ title, link, description })
+    } catch {
+      /* skip */
+    }
+    idx = objEnd + 1
   }
+  return extracted.length > 0 ? extracted : null
 }
 
 const displayText = computed(() => {
   if (props.content?.text) return props.content.text
   if (props.content?.rawText) return props.content.rawText
+  return ''
+})
+
+const cardStyle = computed(() => {
+  const h = props.config.minHeight
+  if (h && h > 0) {
+    return { minHeight: `${h}px` }
+  }
+  return {}
+})
+
+const renderedMarkdown = computed(() => {
+  if (props.config.enableMarkdown && displayText.value) {
+    return marked.parse(displayText.value, { breaks: true })
+  }
   return ''
 })
 
@@ -128,6 +215,26 @@ const showPlaceholder = computed(() => {
   )
 })
 
+const searchMeta = computed<CustomModuleSearchMeta | null>(() => {
+  if (props.config.webSearch && props.content?.searchMeta) {
+    return props.content.searchMeta
+  }
+  return null
+})
+
+const sourceTooltip = computed(() => {
+  const meta = searchMeta.value
+  if (!meta) return ''
+  const count = meta.resultCount
+  const sources = meta.sources
+  if (sources.length === 0) return `共搜索到 ${count} 条结果`
+  const domains = sources.slice(0, 3).join('、')
+  if (sources.length > 3) {
+    return `共搜索到 ${count} 条结果，来自 ${domains} 等 ${sources.length} 个来源`
+  }
+  return `共搜索到 ${count} 条结果，来自 ${domains}`
+})
+
 function openLink(url: string): void {
   if (url.startsWith('http://') || url.startsWith('https://')) {
     window.open(url, '_blank', 'noopener,noreferrer')
@@ -136,7 +243,11 @@ function openLink(url: string): void {
 </script>
 
 <template>
-  <section class="card custom-module-card" :class="{ loading, 'has-error': !!errorText }">
+  <section
+    class="card custom-module-card"
+    :style="cardStyle"
+    :class="{ loading, 'has-error': !!errorText }"
+  >
     <div class="card-head">
       <div class="card-title-row">
         <span class="card-title">{{ config.name }}</span>
@@ -177,7 +288,13 @@ function openLink(url: string): void {
     </div>
 
     <div class="card-body">
-      <div v-if="loading" class="state-content">
+      <div v-if="searching" class="state-content">
+        <div class="searching-text">
+          <Search :size="14" class="searching-icon" />
+          联网搜索中...
+        </div>
+      </div>
+      <div v-else-if="loading" class="state-content">
         <div class="streaming-text">生成中...</div>
       </div>
       <div v-else-if="errorText" class="state-content error-text">{{ errorText }}</div>
@@ -185,7 +302,8 @@ function openLink(url: string): void {
         点击刷新按钮生成内容
       </div>
       <template v-else-if="config.type === 'text' && displayText">
-        <div class="text-content">{{ displayText }}</div>
+        <div v-if="config.enableMarkdown" class="markdown-content" v-html="renderedMarkdown" />
+        <div v-else class="text-content">{{ displayText }}</div>
       </template>
       <template v-else-if="config.type === 'ranking' && rankings">
         <div class="ranking-list">
@@ -223,8 +341,21 @@ function openLink(url: string): void {
         </div>
       </template>
       <template v-else-if="displayText">
-        <div class="text-content">{{ displayText }}</div>
+        <pre class="text-content">{{ displayText }}</pre>
       </template>
+    </div>
+
+    <div class="card-footer flex items-center gap-2">
+      <span v-if="config.webSearch" class="websearch-badge" title="已开启联网搜索">
+        <Search :size="11" />
+      </span>
+      <span v-if="searchMeta" class="source-badge" :title="sourceTooltip">
+        {{
+          searchMeta.sources.length > 0
+            ? `${searchMeta.sources.length}个来源`
+            : `${searchMeta.resultCount}条结果`
+        }}
+      </span>
     </div>
   </section>
 </template>
@@ -285,6 +416,38 @@ function openLink(url: string): void {
   flex-shrink: 0;
 }
 
+.websearch-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  background: rgba(60, 130, 255, 0.15);
+  color: rgba(60, 130, 255, 0.85);
+  flex-shrink: 0;
+}
+
+.source-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(235, 235, 245, 0.5);
+  cursor: help;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition:
+    color 0.12s ease,
+    background 0.12s ease;
+}
+
+.source-badge:hover {
+  color: rgba(235, 235, 245, 0.8);
+  background: rgba(255, 255, 255, 0.1);
+}
+
 .card-actions {
   display: flex;
   align-items: center;
@@ -337,6 +500,28 @@ function openLink(url: string): void {
   color: #ff8a8a;
 }
 
+.searching-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: rgba(60, 130, 255, 0.85);
+}
+
+.searching-icon {
+  animation: search-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes search-pulse {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 .text-content {
   font-size: 14px;
   font-weight: 600;
@@ -352,6 +537,103 @@ function openLink(url: string): void {
 .text-content::-webkit-scrollbar {
   width: 0;
   height: 0;
+}
+
+.markdown-content {
+  font-size: 14px;
+  color: rgba(235, 235, 245, 0.92);
+  line-height: 1.5;
+  max-height: 220px;
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.markdown-content::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4 {
+  font-size: 15px;
+  font-weight: 800;
+  margin: 8px 0 4px;
+  color: rgba(235, 235, 245, 0.96);
+}
+
+.markdown-content h1 {
+  font-size: 16px;
+}
+.markdown-content h2 {
+  font-size: 15px;
+}
+.markdown-content h3 {
+  font-size: 14px;
+}
+
+.markdown-content p {
+  margin: 4px 0;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+  margin: 4px 0;
+  padding-left: 20px;
+}
+
+.markdown-content li {
+  margin: 2px 0;
+}
+
+.markdown-content code {
+  font-size: 13px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(200, 200, 220, 0.95);
+}
+
+.markdown-content pre {
+  margin: 6px 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.25);
+  overflow-x: auto;
+}
+
+.markdown-content pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.markdown-content strong {
+  font-weight: 800;
+  color: rgba(235, 235, 245, 0.96);
+}
+
+.markdown-content a {
+  color: rgba(60, 160, 255, 0.9);
+  text-decoration: none;
+}
+
+.markdown-content a:hover {
+  text-decoration: underline;
+}
+
+.markdown-content blockquote {
+  margin: 6px 0;
+  padding: 4px 10px;
+  border-left: 3px solid rgba(100, 100, 130, 0.4);
+  color: rgba(235, 235, 245, 0.7);
+}
+
+.markdown-content hr {
+  margin: 8px 0;
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .ranking-list {

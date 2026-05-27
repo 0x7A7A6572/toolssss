@@ -52,6 +52,7 @@ export interface AppSettings {
     apiKeySet: boolean
     activeProfileId: string
     profiles: AiProfile[]
+    searchMcpCommand: string
   }
   funFact: {
     title: string
@@ -176,7 +177,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
     model: '',
     apiKeySet: false,
     activeProfileId: '',
-    profiles: []
+    profiles: [],
+    searchMcpCommand: 'npx -y mcp-remote https://search.parallel.ai/mcp'
   },
   funFact: {
     title: '每日冷知识',

@@ -9,7 +9,8 @@ import type {
   CustomModuleConfig,
   CustomModuleCachedContent,
   CustomModuleRankingItem,
-  CustomModuleLinkItem
+  CustomModuleLinkItem,
+  CustomModuleSearchMeta
 } from '@shared/custom-modules'
 import {
   CUSTOM_MODULES_EVENTS,
@@ -23,6 +24,7 @@ import WeatherHourlyTrendsChart, {
 } from '../../components/WeatherHourlyTrendsChart.vue'
 import { LegalHoliday, SolarDay } from 'tyme4ts'
 import answerBookData from '../../../../libs/book-of-answers.json'
+import AppSwitch from '@renderer/components/AppSwitch.vue'
 
 const DEFAULT_STATION_ID = '59431'
 const stationId = ref<string>(localStorage.getItem('weather.stationId') ?? DEFAULT_STATION_ID)
@@ -172,6 +174,7 @@ const funFactTitle = computed(() => {
 const customModules = ref<CustomModuleConfig[]>([])
 const customModulesCache = ref<Record<string, CustomModuleCachedContent>>({})
 const customModulesLoading = ref<Record<string, boolean>>({})
+const customModulesSearching = ref<Record<string, boolean>>({})
 const customModulesError = ref<Record<string, string>>({})
 const customModulesStreamId = ref<Record<string, string>>({})
 
@@ -179,8 +182,12 @@ const moduleDialogOpen = ref(false)
 const moduleDialogMode = ref<'add' | 'edit'>('add')
 const moduleDraftId = ref('')
 const moduleDraftName = ref('')
-const moduleDraftType = ref<'text' | 'ranking'>('text')
+const moduleDraftType = ref<'text' | 'ranking' | 'link'>('text')
 const moduleDraftPrompt = ref('')
+const moduleDraftWebSearch = ref(false)
+const moduleDraftMinHeight = ref<number>(180)
+const moduleDraftEnableMarkdown = ref(false)
+const moduleDraftAdvancedOpen = ref(false)
 const moduleDraftSaving = ref(false)
 const moduleDraftError = ref('')
 
@@ -201,7 +208,8 @@ function loadCustomModules(): void {
             typeof (item as Record<string, unknown>).id === 'string' &&
             typeof (item as Record<string, unknown>).name === 'string' &&
             ((item as Record<string, unknown>).type === 'text' ||
-              (item as Record<string, unknown>).type === 'ranking') &&
+              (item as Record<string, unknown>).type === 'ranking' ||
+              (item as Record<string, unknown>).type === 'link') &&
             typeof (item as Record<string, unknown>).prompt === 'string'
         )
       }
@@ -217,6 +225,63 @@ function saveCustomModules(): void {
   } catch {
     return
   }
+}
+
+const draggedModuleId = ref<string | null>(null)
+const dragOverModuleId = ref<string | null>(null)
+
+function onModuleDragStart(e: DragEvent, moduleId: string): void {
+  draggedModuleId.value = moduleId
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', moduleId)
+  }
+}
+
+function onModuleDragOver(e: DragEvent, moduleId: string): void {
+  if (draggedModuleId.value === moduleId) return
+  e.preventDefault()
+  if (e.dataTransfer) {
+    e.dataTransfer.dropEffect = 'move'
+  }
+  dragOverModuleId.value = moduleId
+}
+
+function onModuleDragLeave(): void {
+  dragOverModuleId.value = null
+}
+
+function onModuleDrop(e: DragEvent, targetModuleId: string): void {
+  e.preventDefault()
+  const sourceId = draggedModuleId.value
+  if (!sourceId || sourceId === targetModuleId) {
+    resetModuleDragState()
+    return
+  }
+
+  const sourceIdx = customModules.value.findIndex((m) => m.id === sourceId)
+  const targetIdx = customModules.value.findIndex((m) => m.id === targetModuleId)
+  if (sourceIdx === -1 || targetIdx === -1) {
+    resetModuleDragState()
+    return
+  }
+
+  const items = [...customModules.value]
+  const [moved] = items.splice(sourceIdx, 1)
+  const adjustedTarget = sourceIdx < targetIdx ? targetIdx - 1 : targetIdx
+  items.splice(adjustedTarget, 0, moved)
+  customModules.value = items
+  saveCustomModules()
+  resetModuleDragState()
+}
+
+function onModuleDragEnd(): void {
+  resetModuleDragState()
+}
+
+function resetModuleDragState(): void {
+  draggedModuleId.value = null
+  dragOverModuleId.value = null
 }
 
 function loadCustomModulesCache(): void {
@@ -247,6 +312,9 @@ function openAddModuleDialog(): void {
   moduleDraftName.value = ''
   moduleDraftType.value = 'text'
   moduleDraftPrompt.value = ''
+  moduleDraftWebSearch.value = false
+  moduleDraftMinHeight.value = 180
+  moduleDraftEnableMarkdown.value = false
   moduleDraftError.value = ''
   moduleDialogOpen.value = true
 }
@@ -257,6 +325,9 @@ function openEditModuleDialog(module: CustomModuleConfig): void {
   moduleDraftName.value = module.name
   moduleDraftType.value = module.type
   moduleDraftPrompt.value = module.prompt
+  moduleDraftWebSearch.value = !!module.webSearch
+  moduleDraftMinHeight.value = module.minHeight ?? 180
+  moduleDraftEnableMarkdown.value = !!module.enableMarkdown
   moduleDraftError.value = ''
   moduleDialogOpen.value = true
 }
@@ -265,6 +336,7 @@ function closeModuleDialog(): void {
   if (moduleDraftSaving.value) return
   moduleDialogOpen.value = false
   moduleDraftError.value = ''
+  moduleDraftAdvancedOpen.value = false
 }
 
 function validateModuleDraft(): string {
@@ -288,7 +360,10 @@ function saveModuleDialog(): void {
         name: moduleDraftName.value.trim(),
         type: moduleDraftType.value,
         prompt: moduleDraftPrompt.value.replace(/\r\n/g, '\n').trim(),
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        webSearch: moduleDraftWebSearch.value,
+        minHeight: moduleDraftMinHeight.value,
+        enableMarkdown: moduleDraftEnableMarkdown.value
       }
       customModules.value.push(newModule)
     } else {
@@ -298,7 +373,10 @@ function saveModuleDialog(): void {
           ...customModules.value[idx],
           name: moduleDraftName.value.trim(),
           type: moduleDraftType.value,
-          prompt: moduleDraftPrompt.value.replace(/\r\n/g, '\n').trim()
+          prompt: moduleDraftPrompt.value.replace(/\r\n/g, '\n').trim(),
+          webSearch: moduleDraftWebSearch.value,
+          minHeight: moduleDraftMinHeight.value,
+          enableMarkdown: moduleDraftEnableMarkdown.value
         }
       }
     }
@@ -339,6 +417,7 @@ function onCustomModuleChunk(_event: unknown, payload: unknown): void {
   if (p.id !== customModulesStreamId.value[moduleId]) return
   const delta = typeof p.delta === 'string' ? p.delta : ''
   if (!delta) return
+  customModulesSearching.value[moduleId] = false
   const cache = customModulesCache.value[moduleId]
   const currentText = cache?.rawText || ''
   const next = `${currentText}${delta}`
@@ -358,32 +437,44 @@ function onCustomModuleChunk(_event: unknown, payload: unknown): void {
 
 function onCustomModuleDone(_event: unknown, payload: unknown): void {
   if (!payload || typeof payload !== 'object') return
-  const p = payload as { id?: unknown; moduleId?: unknown; text?: unknown }
+  const p = payload as { id?: unknown; moduleId?: unknown; text?: unknown; searchMeta?: unknown }
   const moduleId = typeof p.moduleId === 'string' ? p.moduleId : ''
   if (!moduleId) return
   if (typeof p.id !== 'string' || !p.id) return
   if (p.id !== customModulesStreamId.value[moduleId]) return
   const text = typeof p.text === 'string' ? p.text : ''
+  let searchMeta: CustomModuleSearchMeta | undefined
+  if (p.searchMeta && typeof p.searchMeta === 'object') {
+    const sm = p.searchMeta as { resultCount?: unknown; sources?: unknown }
+    const resultCount = typeof sm.resultCount === 'number' ? sm.resultCount : 0
+    const sources = Array.isArray(sm.sources)
+      ? sm.sources.filter((s): s is string => typeof s === 'string')
+      : []
+    if (resultCount > 0) {
+      searchMeta = { resultCount, sources }
+    }
+  }
   const module = customModules.value.find((m) => m.id === moduleId)
   if (module?.type === 'text') {
-    updateModuleCache(moduleId, { text, rawText: text })
+    updateModuleCache(moduleId, { text, rawText: text, searchMeta })
   } else if (module?.type === 'link') {
     const parsed = tryParseLinksFromText(text)
     if (parsed) {
-      updateModuleCache(moduleId, { links: parsed, rawText: text })
+      updateModuleCache(moduleId, { links: parsed, rawText: text, searchMeta })
     } else {
-      updateModuleCache(moduleId, { rawText: text })
+      updateModuleCache(moduleId, { rawText: text, searchMeta })
     }
   } else {
     const parsed = tryParseRankingsFromText(text)
     if (parsed) {
-      updateModuleCache(moduleId, { rankings: parsed, rawText: text })
+      updateModuleCache(moduleId, { rankings: parsed, rawText: text, searchMeta })
     } else {
-      updateModuleCache(moduleId, { rawText: text })
+      updateModuleCache(moduleId, { rawText: text, searchMeta })
     }
   }
   delete customModulesStreamId.value[moduleId]
   customModulesLoading.value[moduleId] = false
+  customModulesSearching.value[moduleId] = false
   customModulesError.value[moduleId] = ''
 }
 
@@ -398,67 +489,171 @@ function onCustomModuleError(_event: unknown, payload: unknown): void {
   customModulesError.value[moduleId] = msg
   delete customModulesStreamId.value[moduleId]
   customModulesLoading.value[moduleId] = false
+  customModulesSearching.value[moduleId] = false
+}
+
+function onCustomModuleSearching(_event: unknown, payload: unknown): void {
+  if (!payload || typeof payload !== 'object') return
+  const p = payload as { id?: unknown; moduleId?: unknown; status?: unknown; message?: unknown }
+  const moduleId = typeof p.moduleId === 'string' ? p.moduleId : ''
+  if (!moduleId) return
+  if (typeof p.id !== 'string' || !p.id) return
+  if (p.id !== customModulesStreamId.value[moduleId]) return
+  const status = typeof p.status === 'string' ? p.status : ''
+  if (status === 'searching') {
+    customModulesSearching.value[moduleId] = true
+    customModulesError.value[moduleId] = ''
+  } else if (status === 'error') {
+    customModulesSearching.value[moduleId] = false
+    const msg = typeof p.message === 'string' && p.message ? p.message : '搜索失败'
+    customModulesError.value[moduleId] = `联网搜索失败：${msg}`
+  }
 }
 
 function tryParseRankingsFromText(rawText: string): CustomModuleRankingItem[] | null {
+  const cleaned = rawText
+    .replace(/```json\s*/gi, '')
+    .replace(/```\s*/g, '')
+    .trim()
+
+  // Try full JSON parse first
   try {
-    const cleaned = rawText
-      .replace(/```json\s*/gi, '')
-      .replace(/```\s*/g, '')
-      .trim()
     const firstBrace = cleaned.indexOf('{')
     const lastBrace = cleaned.lastIndexOf('}')
-    if (firstBrace < 0 || lastBrace <= firstBrace) return null
-    const jsonStr = cleaned.slice(firstBrace, lastBrace + 1)
-    const data = JSON.parse(jsonStr) as { rankings?: unknown }
-    if (!data.rankings || !Array.isArray(data.rankings)) return null
-    const rankings: CustomModuleRankingItem[] = []
-    for (const item of data.rankings) {
-      if (item && typeof item === 'object') {
-        const r = item as Record<string, unknown>
-        const title = typeof r.title === 'string' ? r.title.trim() : ''
-        const items = Array.isArray(r.items)
-          ? r.items.filter((i): i is string => typeof i === 'string')
-          : []
-        if (title && items.length > 0) {
-          rankings.push({ title, items })
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+      const jsonStr = cleaned.slice(firstBrace, lastBrace + 1)
+      const data = JSON.parse(jsonStr) as { rankings?: unknown }
+      if (data.rankings && Array.isArray(data.rankings)) {
+        const rankings: CustomModuleRankingItem[] = []
+        for (const item of data.rankings) {
+          if (item && typeof item === 'object') {
+            const r = item as Record<string, unknown>
+            const title = typeof r.title === 'string' ? r.title.trim() : ''
+            const items = Array.isArray(r.items)
+              ? r.items.filter((i): i is string => typeof i === 'string')
+              : []
+            if (title && items.length > 0) {
+              rankings.push({ title, items })
+            }
+          }
+        }
+        if (rankings.length > 0) return rankings
+      }
+    }
+  } catch {
+    // Full parse failed (likely truncated JSON) — fall through to item-by-item extraction
+  }
+
+  // Fallback: extract individual complete JSON objects item by item
+  const extracted: CustomModuleRankingItem[] = []
+  let idx = 0
+  while (idx < cleaned.length) {
+    const objStart = cleaned.indexOf('{', idx)
+    if (objStart < 0) break
+
+    let depth = 0
+    let objEnd = -1
+    for (let i = objStart; i < cleaned.length; i++) {
+      if (cleaned[i] === '{') depth++
+      else if (cleaned[i] === '}') {
+        depth--
+        if (depth === 0) {
+          objEnd = i
+          break
         }
       }
     }
-    return rankings.length > 0 ? rankings : null
-  } catch {
-    return null
+    if (objEnd < 0) break
+
+    try {
+      const objStr = cleaned.slice(objStart, objEnd + 1)
+      const obj = JSON.parse(objStr) as Record<string, unknown>
+      const title = typeof obj.title === 'string' ? obj.title.trim() : ''
+      const items = Array.isArray(obj.items)
+        ? obj.items.filter((i): i is string => typeof i === 'string')
+        : []
+      if (title && items.length > 0) {
+        extracted.push({ title, items })
+      }
+    } catch {
+      // skip malformed object
+    }
+    idx = objEnd + 1
   }
+
+  return extracted.length > 0 ? extracted : null
 }
 
 function tryParseLinksFromText(rawText: string): CustomModuleLinkItem[] | null {
+  const items: CustomModuleLinkItem[] = []
+  const cleaned = rawText
+    .replace(/```json\s*/gi, '')
+    .replace(/```\s*/g, '')
+    .trim()
+
+  // Try full JSON parse first
   try {
-    const cleaned = rawText
-      .replace(/```json\s*/gi, '')
-      .replace(/```\s*/g, '')
-      .trim()
     const firstBrace = cleaned.indexOf('{')
     const lastBrace = cleaned.lastIndexOf('}')
-    if (firstBrace < 0 || lastBrace <= firstBrace) return null
-    const jsonStr = cleaned.slice(firstBrace, lastBrace + 1)
-    const data = JSON.parse(jsonStr) as { items?: unknown }
-    if (!data.items || !Array.isArray(data.items)) return null
-    const items: CustomModuleLinkItem[] = []
-    for (const item of data.items) {
-      if (item && typeof item === 'object') {
-        const r = item as Record<string, unknown>
-        const title = typeof r.title === 'string' ? r.title.trim() : ''
-        const link = typeof r.link === 'string' ? r.link.trim() : ''
-        const description = typeof r.description === 'string' ? r.description.trim() : undefined
-        if (title && link) {
-          items.push({ title, link, description })
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+      const jsonStr = cleaned.slice(firstBrace, lastBrace + 1)
+      const data = JSON.parse(jsonStr) as { items?: unknown }
+      if (data.items && Array.isArray(data.items)) {
+        for (const item of data.items) {
+          if (item && typeof item === 'object') {
+            const r = item as Record<string, unknown>
+            const title = typeof r.title === 'string' ? r.title.trim() : ''
+            const link = typeof r.link === 'string' ? r.link.trim() : ''
+            const description = typeof r.description === 'string' ? r.description.trim() : undefined
+            if (title && link) {
+              items.push({ title, link, description })
+            }
+          }
+        }
+        if (items.length > 0) return items
+      }
+    }
+  } catch {
+    // Full parse failed (likely truncated JSON) — fall through to item-by-item extraction
+  }
+
+  // Fallback: extract individual complete JSON objects item by item
+  const extracted: CustomModuleLinkItem[] = []
+  let idx = 0
+  while (idx < cleaned.length) {
+    const objStart = cleaned.indexOf('{', idx)
+    if (objStart < 0) break
+
+    let depth = 0
+    let objEnd = -1
+    for (let i = objStart; i < cleaned.length; i++) {
+      if (cleaned[i] === '{') depth++
+      else if (cleaned[i] === '}') {
+        depth--
+        if (depth === 0) {
+          objEnd = i
+          break
         }
       }
     }
-    return items.length > 0 ? items : null
-  } catch {
-    return null
+    if (objEnd < 0) break
+
+    try {
+      const objStr = cleaned.slice(objStart, objEnd + 1)
+      const obj = JSON.parse(objStr) as Record<string, unknown>
+      const title = typeof obj.title === 'string' ? obj.title.trim() : ''
+      const link = typeof obj.link === 'string' ? obj.link.trim() : ''
+      const description = typeof obj.description === 'string' ? obj.description.trim() : undefined
+      if (title && link) {
+        extracted.push({ title, link, description })
+      }
+    } catch {
+      // skip malformed object
+    }
+    idx = objEnd + 1
   }
+
+  return extracted.length > 0 ? extracted : null
 }
 
 async function refreshModule(module: CustomModuleConfig): Promise<void> {
@@ -476,7 +671,9 @@ async function refreshModule(module: CustomModuleConfig): Promise<void> {
     const ret = (await window.electron.ipcRenderer.invoke(CUSTOM_MODULES_EVENTS.STREAM, {
       moduleId: module.id,
       type: module.type,
-      prompt: module.prompt
+      prompt: module.prompt,
+      webSearch: !!module.webSearch,
+      enableMarkdown: !!module.enableMarkdown
     })) as { id?: unknown; moduleId?: unknown }
     const id = typeof ret?.id === 'string' ? ret.id : ''
     if (!id) throw new Error('AI 流式请求启动失败')
@@ -1046,6 +1243,7 @@ onMounted(() => {
   window.electron.ipcRenderer.on(CUSTOM_MODULES_EVENTS.CHUNK, onCustomModuleChunk)
   window.electron.ipcRenderer.on(CUSTOM_MODULES_EVENTS.DONE, onCustomModuleDone)
   window.electron.ipcRenderer.on(CUSTOM_MODULES_EVENTS.ERROR, onCustomModuleError)
+  window.electron.ipcRenderer.on(CUSTOM_MODULES_EVENTS.SEARCHING, onCustomModuleSearching)
   tickTimer = window.setInterval(() => {
     nowTickMs.value = Date.now()
     normalizeCachedFunFact()
@@ -1440,7 +1638,18 @@ onUnmounted(() => {
           :config="mod"
           :content="getModuleCache(mod.id) ?? null"
           :loading="!!customModulesLoading[mod.id]"
+          :searching="!!customModulesSearching[mod.id]"
           :error-text="customModulesError[mod.id] || ''"
+          :class="{
+            'is-dragging': draggedModuleId === mod.id,
+            'is-drag-over': dragOverModuleId === mod.id
+          }"
+          draggable="true"
+          @dragstart="onModuleDragStart($event, mod.id)"
+          @dragover="onModuleDragOver($event, mod.id)"
+          @dragleave="onModuleDragLeave"
+          @drop="onModuleDrop($event, mod.id)"
+          @dragend="onModuleDragEnd"
           @refresh="refreshModule(mod)"
           @edit="openEditModuleDialog(mod)"
           @delete="deleteModule(mod.id)"
@@ -1634,23 +1843,53 @@ onUnmounted(() => {
           :rows="6"
           :placeholder="
             moduleDraftType === 'ranking'
-              ? '请要求AI以JSON格式输出排行榜数据'
+              ? '输入你希望AI生成排行榜的主题，如：2025年最流行的前端框架'
               : moduleDraftType === 'link'
-                ? '请要求AI以JSON格式输出带链接的列表，如新闻资讯'
+                ? '输入你希望AI收集的资讯主题，如：近期AI行业重大新闻'
                 : '输入你希望AI生成的内容主题'
           "
         />
-        <div v-if="moduleDraftType === 'ranking'" class="hint">
-          建议要求AI以JSON格式输出，包含 rankings 数组，每个元素有 title 和 items 字段。
+      </div>
+      <div class="module-dialog-field">
+        <div class="module-dialog-row">
+          <label class="module-dialog-label">联网搜索</label>
+          <AppSwitch v-model="moduleDraftWebSearch" :checked-value="true" />
         </div>
-        <div v-else-if="moduleDraftType === 'link'" class="hint">
-          建议要求AI以JSON格式输出，包含 items 数组，每个元素有 title、link（URL）和可选 description
-          字段。
+      </div>
+      <div class="module-dialog-advanced">
+        <button
+          class="advanced-toggle"
+          type="button"
+          @click="moduleDraftAdvancedOpen = !moduleDraftAdvancedOpen"
+        >
+          <span class="advanced-toggle-icon" :class="{ open: moduleDraftAdvancedOpen }">▶</span>
+          高级设置
+        </button>
+        <div v-show="moduleDraftAdvancedOpen" class="advanced-body">
+          <div class="module-dialog-field">
+            <div class="module-dialog-row">
+              <label class="module-dialog-label">模块最低高度 (px)</label>
+              <a-input-number
+                v-model:value="moduleDraftMinHeight"
+                :min="120"
+                :max="600"
+                :step="20"
+                size="small"
+                style="width: 100px"
+              />
+            </div>
+          </div>
+          <div v-if="moduleDraftType === 'text'" class="module-dialog-field">
+            <div class="module-dialog-row">
+              <label class="module-dialog-label">启用 Markdown 渲染</label>
+              <AppSwitch v-model="moduleDraftEnableMarkdown" :checked-value="true" />
+            </div>
+          </div>
         </div>
       </div>
       <div v-if="moduleDraftError" class="error">{{ moduleDraftError }}</div>
     </div>
-    <div class="picker-actions">
+    <div class="picker-actions mt-[10px]">
       <a-button :disabled="moduleDraftSaving" @click="closeModuleDialog">取消</a-button>
       <a-button type="primary" :loading="moduleDraftSaving" @click="saveModuleDialog">{{
         moduleDialogMode === 'add' ? '添加' : '保存'
@@ -2824,11 +3063,23 @@ onUnmounted(() => {
 }
 
 .custom-modules-grid {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: flex-start;
+  column-width: 320px;
+  column-gap: 12px;
+}
+
+.custom-modules-grid > * {
+  break-inside: avoid;
+  margin-bottom: 12px;
+}
+
+.custom-modules-grid :deep(.is-dragging) {
+  opacity: 0.35;
+}
+
+.custom-modules-grid :deep(.is-drag-over) {
+  outline: 2px solid rgba(60, 130, 255, 0.65);
+  outline-offset: -1px;
+  border-radius: 12px;
 }
 
 .add-module-card {
@@ -2885,10 +3136,56 @@ onUnmounted(() => {
   font-weight: 700;
 }
 
+.module-dialog-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
 .module-dialog-textarea {
   min-height: 140px;
   resize: vertical;
   line-height: 18px;
+}
+
+.module-dialog-advanced {
+  display: flex;
+  flex-direction: column;
+}
+
+.advanced-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 0;
+  border: none;
+  background: transparent;
+  color: rgba(235, 235, 245, 0.55);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: color 0.12s ease;
+}
+
+.advanced-toggle:hover {
+  color: rgba(235, 235, 245, 0.85);
+}
+
+.advanced-toggle-icon {
+  display: inline-block;
+  font-size: 10px;
+  transition: transform 0.15s ease;
+}
+
+.advanced-toggle-icon.open {
+  transform: rotate(90deg);
+}
+
+.advanced-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 0 0 0;
 }
 
 @media (max-width: 900px) {
