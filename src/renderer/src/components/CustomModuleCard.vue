@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { marked } from 'marked'
 import type {
   CustomModuleConfig,
@@ -8,7 +8,7 @@ import type {
   CustomModuleLinkItem,
   CustomModuleSearchMeta
 } from '@shared/custom-modules'
-import { PencilLine, Sparkles, Trash2, ExternalLink, Search } from 'lucide-vue-next'
+import { PencilLine, Sparkles, Trash2, ExternalLink, Search, Maximize2, X } from 'lucide-vue-next'
 
 const props = defineProps<{
   config: CustomModuleConfig
@@ -23,6 +23,8 @@ const emit = defineEmits<{
   edit: []
   delete: []
 }>()
+
+const expanded = ref(false)
 
 const typeLabel = computed(() => {
   if (props.config.type === 'text') return '生成文字'
@@ -345,7 +347,7 @@ function openLink(url: string): void {
       </template>
     </div>
 
-    <div class="card-footer flex items-center gap-2">
+    <div class="card-footer">
       <span v-if="config.webSearch" class="websearch-badge" title="已开启联网搜索">
         <Search :size="11" />
       </span>
@@ -356,8 +358,92 @@ function openLink(url: string): void {
             : `${searchMeta.resultCount}条结果`
         }}
       </span>
+      <button class="expand-btn" type="button" title="展开查看" @click="expanded = true">
+        <Maximize2 :size="13" />
+      </button>
     </div>
   </section>
+
+  <Teleport to="body">
+    <div v-if="expanded" class="expand-overlay" @click.self="expanded = false">
+      <div class="expand-container">
+        <div class="expand-header">
+          <div class="expand-title-row">
+            <span class="expand-title">{{ config.name }}</span>
+            <span class="type-badge" :style="{ color: typeColor, borderColor: typeColor }">{{
+              typeLabel
+            }}</span>
+          </div>
+          <button class="expand-close-btn" type="button" title="关闭" @click="expanded = false">
+            <X :size="18" />
+          </button>
+        </div>
+        <div class="expand-body">
+          <div v-if="loading" class="state-content">
+            <div class="streaming-text">生成中...</div>
+          </div>
+          <div v-else-if="errorText" class="state-content error-text">{{ errorText }}</div>
+          <div v-else-if="showPlaceholder" class="state-content placeholder-text">
+            点击刷新按钮生成内容
+          </div>
+          <template v-else-if="config.type === 'text' && displayText">
+            <div v-if="config.enableMarkdown" class="expand-markdown" v-html="renderedMarkdown" />
+            <div v-else class="expand-text">{{ displayText }}</div>
+          </template>
+          <template v-else-if="config.type === 'ranking' && rankings">
+            <div class="expand-ranking-list">
+              <div v-for="(ranking, ri) in rankings" :key="ri" class="ranking-group">
+                <div class="ranking-title">{{ ranking.title }}</div>
+                <div class="ranking-items">
+                  <div v-for="(item, ii) in ranking.items" :key="ii" class="ranking-item">
+                    <span class="ranking-index">{{ ii + 1 }}</span>
+                    <span class="ranking-name">{{ item }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
+          <template v-else-if="config.type === 'link' && linkItems">
+            <div class="expand-link-list">
+              <div
+                v-for="(item, ii) in linkItems"
+                :key="ii"
+                class="link-item"
+                role="button"
+                tabindex="0"
+                @click="openLink(item.link)"
+                @keydown.enter.prevent="openLink(item.link)"
+              >
+                <div class="link-item-main">
+                  <span class="link-index">{{ ii + 1 }}</span>
+                  <div class="link-item-text">
+                    <span class="link-title">{{ item.title }}</span>
+                    <span v-if="item.description" class="link-desc">{{ item.description }}</span>
+                  </div>
+                </div>
+                <ExternalLink :size="14" class="link-icon" />
+              </div>
+            </div>
+          </template>
+          <template v-else-if="displayText">
+            <pre class="expand-text">{{ displayText }}</pre>
+          </template>
+        </div>
+        <div class="expand-footer">
+          <span v-if="config.webSearch" class="websearch-badge" title="已开启联网搜索">
+            <Search :size="11" />
+          </span>
+          <span v-if="searchMeta" class="source-badge" :title="sourceTooltip">
+            {{
+              searchMeta.sources.length > 0
+                ? `${searchMeta.sources.length}个来源`
+                : `${searchMeta.resultCount}条结果`
+            }}
+          </span>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -824,5 +910,264 @@ function openLink(url: string): void {
   50% {
     opacity: 0;
   }
+}
+
+.card-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.expand-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: rgba(235, 235, 245, 0.4);
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 0;
+  margin-left: auto;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.expand-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(235, 235, 245, 0.85);
+}
+
+.expand-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: expand-fade-in 0.18s ease;
+}
+
+@keyframes expand-fade-in {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.expand-container {
+  width: min(700px, 90vw);
+  max-height: 85vh;
+  background: #1c1c24;
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  box-shadow:
+    0 24px 80px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.06);
+  animation: expand-scale-in 0.2s cubic-bezier(0.18, 0.89, 0.32, 1.1);
+}
+
+@keyframes expand-scale-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.expand-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+
+.expand-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.expand-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: rgba(235, 235, 245, 0.95);
+}
+
+.expand-close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(235, 235, 245, 0.62);
+  border-radius: 8px;
+  cursor: pointer;
+  padding: 0;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+  flex-shrink: 0;
+}
+
+.expand-close-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(235, 235, 245, 0.92);
+}
+
+.expand-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 20px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+
+.expand-body::-webkit-scrollbar {
+  width: 5px;
+}
+
+.expand-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.expand-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.expand-text {
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(235, 235, 245, 0.92);
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+.expand-markdown {
+  font-size: 15px;
+  color: rgba(235, 235, 245, 0.92);
+  line-height: 1.6;
+}
+
+.expand-markdown h1,
+.expand-markdown h2,
+.expand-markdown h3,
+.expand-markdown h4 {
+  font-size: 16px;
+  font-weight: 800;
+  margin: 12px 0 6px;
+  color: rgba(235, 235, 245, 0.96);
+}
+
+.expand-markdown h1 {
+  font-size: 18px;
+}
+.expand-markdown h2 {
+  font-size: 17px;
+}
+.expand-markdown h3 {
+  font-size: 16px;
+}
+
+.expand-markdown p {
+  margin: 6px 0;
+}
+
+.expand-markdown ul,
+.expand-markdown ol {
+  margin: 6px 0;
+  padding-left: 22px;
+}
+
+.expand-markdown li {
+  margin: 3px 0;
+}
+
+.expand-markdown code {
+  font-size: 14px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(200, 200, 220, 0.95);
+}
+
+.expand-markdown pre {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.3);
+  overflow-x: auto;
+}
+
+.expand-markdown pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.expand-markdown strong {
+  font-weight: 800;
+  color: rgba(235, 235, 245, 0.96);
+}
+
+.expand-markdown a {
+  color: rgba(60, 160, 255, 0.9);
+  text-decoration: none;
+}
+
+.expand-markdown a:hover {
+  text-decoration: underline;
+}
+
+.expand-markdown blockquote {
+  margin: 8px 0;
+  padding: 6px 12px;
+  border-left: 3px solid rgba(100, 100, 130, 0.4);
+  color: rgba(235, 235, 245, 0.7);
+}
+
+.expand-markdown hr {
+  margin: 10px 0;
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.expand-ranking-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.expand-link-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.expand-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 20px 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
 }
 </style>

@@ -11,8 +11,8 @@ import {
 import { getAiApiKeyFromSecrets } from '@main-core/secrets'
 import { runMcpSearch, type McpSearchResult } from '@main-core/mcp-client'
 
-const streamBySender = new Map<
-  number,
+const streamByModule = new Map<
+  string,
   {
     id: string
     moduleId: string
@@ -278,9 +278,8 @@ export function registerCustomModuleHandlers(args: { getSettings: () => AppSetti
     if (!prompt) throw new Error('提示词不能为空')
 
     const id = createAiStreamId()
-    const senderId = event.sender.id
 
-    const prev = streamBySender.get(senderId)
+    const prev = streamByModule.get(moduleId)
     if (prev) {
       try {
         prev.controller.abort()
@@ -288,13 +287,13 @@ export function registerCustomModuleHandlers(args: { getSettings: () => AppSetti
         void 0
       }
       clearTimeout(prev.timeout)
-      streamBySender.delete(senderId)
+      streamByModule.delete(moduleId)
     }
 
     const controller = new AbortController()
     const timeoutMs = webSearch ? 120000 : 60000
     const timeout = setTimeout(() => controller.abort(), timeoutMs)
-    streamBySender.set(senderId, { id, moduleId, controller, timeout })
+    streamByModule.set(moduleId, { id, moduleId, controller, timeout })
 
     setImmediate(() => {
       ;(async () => {
@@ -378,7 +377,7 @@ export function registerCustomModuleHandlers(args: { getSettings: () => AppSetti
             webSearch,
             enableMarkdown,
             onDelta: (delta) => {
-              if (streamBySender.get(senderId)?.id !== id) return
+              if (streamByModule.get(moduleId)?.id !== id) return
               acc += delta
               try {
                 event.sender.send(CUSTOM_MODULES_EVENTS.CHUNK, { id, moduleId, delta })
@@ -388,7 +387,7 @@ export function registerCustomModuleHandlers(args: { getSettings: () => AppSetti
             }
           })
 
-          if (streamBySender.get(senderId)?.id !== id) return
+          if (streamByModule.get(moduleId)?.id !== id) return
           const fullText = text || trimAiText(acc)
           try {
             event.sender.send(CUSTOM_MODULES_EVENTS.DONE, {
@@ -401,7 +400,7 @@ export function registerCustomModuleHandlers(args: { getSettings: () => AppSetti
             void 0
           }
         } catch (e) {
-          if (streamBySender.get(senderId)?.id !== id) return
+          if (streamByModule.get(moduleId)?.id !== id) return
           const name =
             e &&
             typeof e === 'object' &&
@@ -428,10 +427,10 @@ export function registerCustomModuleHandlers(args: { getSettings: () => AppSetti
             void 0
           }
         } finally {
-          const cur = streamBySender.get(senderId)
+          const cur = streamByModule.get(moduleId)
           if (cur?.id === id) {
             clearTimeout(cur.timeout)
-            streamBySender.delete(senderId)
+            streamByModule.delete(moduleId)
           }
         }
       })()
@@ -443,10 +442,24 @@ export function registerCustomModuleHandlers(args: { getSettings: () => AppSetti
   ipcMain.handle(CUSTOM_MODULES_EVENTS.CANCEL, (event, payload: unknown) => {
     const p = payload && typeof payload === 'object' ? (payload as { id?: unknown }) : {}
     const id = typeof p.id === 'string' ? p.id : ''
-    const senderId = event.sender.id
-    const cur = streamBySender.get(senderId)
+    if (!id) return false
+    let cur:
+      | {
+          id: string
+          moduleId: string
+          controller: AbortController
+          timeout: ReturnType<typeof setTimeout>
+        }
+      | undefined
+    let foundModuleId: string | undefined
+    for (const [mid, entry] of streamByModule) {
+      if (entry.id === id) {
+        cur = entry
+        foundModuleId = mid
+        break
+      }
+    }
     if (!cur) return false
-    if (id && cur.id !== id) return false
     try {
       event.sender.send(CUSTOM_MODULES_EVENTS.ERROR, {
         id,
@@ -462,7 +475,7 @@ export function registerCustomModuleHandlers(args: { getSettings: () => AppSetti
       void 0
     }
     clearTimeout(cur.timeout)
-    streamBySender.delete(senderId)
+    if (foundModuleId) streamByModule.delete(foundModuleId)
     return true
   })
 }

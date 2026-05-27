@@ -10,7 +10,8 @@ import type {
   CustomModuleCachedContent,
   CustomModuleRankingItem,
   CustomModuleLinkItem,
-  CustomModuleSearchMeta
+  CustomModuleSearchMeta,
+  UpdateFrequency
 } from '@shared/custom-modules'
 import {
   CUSTOM_MODULES_EVENTS,
@@ -187,6 +188,7 @@ const moduleDraftPrompt = ref('')
 const moduleDraftWebSearch = ref(false)
 const moduleDraftMinHeight = ref<number>(180)
 const moduleDraftEnableMarkdown = ref(false)
+const moduleDraftUpdateFrequency = ref<UpdateFrequency>('daily')
 const moduleDraftAdvancedOpen = ref(false)
 const moduleDraftSaving = ref(false)
 const moduleDraftError = ref('')
@@ -315,6 +317,7 @@ function openAddModuleDialog(): void {
   moduleDraftWebSearch.value = false
   moduleDraftMinHeight.value = 180
   moduleDraftEnableMarkdown.value = false
+  moduleDraftUpdateFrequency.value = 'daily'
   moduleDraftError.value = ''
   moduleDialogOpen.value = true
 }
@@ -328,6 +331,7 @@ function openEditModuleDialog(module: CustomModuleConfig): void {
   moduleDraftWebSearch.value = !!module.webSearch
   moduleDraftMinHeight.value = module.minHeight ?? 180
   moduleDraftEnableMarkdown.value = !!module.enableMarkdown
+  moduleDraftUpdateFrequency.value = module.updateFrequency ?? 'realtime'
   moduleDraftError.value = ''
   moduleDialogOpen.value = true
 }
@@ -363,7 +367,8 @@ function saveModuleDialog(): void {
         createdAt: Date.now(),
         webSearch: moduleDraftWebSearch.value,
         minHeight: moduleDraftMinHeight.value,
-        enableMarkdown: moduleDraftEnableMarkdown.value
+        enableMarkdown: moduleDraftEnableMarkdown.value,
+        updateFrequency: moduleDraftUpdateFrequency.value
       }
       customModules.value.push(newModule)
     } else {
@@ -376,7 +381,8 @@ function saveModuleDialog(): void {
           prompt: moduleDraftPrompt.value.replace(/\r\n/g, '\n').trim(),
           webSearch: moduleDraftWebSearch.value,
           minHeight: moduleDraftMinHeight.value,
-          enableMarkdown: moduleDraftEnableMarkdown.value
+          enableMarkdown: moduleDraftEnableMarkdown.value,
+          updateFrequency: moduleDraftUpdateFrequency.value
         }
       }
     }
@@ -656,7 +662,78 @@ function tryParseLinksFromText(rawText: string): CustomModuleLinkItem[] | null {
   return extracted.length > 0 ? extracted : null
 }
 
-async function refreshModule(module: CustomModuleConfig): Promise<void> {
+function isSameDay(timestamp: number): boolean {
+  const d1 = new Date(timestamp)
+  const d2 = new Date()
+  return (
+    d1.getFullYear() === d2.getFullYear() &&
+    d1.getMonth() === d2.getMonth() &&
+    d1.getDate() === d2.getDate()
+  )
+}
+
+function isSameWeek(timestamp: number): boolean {
+  const d1 = new Date(timestamp)
+  const d2 = new Date()
+  const startOfWeek = new Date(d2)
+  startOfWeek.setDate(d2.getDate() - d2.getDay())
+  startOfWeek.setHours(0, 0, 0, 0)
+  const endOfWeek = new Date(startOfWeek)
+  endOfWeek.setDate(startOfWeek.getDate() + 7)
+  return d1 >= startOfWeek && d1 < endOfWeek
+}
+
+function isSameMonth(timestamp: number): boolean {
+  const d1 = new Date(timestamp)
+  const d2 = new Date()
+  return d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth()
+}
+
+function shouldAutoRefreshModule(module: CustomModuleConfig): boolean {
+  const freq = module.updateFrequency ?? 'realtime'
+  if (freq === 'realtime') return true
+  const cache = customModulesCache.value[module.id]
+  if (!cache) return true
+  const updatedAt = cache.updatedAt
+  if (!updatedAt) return true
+  if (freq === 'daily') return !isSameDay(updatedAt)
+  if (freq === 'weekly') return !isSameWeek(updatedAt)
+  if (freq === 'monthly') return !isSameMonth(updatedAt)
+  return true
+}
+
+function maybeAutoRefreshModules(): void {
+  for (const mod of customModules.value) {
+    if (shouldAutoRefreshModule(mod) && aiReady.value) {
+      enqueueModuleRefresh(mod)
+    }
+  }
+}
+
+const moduleRefreshQueue: string[] = []
+let moduleRefreshProcessing = false
+
+async function processModuleRefreshQueue(): Promise<void> {
+  if (moduleRefreshProcessing) return
+  moduleRefreshProcessing = true
+  while (moduleRefreshQueue.length > 0) {
+    const moduleId = moduleRefreshQueue.shift()!
+    const module = customModules.value.find((m) => m.id === moduleId)
+    if (module && !customModulesLoading.value[module.id]) {
+      await executeRefreshModule(module)
+    }
+  }
+  moduleRefreshProcessing = false
+}
+
+function enqueueModuleRefresh(mod: CustomModuleConfig): void {
+  if (!moduleRefreshQueue.includes(mod.id) && !customModulesLoading.value[mod.id]) {
+    moduleRefreshQueue.push(mod.id)
+  }
+  processModuleRefreshQueue()
+}
+
+async function executeRefreshModule(module: CustomModuleConfig): Promise<void> {
   if (!aiReady.value) {
     customModulesError.value[module.id] = '请到「全局设置」启用 AI 并配置 Base URL / Key / Model'
     return
@@ -1260,6 +1337,7 @@ onMounted(() => {
   }
   loadCustomModules()
   loadCustomModulesCache()
+  maybeAutoRefreshModules()
   refresh().catch(() => null)
 })
 
@@ -1650,7 +1728,7 @@ onUnmounted(() => {
           @dragleave="onModuleDragLeave"
           @drop="onModuleDrop($event, mod.id)"
           @dragend="onModuleDragEnd"
-          @refresh="refreshModule(mod)"
+          @refresh="enqueueModuleRefresh(mod)"
           @edit="openEditModuleDialog(mod)"
           @delete="deleteModule(mod.id)"
         />
@@ -1854,6 +1932,21 @@ onUnmounted(() => {
         <div class="module-dialog-row">
           <label class="module-dialog-label">联网搜索</label>
           <AppSwitch v-model="moduleDraftWebSearch" :checked-value="true" />
+        </div>
+      </div>
+      <div class="module-dialog-field">
+        <div class="module-dialog-label">更新频率</div>
+        <a-segmented
+          v-model:value="moduleDraftUpdateFrequency"
+          :options="[
+            { label: '实时', value: 'realtime' },
+            { label: '每天', value: 'daily' },
+            { label: '每周', value: 'weekly' },
+            { label: '每月', value: 'monthly' }
+          ]"
+        />
+        <div class="module-dialog-hint">
+          实时：每次页面加载时自动更新；其他：在有效期内使用缓存内容，可手动刷新
         </div>
       </div>
       <div class="module-dialog-advanced">
@@ -3146,6 +3239,13 @@ onUnmounted(() => {
   min-height: 140px;
   resize: vertical;
   line-height: 18px;
+}
+
+.module-dialog-hint {
+  font-size: 12px;
+  color: rgba(235, 235, 245, 0.45);
+  line-height: 1.4;
+  margin-top: 2px;
 }
 
 .module-dialog-advanced {

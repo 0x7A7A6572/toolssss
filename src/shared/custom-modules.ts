@@ -1,4 +1,5 @@
 export type CustomModuleType = 'text' | 'ranking' | 'link'
+export type UpdateFrequency = 'realtime' | 'daily' | 'weekly' | 'monthly'
 
 export interface CustomModuleConfig {
   id: string
@@ -9,6 +10,7 @@ export interface CustomModuleConfig {
   webSearch?: boolean
   minHeight?: number
   enableMarkdown?: boolean
+  updateFrequency?: UpdateFrequency
 }
 
 export interface CustomModuleRankingItem {
