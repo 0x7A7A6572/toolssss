@@ -5,6 +5,18 @@ import type { WeatherDashboard, WeatherProvinceCity } from '@shared/weather'
 import { DEFAULT_SETTINGS, type AppSettings } from '@shared/settings'
 import { useSettingsStore } from '@renderer/state/settings'
 import { PencilLine, Settings, Sparkles, Plus } from 'lucide-vue-next'
+import type {
+  CustomModuleConfig,
+  CustomModuleCachedContent,
+  CustomModuleRankingItem,
+  CustomModuleLinkItem
+} from '@shared/custom-modules'
+import {
+  CUSTOM_MODULES_EVENTS,
+  CUSTOM_MODULES_STORAGE_KEY,
+  CUSTOM_MODULES_CACHE_KEY
+} from '@shared/custom-modules'
+import CustomModuleCard from '../../components/CustomModuleCard.vue'
 import SevenDayTempChart from '../../components/SevenDayTempChart.vue'
 import WeatherHourlyTrendsChart, {
   type HourlyMetricKey
@@ -156,6 +168,324 @@ const funFactTitle = computed(() => {
   const v = settings.value.funFact?.title
   return (typeof v === 'string' ? v.trim() : '') || DEFAULT_SETTINGS.funFact.title
 })
+
+const customModules = ref<CustomModuleConfig[]>([])
+const customModulesCache = ref<Record<string, CustomModuleCachedContent>>({})
+const customModulesLoading = ref<Record<string, boolean>>({})
+const customModulesError = ref<Record<string, string>>({})
+const customModulesStreamId = ref<Record<string, string>>({})
+
+const moduleDialogOpen = ref(false)
+const moduleDialogMode = ref<'add' | 'edit'>('add')
+const moduleDraftId = ref('')
+const moduleDraftName = ref('')
+const moduleDraftType = ref<'text' | 'ranking'>('text')
+const moduleDraftPrompt = ref('')
+const moduleDraftSaving = ref(false)
+const moduleDraftError = ref('')
+
+function generateModuleId(): string {
+  return `cm-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function loadCustomModules(): void {
+  try {
+    const raw = localStorage.getItem(CUSTOM_MODULES_STORAGE_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw) as unknown
+      if (Array.isArray(parsed)) {
+        customModules.value = parsed.filter(
+          (item): item is CustomModuleConfig =>
+            item &&
+            typeof item === 'object' &&
+            typeof (item as Record<string, unknown>).id === 'string' &&
+            typeof (item as Record<string, unknown>).name === 'string' &&
+            ((item as Record<string, unknown>).type === 'text' ||
+              (item as Record<string, unknown>).type === 'ranking') &&
+            typeof (item as Record<string, unknown>).prompt === 'string'
+        )
+      }
+    }
+  } catch {
+    customModules.value = []
+  }
+}
+
+function saveCustomModules(): void {
+  try {
+    localStorage.setItem(CUSTOM_MODULES_STORAGE_KEY, JSON.stringify(customModules.value))
+  } catch {
+    return
+  }
+}
+
+function loadCustomModulesCache(): void {
+  try {
+    const raw = localStorage.getItem(CUSTOM_MODULES_CACHE_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw) as Record<string, unknown>
+      if (parsed && typeof parsed === 'object') {
+        customModulesCache.value = parsed as Record<string, CustomModuleCachedContent>
+      }
+    }
+  } catch {
+    customModulesCache.value = {}
+  }
+}
+
+function saveCustomModulesCache(): void {
+  try {
+    localStorage.setItem(CUSTOM_MODULES_CACHE_KEY, JSON.stringify(customModulesCache.value))
+  } catch {
+    return
+  }
+}
+
+function openAddModuleDialog(): void {
+  moduleDialogMode.value = 'add'
+  moduleDraftId.value = ''
+  moduleDraftName.value = ''
+  moduleDraftType.value = 'text'
+  moduleDraftPrompt.value = ''
+  moduleDraftError.value = ''
+  moduleDialogOpen.value = true
+}
+
+function openEditModuleDialog(module: CustomModuleConfig): void {
+  moduleDialogMode.value = 'edit'
+  moduleDraftId.value = module.id
+  moduleDraftName.value = module.name
+  moduleDraftType.value = module.type
+  moduleDraftPrompt.value = module.prompt
+  moduleDraftError.value = ''
+  moduleDialogOpen.value = true
+}
+
+function closeModuleDialog(): void {
+  if (moduleDraftSaving.value) return
+  moduleDialogOpen.value = false
+  moduleDraftError.value = ''
+}
+
+function validateModuleDraft(): string {
+  if (!moduleDraftName.value.trim()) return '请输入模块名称'
+  if (!moduleDraftPrompt.value.trim()) return '请输入提示词'
+  return ''
+}
+
+function saveModuleDialog(): void {
+  const err = validateModuleDraft()
+  if (err) {
+    moduleDraftError.value = err
+    return
+  }
+  moduleDraftSaving.value = true
+  moduleDraftError.value = ''
+  try {
+    if (moduleDialogMode.value === 'add') {
+      const newModule: CustomModuleConfig = {
+        id: generateModuleId(),
+        name: moduleDraftName.value.trim(),
+        type: moduleDraftType.value,
+        prompt: moduleDraftPrompt.value.replace(/\r\n/g, '\n').trim(),
+        createdAt: Date.now()
+      }
+      customModules.value.push(newModule)
+    } else {
+      const idx = customModules.value.findIndex((m) => m.id === moduleDraftId.value)
+      if (idx >= 0) {
+        customModules.value[idx] = {
+          ...customModules.value[idx],
+          name: moduleDraftName.value.trim(),
+          type: moduleDraftType.value,
+          prompt: moduleDraftPrompt.value.replace(/\r\n/g, '\n').trim()
+        }
+      }
+    }
+    saveCustomModules()
+  } finally {
+    moduleDraftSaving.value = false
+  }
+  closeModuleDialog()
+}
+
+function deleteModule(moduleId: string): void {
+  customModules.value = customModules.value.filter((m) => m.id !== moduleId)
+  saveCustomModules()
+  delete customModulesCache.value[moduleId]
+  saveCustomModulesCache()
+}
+
+function getModuleCache(moduleId: string): CustomModuleCachedContent | undefined {
+  return customModulesCache.value[moduleId]
+}
+
+function updateModuleCache(moduleId: string, content: Partial<CustomModuleCachedContent>): void {
+  const existing = customModulesCache.value[moduleId]
+  customModulesCache.value[moduleId] = {
+    ...(existing || { updatedAt: 0 }),
+    ...content,
+    updatedAt: Date.now()
+  }
+  saveCustomModulesCache()
+}
+
+function onCustomModuleChunk(_event: unknown, payload: unknown): void {
+  if (!payload || typeof payload !== 'object') return
+  const p = payload as { id?: unknown; moduleId?: unknown; delta?: unknown }
+  const moduleId = typeof p.moduleId === 'string' ? p.moduleId : ''
+  if (!moduleId) return
+  if (typeof p.id !== 'string' || !p.id) return
+  if (p.id !== customModulesStreamId.value[moduleId]) return
+  const delta = typeof p.delta === 'string' ? p.delta : ''
+  if (!delta) return
+  const cache = customModulesCache.value[moduleId]
+  const currentText = cache?.rawText || ''
+  const next = `${currentText}${delta}`
+  updateModuleCache(moduleId, { rawText: next })
+  if (customModules.value.find((m) => m.id === moduleId)?.type === 'ranking') {
+    const parsed = tryParseRankingsFromText(next)
+    if (parsed) {
+      updateModuleCache(moduleId, { rankings: parsed })
+    }
+  } else if (customModules.value.find((m) => m.id === moduleId)?.type === 'link') {
+    const parsed = tryParseLinksFromText(next)
+    if (parsed) {
+      updateModuleCache(moduleId, { links: parsed })
+    }
+  }
+}
+
+function onCustomModuleDone(_event: unknown, payload: unknown): void {
+  if (!payload || typeof payload !== 'object') return
+  const p = payload as { id?: unknown; moduleId?: unknown; text?: unknown }
+  const moduleId = typeof p.moduleId === 'string' ? p.moduleId : ''
+  if (!moduleId) return
+  if (typeof p.id !== 'string' || !p.id) return
+  if (p.id !== customModulesStreamId.value[moduleId]) return
+  const text = typeof p.text === 'string' ? p.text : ''
+  const module = customModules.value.find((m) => m.id === moduleId)
+  if (module?.type === 'text') {
+    updateModuleCache(moduleId, { text, rawText: text })
+  } else if (module?.type === 'link') {
+    const parsed = tryParseLinksFromText(text)
+    if (parsed) {
+      updateModuleCache(moduleId, { links: parsed, rawText: text })
+    } else {
+      updateModuleCache(moduleId, { rawText: text })
+    }
+  } else {
+    const parsed = tryParseRankingsFromText(text)
+    if (parsed) {
+      updateModuleCache(moduleId, { rankings: parsed, rawText: text })
+    } else {
+      updateModuleCache(moduleId, { rawText: text })
+    }
+  }
+  delete customModulesStreamId.value[moduleId]
+  customModulesLoading.value[moduleId] = false
+  customModulesError.value[moduleId] = ''
+}
+
+function onCustomModuleError(_event: unknown, payload: unknown): void {
+  if (!payload || typeof payload !== 'object') return
+  const p = payload as { id?: unknown; moduleId?: unknown; message?: unknown }
+  const moduleId = typeof p.moduleId === 'string' ? p.moduleId : ''
+  if (!moduleId) return
+  if (typeof p.id !== 'string' || !p.id) return
+  if (p.id !== customModulesStreamId.value[moduleId]) return
+  const msg = typeof p.message === 'string' && p.message ? p.message : '生成失败'
+  customModulesError.value[moduleId] = msg
+  delete customModulesStreamId.value[moduleId]
+  customModulesLoading.value[moduleId] = false
+}
+
+function tryParseRankingsFromText(rawText: string): CustomModuleRankingItem[] | null {
+  try {
+    const cleaned = rawText
+      .replace(/```json\s*/gi, '')
+      .replace(/```\s*/g, '')
+      .trim()
+    const firstBrace = cleaned.indexOf('{')
+    const lastBrace = cleaned.lastIndexOf('}')
+    if (firstBrace < 0 || lastBrace <= firstBrace) return null
+    const jsonStr = cleaned.slice(firstBrace, lastBrace + 1)
+    const data = JSON.parse(jsonStr) as { rankings?: unknown }
+    if (!data.rankings || !Array.isArray(data.rankings)) return null
+    const rankings: CustomModuleRankingItem[] = []
+    for (const item of data.rankings) {
+      if (item && typeof item === 'object') {
+        const r = item as Record<string, unknown>
+        const title = typeof r.title === 'string' ? r.title.trim() : ''
+        const items = Array.isArray(r.items)
+          ? r.items.filter((i): i is string => typeof i === 'string')
+          : []
+        if (title && items.length > 0) {
+          rankings.push({ title, items })
+        }
+      }
+    }
+    return rankings.length > 0 ? rankings : null
+  } catch {
+    return null
+  }
+}
+
+function tryParseLinksFromText(rawText: string): CustomModuleLinkItem[] | null {
+  try {
+    const cleaned = rawText
+      .replace(/```json\s*/gi, '')
+      .replace(/```\s*/g, '')
+      .trim()
+    const firstBrace = cleaned.indexOf('{')
+    const lastBrace = cleaned.lastIndexOf('}')
+    if (firstBrace < 0 || lastBrace <= firstBrace) return null
+    const jsonStr = cleaned.slice(firstBrace, lastBrace + 1)
+    const data = JSON.parse(jsonStr) as { items?: unknown }
+    if (!data.items || !Array.isArray(data.items)) return null
+    const items: CustomModuleLinkItem[] = []
+    for (const item of data.items) {
+      if (item && typeof item === 'object') {
+        const r = item as Record<string, unknown>
+        const title = typeof r.title === 'string' ? r.title.trim() : ''
+        const link = typeof r.link === 'string' ? r.link.trim() : ''
+        const description = typeof r.description === 'string' ? r.description.trim() : undefined
+        if (title && link) {
+          items.push({ title, link, description })
+        }
+      }
+    }
+    return items.length > 0 ? items : null
+  } catch {
+    return null
+  }
+}
+
+async function refreshModule(module: CustomModuleConfig): Promise<void> {
+  if (!aiReady.value) {
+    customModulesError.value[module.id] = '请到「全局设置」启用 AI 并配置 Base URL / Key / Model'
+    return
+  }
+  if (customModulesLoading.value[module.id]) return
+
+  customModulesLoading.value[module.id] = true
+  customModulesError.value[module.id] = ''
+  delete customModulesCache.value[module.id]
+
+  try {
+    const ret = (await window.electron.ipcRenderer.invoke(CUSTOM_MODULES_EVENTS.STREAM, {
+      moduleId: module.id,
+      type: module.type,
+      prompt: module.prompt
+    })) as { id?: unknown; moduleId?: unknown }
+    const id = typeof ret?.id === 'string' ? ret.id : ''
+    if (!id) throw new Error('AI 流式请求启动失败')
+    customModulesStreamId.value[module.id] = id
+  } catch (e) {
+    customModulesLoading.value[module.id] = false
+    customModulesError.value[module.id] = e instanceof Error ? e.message : '请求失败'
+  }
+}
 
 const funFactEditOpen = ref(false)
 const funFactTitleDraft = ref('')
@@ -713,6 +1043,9 @@ onMounted(() => {
   window.electron.ipcRenderer.on('ai:funfact:daily:done', onFunFactDone)
   window.electron.ipcRenderer.on('ai:funfact:daily:error', onFunFactError)
   window.electron.ipcRenderer.on('ai:funfact:daily:cancelled', onFunFactCancelled)
+  window.electron.ipcRenderer.on(CUSTOM_MODULES_EVENTS.CHUNK, onCustomModuleChunk)
+  window.electron.ipcRenderer.on(CUSTOM_MODULES_EVENTS.DONE, onCustomModuleDone)
+  window.electron.ipcRenderer.on(CUSTOM_MODULES_EVENTS.ERROR, onCustomModuleError)
   tickTimer = window.setInterval(() => {
     nowTickMs.value = Date.now()
     normalizeCachedFunFact()
@@ -727,6 +1060,8 @@ onMounted(() => {
     stationId.value = chosenCityId.value
     localStorage.setItem('weather.stationId', stationId.value)
   }
+  loadCustomModules()
+  loadCustomModulesCache()
   refresh().catch(() => null)
 })
 
@@ -740,6 +1075,13 @@ onUnmounted(() => {
     window.electron.ipcRenderer
       .invoke('ai:funfact:daily:cancel', { id: funFactStreamId.value })
       .catch(() => null)
+  }
+  for (const [, streamId] of Object.entries(customModulesStreamId.value)) {
+    if (streamId) {
+      window.electron.ipcRenderer
+        .invoke(CUSTOM_MODULES_EVENTS.CANCEL, { id: streamId })
+        .catch(() => null)
+    }
   }
   if (tickTimer !== null) {
     window.clearInterval(tickTimer)
@@ -1091,19 +1433,25 @@ onUnmounted(() => {
     </div>
 
     <div>
-      <section class="disabled card work-calendar-card border-dashed border-color-[#660000]">
-        <div class="work-calendar-head">
-          <div class="work-calendar-title">自定义模块</div>
-          <div class="work-calendar-btn" type="button" @click="openPaydayDialog">
-            <!-- 每月{{ paydayDay }}日 -->
-            <!-- <Settings :size="18" /> -->
+      <div class="custom-modules-grid">
+        <CustomModuleCard
+          v-for="mod in customModules"
+          :key="mod.id"
+          :config="mod"
+          :content="getModuleCache(mod.id) ?? null"
+          :loading="!!customModulesLoading[mod.id]"
+          :error-text="customModulesError[mod.id] || ''"
+          @refresh="refreshModule(mod)"
+          @edit="openEditModuleDialog(mod)"
+          @delete="deleteModule(mod.id)"
+        />
+        <section class="card add-module-card" type="button" @click="openAddModuleDialog">
+          <div class="add-module-inner">
+            <Plus :size="32" />
+            <div class="add-module-text">添加模块</div>
           </div>
-        </div>
-
-        <div class="flex-auto w-fill h-fill flex items-center justify-center">
-          <Plus :size="60" />
-        </div>
-      </section>
+        </section>
+      </div>
     </div>
   </div>
 
@@ -1248,6 +1596,65 @@ onUnmounted(() => {
       <a-button type="primary" :loading="funFactEditSaving" @click="saveFunFactEditor"
         >保存</a-button
       >
+    </div>
+  </a-modal>
+
+  <a-modal
+    :open="moduleDialogOpen"
+    :width="560"
+    centered
+    :mask-closable="!moduleDraftSaving"
+    :keyboard="!moduleDraftSaving"
+    :closable="!moduleDraftSaving"
+    :footer="null"
+    @cancel="closeModuleDialog"
+  >
+    <div class="picker-title">{{ moduleDialogMode === 'add' ? '添加模块' : '编辑模块' }}</div>
+    <div class="module-dialog-form">
+      <div class="module-dialog-field">
+        <div class="module-dialog-label">模块名称</div>
+        <a-input v-model:value="moduleDraftName" placeholder="例如：前端技术栈排行" />
+      </div>
+      <div class="module-dialog-field">
+        <div class="module-dialog-label">模块类型</div>
+        <a-segmented
+          v-model:value="moduleDraftType"
+          :options="[
+            { label: '生成文字', value: 'text' },
+            { label: '数据排行', value: 'ranking' },
+            { label: '资讯简报', value: 'link' }
+          ]"
+        />
+      </div>
+      <div class="module-dialog-field">
+        <div class="module-dialog-label">提示词</div>
+        <a-textarea
+          v-model:value="moduleDraftPrompt"
+          class="module-dialog-textarea"
+          :rows="6"
+          :placeholder="
+            moduleDraftType === 'ranking'
+              ? '请要求AI以JSON格式输出排行榜数据'
+              : moduleDraftType === 'link'
+                ? '请要求AI以JSON格式输出带链接的列表，如新闻资讯'
+                : '输入你希望AI生成的内容主题'
+          "
+        />
+        <div v-if="moduleDraftType === 'ranking'" class="hint">
+          建议要求AI以JSON格式输出，包含 rankings 数组，每个元素有 title 和 items 字段。
+        </div>
+        <div v-else-if="moduleDraftType === 'link'" class="hint">
+          建议要求AI以JSON格式输出，包含 items 数组，每个元素有 title、link（URL）和可选 description
+          字段。
+        </div>
+      </div>
+      <div v-if="moduleDraftError" class="error">{{ moduleDraftError }}</div>
+    </div>
+    <div class="picker-actions">
+      <a-button :disabled="moduleDraftSaving" @click="closeModuleDialog">取消</a-button>
+      <a-button type="primary" :loading="moduleDraftSaving" @click="saveModuleDialog">{{
+        moduleDialogMode === 'add' ? '添加' : '保存'
+      }}</a-button>
     </div>
   </a-modal>
 </template>
@@ -1575,6 +1982,7 @@ onUnmounted(() => {
   gap: 12px;
   position: relative;
   z-index: 1;
+  flex: 1;
 
   &.disabled {
     cursor: not-allowed;
@@ -2413,6 +2821,74 @@ onUnmounted(() => {
 .empty {
   font-size: 13px;
   color: rgba(235, 235, 245, 0.62);
+}
+
+.custom-modules-grid {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.add-module-card {
+  width: min(360px, 100%);
+  min-height: 180px;
+  align-self: flex-start;
+  padding: 14px;
+  gap: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: 1px dashed rgba(255, 255, 255, 0.15);
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.add-module-card:hover {
+  border-color: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.add-module-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: rgba(235, 235, 245, 0.62);
+}
+
+.add-module-text {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.module-dialog-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 10px;
+}
+
+.module-dialog-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.module-dialog-label {
+  font-size: 13px;
+  color: rgba(235, 235, 245, 0.72);
+  font-weight: 700;
+}
+
+.module-dialog-textarea {
+  min-height: 140px;
+  resize: vertical;
+  line-height: 18px;
 }
 
 @media (max-width: 900px) {
