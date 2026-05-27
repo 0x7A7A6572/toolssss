@@ -87,6 +87,32 @@ function clearAutoSnapPending(): void {
   autoSnapDown.value = null
 }
 
+let autoSnapLockTimer: ReturnType<typeof setTimeout> | null = null
+
+function cancelAutoSnapLockTimer(): void {
+  if (autoSnapLockTimer) {
+    clearTimeout(autoSnapLockTimer)
+    autoSnapLockTimer = null
+  }
+}
+
+function lockSnappedBounds(): void {
+  cancelAutoSnapLockTimer()
+  clearAutoSnapPending()
+  autoBounds.value = false
+  autoBoundsEnabled.value = false
+  overlayDirty = true
+  requestFrame()
+}
+
+function scheduleSnappedBoundsLock(): void {
+  cancelAutoSnapLockTimer()
+  autoSnapLockTimer = setTimeout(() => {
+    autoSnapLockTimer = null
+    lockSnappedBounds()
+  }, 250)
+}
+
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const imageRef = ref<HTMLImageElement | null>(null)
 
@@ -1068,6 +1094,7 @@ function onPointerDown(e: PointerEvent): void {
   }
 
   clearAutoSnapPending()
+  cancelAutoSnapLockTimer()
   autoBounds.value = false
 
   if (!b || b.width <= 0 || b.height <= 0) {
@@ -1186,11 +1213,9 @@ function onContextMenu(e: MouseEvent): void {
 function onDblClick(e: MouseEvent): void {
   const b = bounds.value
   if (!b || b.width < 1 || b.height < 1 || !imageReady.value) return
-  if (!autoBounds.value) return
+  if (!autoBounds.value && !autoSnapLockTimer) return
   e.preventDefault()
-  clearAutoSnapPending()
-  autoBounds.value = false
-  autoBoundsEnabled.value = false
+  lockSnappedBounds()
   void onOk()
 }
 
@@ -1208,6 +1233,7 @@ function onPointerMove(e: PointerEvent): void {
     const dx = p.x - down.x
     const dy = p.y - down.y
     if (dx * dx + dy * dy >= autoSnapDragThreshold * autoSnapDragThreshold) {
+      cancelAutoSnapLockTimer()
       clearAutoSnapPending()
       autoBounds.value = false
       dragMode.value = 'new'
@@ -1280,7 +1306,7 @@ function onPointerUp(e?: PointerEvent): void {
     }
   }
   if (e && autoSnapPending.value && e.pointerId === autoSnapPointerId.value) {
-    clearAutoSnapPending()
+    scheduleSnappedBoundsLock()
     overlayDirty = true
     requestFrame()
     return
@@ -1479,6 +1505,7 @@ const onCapture = (d: Display, dataURL: string): void => {
   autoBounds.value = false
   autoBoundsEnabled.value = true
   clearAutoSnapPending()
+  cancelAutoSnapLockTimer()
   magnifierPos.value = null
   lastPointer.value = null
   ops.value = []
@@ -1504,6 +1531,7 @@ const onReset = (): void => {
   autoBounds.value = false
   autoBoundsEnabled.value = true
   clearAutoSnapPending()
+  cancelAutoSnapLockTimer()
   magnifierPos.value = null
   lastPointer.value = null
   ops.value = []
@@ -1673,6 +1701,8 @@ onBeforeUnmount(() => {
 
   window.removeEventListener('resize', updateViewport)
   window.removeEventListener('keydown', onKeyDown)
+
+  cancelAutoSnapLockTimer()
 
   toolbarResizeObserver?.disconnect()
   toolbarResizeObserver = null
