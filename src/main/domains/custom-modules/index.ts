@@ -17,9 +17,205 @@ const streamByModule = new Map<
     id: string
     moduleId: string
     controller: AbortController
-    timeout: ReturnType<typeof setTimeout>
+    timeout: ReturnType<typeof setTimeout> | null
   }
 >()
+
+const moduleProcessingQueue: Array<{
+  id: string
+  moduleId: string
+  controller: AbortController
+  timeoutMs: number
+  event: Electron.IpcMainInvokeEvent
+  moduleType: CustomModuleType
+  prompt: string
+  webSearch: boolean
+  enableMarkdown: boolean
+  getSettings: () => AppSettings
+}> = []
+let moduleProcessingInProgress = false
+
+async function processModuleQueue(): Promise<void> {
+  if (moduleProcessingInProgress) return
+  moduleProcessingInProgress = true
+  while (moduleProcessingQueue.length > 0) {
+    const item = moduleProcessingQueue.shift()!
+    try {
+      await executeModuleStream(item)
+    } catch (e) {
+      console.error('[CustomModule] unexpected queue error:', e)
+    }
+  }
+  moduleProcessingInProgress = false
+}
+
+async function executeModuleStream(item: {
+  id: string
+  moduleId: string
+  controller: AbortController
+  timeoutMs: number
+  event: Electron.IpcMainInvokeEvent
+  moduleType: CustomModuleType
+  prompt: string
+  webSearch: boolean
+  enableMarkdown: boolean
+  getSettings: () => AppSettings
+}): Promise<void> {
+  const {
+    id,
+    moduleId,
+    controller,
+    timeoutMs,
+    event,
+    moduleType,
+    prompt,
+    webSearch,
+    enableMarkdown,
+    getSettings
+  } = item
+
+  if (controller.signal.aborted) return
+
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+  streamByModule.set(moduleId, { ...streamByModule.get(moduleId)!, timeout })
+
+  try {
+    let finalPrompt = prompt
+    let searchMeta: { resultCount: number; sources: string[] } | undefined
+
+    if (webSearch) {
+      try {
+        event.sender.send(CUSTOM_MODULES_EVENTS.SEARCHING, {
+          id,
+          moduleId,
+          status: 'searching'
+        })
+        const searchCmd = getSettings().ai.searchMcpCommand
+
+        const aiParams = await extractSearchParamsViaAi({
+          settings: getSettings(),
+          prompt,
+          signal: controller.signal
+        })
+
+        let searchObjective: string
+        let searchQueries: string[]
+        if (aiParams) {
+          searchObjective = aiParams.objective
+          searchQueries = aiParams.searchQueries
+        } else {
+          searchObjective = extractSearchQuery(prompt)
+          searchQueries = extractSearchQueries(prompt)
+          console.log('[CustomModule] AI extraction failed, using regex fallback')
+        }
+
+        console.log(`[CustomModule] search objective: "${searchObjective}"`)
+        console.log(`[CustomModule] search queries: ${JSON.stringify(searchQueries)}`)
+        const searchResults: McpSearchResult = await runMcpSearch(
+          searchCmd,
+          searchObjective,
+          searchQueries,
+          controller.signal
+        )
+        const trimmed = searchResults.text.trim()
+        if (searchResults.resultCount > 0) {
+          searchMeta = {
+            resultCount: searchResults.resultCount,
+            sources: searchResults.sources
+          }
+        }
+        console.log(
+          `[CustomModule] search results length: ${trimmed.length} chars, results: ${searchResults.resultCount}`
+        )
+        if (trimmed.length > 100) {
+          console.log(`[CustomModule] search results preview: ${trimmed.slice(0, 300)}...`)
+        }
+        if (trimmed) {
+          finalPrompt =
+            `基于以下搜索结果来回答用户的问题，请直接使用搜索结果中的信息，不要编造。\n\n` +
+            `搜索结果：\n${trimmed}\n\n` +
+            `用户问题/要求：\n${prompt}`
+        }
+      } catch (e) {
+        const name =
+          e &&
+          typeof e === 'object' &&
+          'name' in e &&
+          typeof (e as { name?: unknown }).name === 'string'
+            ? ((e as { name: string }).name as string)
+            : ''
+        if (name === 'AbortError') throw e
+        const msg = e instanceof Error ? e.message : '搜索失败'
+        console.error('[CustomModule] web search error:', msg)
+      }
+    }
+
+    let acc = ''
+    const text = await requestFromAiStreamed({
+      settings: getSettings(),
+      type: moduleType,
+      prompt: finalPrompt,
+      signal: controller.signal,
+      webSearch,
+      enableMarkdown,
+      onDelta: (delta) => {
+        if (streamByModule.get(moduleId)?.id !== id) return
+        acc += delta
+        try {
+          event.sender.send(CUSTOM_MODULES_EVENTS.CHUNK, { id, moduleId, delta })
+        } catch {
+          void 0
+        }
+      }
+    })
+
+    if (streamByModule.get(moduleId)?.id !== id) return
+    const fullText = text || trimAiText(acc)
+    try {
+      event.sender.send(CUSTOM_MODULES_EVENTS.DONE, {
+        id,
+        moduleId,
+        text: fullText,
+        searchMeta: searchMeta || null
+      })
+    } catch {
+      void 0
+    }
+  } catch (e) {
+    if (streamByModule.get(moduleId)?.id !== id) return
+    const name =
+      e &&
+      typeof e === 'object' &&
+      'name' in e &&
+      typeof (e as { name?: unknown }).name === 'string'
+        ? ((e as { name: string }).name as string)
+        : ''
+    if (name === 'AbortError') {
+      try {
+        event.sender.send(CUSTOM_MODULES_EVENTS.ERROR, {
+          id,
+          moduleId,
+          message: `AI 请求超时（${Math.round(timeoutMs / 1000)}秒），请稍后重试`
+        })
+      } catch {
+        void 0
+      }
+      return
+    }
+    const msg = e instanceof Error ? e.message : 'AI 请求失败'
+    try {
+      event.sender.send(CUSTOM_MODULES_EVENTS.ERROR, { id, moduleId, message: msg })
+    } catch {
+      void 0
+    }
+  } finally {
+    const cur = streamByModule.get(moduleId)
+    if (cur?.id === id) {
+      if (cur.timeout) clearTimeout(cur.timeout)
+      streamByModule.delete(moduleId)
+    }
+  }
+}
 
 const SEARCH_EXTRACT_SYSTEM_PROMPT = `你是一个搜索参数提取专家。你的任务是根据用户的需求，提取出适合Parallel Search MCP中 web_search 工具的参数。
 
@@ -286,155 +482,27 @@ export function registerCustomModuleHandlers(args: { getSettings: () => AppSetti
       } catch {
         void 0
       }
-      clearTimeout(prev.timeout)
+      if (prev.timeout) clearTimeout(prev.timeout)
       streamByModule.delete(moduleId)
     }
 
     const controller = new AbortController()
     const timeoutMs = webSearch ? 120000 : 60000
-    const timeout = setTimeout(() => controller.abort(), timeoutMs)
-    streamByModule.set(moduleId, { id, moduleId, controller, timeout })
+    streamByModule.set(moduleId, { id, moduleId, controller, timeout: null })
 
-    setImmediate(() => {
-      ;(async () => {
-        try {
-          let finalPrompt = prompt
-          let searchMeta: { resultCount: number; sources: string[] } | undefined
-
-          if (webSearch) {
-            try {
-              event.sender.send(CUSTOM_MODULES_EVENTS.SEARCHING, {
-                id,
-                moduleId,
-                status: 'searching'
-              })
-              const searchCmd = args.getSettings().ai.searchMcpCommand
-
-              const aiParams = await extractSearchParamsViaAi({
-                settings: args.getSettings(),
-                prompt,
-                signal: controller.signal
-              })
-
-              let searchObjective: string
-              let searchQueries: string[]
-              if (aiParams) {
-                searchObjective = aiParams.objective
-                searchQueries = aiParams.searchQueries
-              } else {
-                searchObjective = extractSearchQuery(prompt)
-                searchQueries = extractSearchQueries(prompt)
-                console.log('[CustomModule] AI extraction failed, using regex fallback')
-              }
-
-              console.log(`[CustomModule] search objective: "${searchObjective}"`)
-              console.log(`[CustomModule] search queries: ${JSON.stringify(searchQueries)}`)
-              const searchResults: McpSearchResult = await runMcpSearch(
-                searchCmd,
-                searchObjective,
-                searchQueries,
-                controller.signal
-              )
-              const trimmed = searchResults.text.trim()
-              if (searchResults.resultCount > 0) {
-                searchMeta = {
-                  resultCount: searchResults.resultCount,
-                  sources: searchResults.sources
-                }
-              }
-              console.log(
-                `[CustomModule] search results length: ${trimmed.length} chars, results: ${searchResults.resultCount}`
-              )
-              if (trimmed.length > 100) {
-                console.log(`[CustomModule] search results preview: ${trimmed.slice(0, 300)}...`)
-              }
-              if (trimmed) {
-                finalPrompt =
-                  `基于以下搜索结果来回答用户的问题，请直接使用搜索结果中的信息，不要编造。\n\n` +
-                  `搜索结果：\n${trimmed}\n\n` +
-                  `用户问题/要求：\n${prompt}`
-              }
-            } catch (e) {
-              const name =
-                e &&
-                typeof e === 'object' &&
-                'name' in e &&
-                typeof (e as { name?: unknown }).name === 'string'
-                  ? ((e as { name: string }).name as string)
-                  : ''
-              if (name === 'AbortError') throw e
-              const msg = e instanceof Error ? e.message : '搜索失败'
-              console.error('[CustomModule] web search error:', msg)
-            }
-          }
-
-          let acc = ''
-          const text = await requestFromAiStreamed({
-            settings: args.getSettings(),
-            type,
-            prompt: finalPrompt,
-            signal: controller.signal,
-            webSearch,
-            enableMarkdown,
-            onDelta: (delta) => {
-              if (streamByModule.get(moduleId)?.id !== id) return
-              acc += delta
-              try {
-                event.sender.send(CUSTOM_MODULES_EVENTS.CHUNK, { id, moduleId, delta })
-              } catch {
-                void 0
-              }
-            }
-          })
-
-          if (streamByModule.get(moduleId)?.id !== id) return
-          const fullText = text || trimAiText(acc)
-          try {
-            event.sender.send(CUSTOM_MODULES_EVENTS.DONE, {
-              id,
-              moduleId,
-              text: fullText,
-              searchMeta: searchMeta || null
-            })
-          } catch {
-            void 0
-          }
-        } catch (e) {
-          if (streamByModule.get(moduleId)?.id !== id) return
-          const name =
-            e &&
-            typeof e === 'object' &&
-            'name' in e &&
-            typeof (e as { name?: unknown }).name === 'string'
-              ? ((e as { name: string }).name as string)
-              : ''
-          if (name === 'AbortError') {
-            try {
-              event.sender.send(CUSTOM_MODULES_EVENTS.ERROR, {
-                id,
-                moduleId,
-                message: `AI 请求超时（${Math.round(timeoutMs / 1000)}秒），请稍后重试`
-              })
-            } catch {
-              void 0
-            }
-            return
-          }
-          const msg = e instanceof Error ? e.message : 'AI 请求失败'
-          try {
-            event.sender.send(CUSTOM_MODULES_EVENTS.ERROR, { id, moduleId, message: msg })
-          } catch {
-            void 0
-          }
-        } finally {
-          const cur = streamByModule.get(moduleId)
-          if (cur?.id === id) {
-            clearTimeout(cur.timeout)
-            streamByModule.delete(moduleId)
-          }
-        }
-      })()
+    moduleProcessingQueue.push({
+      id,
+      moduleId,
+      controller,
+      timeoutMs,
+      event,
+      moduleType: type,
+      prompt,
+      webSearch,
+      enableMarkdown,
+      getSettings: args.getSettings
     })
+    processModuleQueue()
 
     return { id, moduleId }
   })
@@ -448,7 +516,7 @@ export function registerCustomModuleHandlers(args: { getSettings: () => AppSetti
           id: string
           moduleId: string
           controller: AbortController
-          timeout: ReturnType<typeof setTimeout>
+          timeout: ReturnType<typeof setTimeout> | null
         }
       | undefined
     let foundModuleId: string | undefined
@@ -460,6 +528,12 @@ export function registerCustomModuleHandlers(args: { getSettings: () => AppSetti
       }
     }
     if (!cur) return false
+
+    const qIdx = moduleProcessingQueue.findIndex((q) => q.id === id)
+    if (qIdx >= 0) {
+      moduleProcessingQueue.splice(qIdx, 1)
+    }
+
     try {
       event.sender.send(CUSTOM_MODULES_EVENTS.ERROR, {
         id,
@@ -474,7 +548,7 @@ export function registerCustomModuleHandlers(args: { getSettings: () => AppSetti
     } catch {
       void 0
     }
-    clearTimeout(cur.timeout)
+    if (cur.timeout) clearTimeout(cur.timeout)
     if (foundModuleId) streamByModule.delete(foundModuleId)
     return true
   })
