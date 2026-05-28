@@ -232,30 +232,31 @@ function saveCustomModules(): void {
 const draggedModuleId = ref<string | null>(null)
 const dragOverModuleId = ref<string | null>(null)
 
-function onModuleDragStart(e: DragEvent, moduleId: string): void {
-  draggedModuleId.value = moduleId
-  if (e.dataTransfer) {
-    e.dataTransfer.effectAllowed = 'move'
-    e.dataTransfer.setData('text/plain', moduleId)
+function onModuleDragStart(payload: { id: string; event: DragEvent }): void {
+  draggedModuleId.value = payload.id
+  if (payload.event.dataTransfer) {
+    payload.event.dataTransfer.effectAllowed = 'move'
+    payload.event.dataTransfer.setData('text/plain', payload.id)
   }
 }
 
-function onModuleDragOver(e: DragEvent, moduleId: string): void {
-  if (draggedModuleId.value === moduleId) return
-  e.preventDefault()
-  if (e.dataTransfer) {
-    e.dataTransfer.dropEffect = 'move'
+function onModuleDragOver(payload: { id: string; event: DragEvent }): void {
+  if (draggedModuleId.value === payload.id) return
+  payload.event.preventDefault()
+  if (payload.event.dataTransfer) {
+    payload.event.dataTransfer.dropEffect = 'move'
   }
-  dragOverModuleId.value = moduleId
+  dragOverModuleId.value = payload.id
 }
 
 function onModuleDragLeave(): void {
   dragOverModuleId.value = null
 }
 
-function onModuleDrop(e: DragEvent, targetModuleId: string): void {
-  e.preventDefault()
+function onModuleDrop(payload: { id: string; event: DragEvent }): void {
+  payload.event.preventDefault()
   const sourceId = draggedModuleId.value
+  const targetModuleId = payload.id
   if (!sourceId || sourceId === targetModuleId) {
     resetModuleDragState()
     return
@@ -1718,15 +1719,13 @@ onUnmounted(() => {
           :loading="!!customModulesLoading[mod.id]"
           :searching="!!customModulesSearching[mod.id]"
           :error-text="customModulesError[mod.id] || ''"
-          :class="{
-            'is-dragging': draggedModuleId === mod.id,
-            'is-drag-over': dragOverModuleId === mod.id
-          }"
-          draggable="true"
-          @dragstart="onModuleDragStart($event, mod.id)"
-          @dragover="onModuleDragOver($event, mod.id)"
+          :module-id="mod.id"
+          :is-dragging="draggedModuleId === mod.id"
+          :is-drag-over="dragOverModuleId === mod.id"
+          @dragstart="onModuleDragStart"
+          @dragover="onModuleDragOver"
           @dragleave="onModuleDragLeave"
-          @drop="onModuleDrop($event, mod.id)"
+          @drop="onModuleDrop"
           @dragend="onModuleDragEnd"
           @refresh="enqueueModuleRefresh(mod)"
           @edit="openEditModuleDialog(mod)"
