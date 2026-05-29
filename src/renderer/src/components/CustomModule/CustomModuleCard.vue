@@ -18,13 +18,50 @@ const props = defineProps<{
   loading: boolean
   errorText: string
   searching?: boolean
+  moduleId?: string
+  isDragging?: boolean
+  isDragOver?: boolean
 }>()
 
 const emit = defineEmits<{
   refresh: []
   edit: []
   delete: []
+  dragstart: [payload: { id: string; event: DragEvent }]
+  dragover: [payload: { id: string; event: DragEvent }]
+  dragleave: []
+  drop: [payload: { id: string; event: DragEvent }]
+  dragend: []
 }>()
+
+function onDragStart(e: DragEvent): void {
+  if (props.moduleId) {
+    emit('dragstart', { id: props.moduleId, event: e })
+  }
+}
+
+function onDragOver(e: DragEvent): void {
+  if (props.moduleId) {
+    e.preventDefault()
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
+    emit('dragover', { id: props.moduleId, event: e })
+  }
+}
+
+function onDragLeave(): void {
+  emit('dragleave')
+}
+
+function onDrop(e: DragEvent): void {
+  e.preventDefault()
+  if (props.moduleId) {
+    emit('drop', { id: props.moduleId, event: e })
+  }
+}
+
+function onDragEnd(): void {
+  emit('dragend')
+}
 
 const expanded = ref(false)
 
@@ -368,7 +405,18 @@ function openLink(url: string): void {
   <section
     class="card custom-module-card"
     :style="cardStyle"
-    :class="{ loading, 'has-error': !!errorText }"
+    :class="{
+      loading,
+      'has-error': !!errorText,
+      'is-dragging': isDragging,
+      'is-drag-over': isDragOver
+    }"
+    :draggable="!!moduleId"
+    @dragstart="onDragStart"
+    @dragover="onDragOver"
+    @dragleave="onDragLeave"
+    @drop="onDrop"
+    @dragend="onDragEnd"
   >
     <div class="card-head">
       <div class="card-title-row">
@@ -715,6 +763,7 @@ function openLink(url: string): void {
 
 .error-text {
   color: #ff8a8a;
+  white-space: break-spaces;
 }
 
 .searching-text {
