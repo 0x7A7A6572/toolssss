@@ -152,17 +152,14 @@ function save(): void {
 </script>
 
 <template>
-  <a-modal
+  <a-drawer
     :open="open"
     :width="560"
+    :title="mode === 'add' ? '添加模块' : '编辑模块'"
     centered
-    :mask-closable="!draftSaving"
-    :keyboard="!draftSaving"
-    :closable="!draftSaving"
-    :footer="null"
-    @cancel="close"
+    @close="close"
   >
-    <div class="picker-title">{{ mode === 'add' ? '添加模块' : '编辑模块' }}</div>
+    <!-- <div class="picker-title">{{ mode === 'add' ? '添加模块' : '编辑模块' }}</div> -->
     <div class="module-dialog-form">
       <div class="flex gap-[10px]">
         <div
@@ -296,7 +293,7 @@ function save(): void {
         mode === 'add' ? '添加' : '保存'
       }}</a-button>
     </div>
-  </a-modal>
+  </a-drawer>
 </template>
 
 <style lang="scss" scoped>

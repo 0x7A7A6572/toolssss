@@ -52,8 +52,8 @@ function onChange(e: Event): void {
 .app-switch {
   position: relative;
   display: inline-block;
-  width: 46px;
-  height: 26px;
+  width: 40px;
+  height: 20px;
   justify-self: end;
 }
 
@@ -78,8 +78,8 @@ function onChange(e: Event): void {
 .app-switch__slider:before {
   position: absolute;
   content: '';
-  height: 20px;
-  width: 20px;
+  height: 14px;
+  width: 14px;
   left: 3px;
   bottom: 3px;
   background: #d5d5d5;

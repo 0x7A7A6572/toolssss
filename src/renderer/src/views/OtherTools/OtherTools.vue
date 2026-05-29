@@ -1,10 +1,30 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import {
+  computed,
+  FunctionalComponent,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  reactive,
+  ref,
+  watch
+} from 'vue'
 import { WeatherTool } from '../../utils/weather'
 import type { WeatherDashboard, WeatherProvinceCity } from '@shared/weather'
 import { DEFAULT_SETTINGS, type AppSettings } from '@shared/settings'
 import { useSettingsStore } from '@renderer/state/settings'
-import { PencilLine, Settings, Sparkles, Plus } from 'lucide-vue-next'
+import {
+  Stone,
+  PencilLine,
+  Settings,
+  Sparkles,
+  Plus,
+  ToolCase,
+  Calendar,
+  ChartLine,
+  CloudSun,
+  LucideProps
+} from 'lucide-vue-next'
 import type {
   CustomModuleConfig,
   CustomModuleCachedContent,
@@ -27,6 +47,7 @@ import WeatherHourlyTrendsChart, {
 } from '../../components/WeatherHourlyTrendsChart.vue'
 import { LegalHoliday, SolarDay } from 'tyme4ts'
 import answerBookData from '../../../../libs/book-of-answers.json'
+import AppSwitch from '@renderer/components/AppSwitch.vue'
 
 const DEFAULT_STATION_ID = '59431'
 const stationId = ref<string>(localStorage.getItem('weather.stationId') ?? DEFAULT_STATION_ID)
@@ -186,6 +207,93 @@ const BUILTIN_MODULE_IDS = [
   'work-calendar',
   'stack-tools'
 ] as const
+
+const BUILTIN_MODULE_VISIBILITY_KEY = 'builtinModules.visibility'
+
+const BUILTIN_MODULE_LABELS: Record<
+  string,
+  { title: string; icon: FunctionalComponent<LucideProps> }
+> = {
+  'weather-today': {
+    title: '今日天气',
+    icon: CloudSun
+  },
+  'weather-chart': {
+    title: '天气图表',
+    icon: ChartLine
+  },
+  'work-calendar': {
+    title: '打工人日历',
+    icon: Calendar
+  },
+  'stack-tools': {
+    title: '迷你工具',
+    icon: ToolCase
+  }
+}
+
+const moduleVisibility = reactive<Record<string, boolean>>(loadBuiltinModuleVisibility())
+const moduleVisibilityDrawerOpen = ref(false)
+
+const addBtnVisible = ref(false)
+let addBtnHideTimer: number | null = null
+
+function onPageMouseMove(e: MouseEvent): void {
+  const viewportHeight = window.innerHeight
+  const threshold = viewportHeight * 0.7
+  if (e.clientY >= threshold) {
+    if (addBtnHideTimer !== null) {
+      window.clearTimeout(addBtnHideTimer)
+      addBtnHideTimer = null
+    }
+    addBtnVisible.value = true
+  } else {
+    if (addBtnVisible.value) {
+      scheduleAddBtnHide()
+    }
+  }
+}
+
+function onPageMouseLeave(): void {
+  scheduleAddBtnHide()
+}
+
+function scheduleAddBtnHide(): void {
+  if (addBtnHideTimer !== null) return
+  addBtnHideTimer = window.setTimeout(() => {
+    addBtnVisible.value = false
+    addBtnHideTimer = null
+  }, 300)
+}
+
+function loadBuiltinModuleVisibility(): Record<string, boolean> {
+  try {
+    const raw = localStorage.getItem(BUILTIN_MODULE_VISIBILITY_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw) as Record<string, unknown>
+      if (parsed && typeof parsed === 'object') {
+        return Object.fromEntries(BUILTIN_MODULE_IDS.map((id) => [id, parsed[id] !== false]))
+      }
+    }
+  } catch (e) {
+    console.error(e)
+  }
+  return Object.fromEntries(BUILTIN_MODULE_IDS.map((id) => [id, true]))
+}
+
+function saveBuiltinModuleVisibility(): void {
+  try {
+    localStorage.setItem(BUILTIN_MODULE_VISIBILITY_KEY, JSON.stringify(moduleVisibility))
+  } catch (e) {
+    console.error(e)
+  }
+}
+
+function toggleModuleVisibility(id: string): void {
+  moduleVisibility[id] = !moduleVisibility[id]
+  saveBuiltinModuleVisibility()
+}
+
 const ADD_MODULE_ID = '__add__'
 const GRID_ORDER_KEY = 'customModules.gridOrder'
 
@@ -268,6 +376,128 @@ function generateModuleId(): string {
   return `cm-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
 
+const DEFAULT_CUSTOM_MODULES: CustomModuleConfig[] = [
+  {
+    id: 'cm-demo-text',
+    name: '每日编程小知识',
+    type: 'text',
+    prompt: '分享一个实用的编程小技巧，控制在100字以内',
+    createdAt: Date.now(),
+    minHeight: 180,
+    maxHeight: 300,
+    enableMarkdown: true,
+    updateFrequency: 'daily'
+  },
+  {
+    id: 'cm-demo-ranking',
+    name: '前端技术栈排行',
+    type: 'ranking',
+    prompt: '获取当前前端开发技术栈的流行度排行，要求以JSON格式输出，包含多个维度的排行榜',
+    createdAt: Date.now(),
+    minHeight: 180,
+    maxHeight: 300,
+    enableMarkdown: false,
+    updateFrequency: 'weekly'
+  },
+  {
+    id: 'cm-demo-link',
+    name: '开发者资讯简报',
+    type: 'link',
+    prompt: '推荐当前热门的开发者工具、技术网站和学习资源，以JSON格式输出',
+    createdAt: Date.now(),
+    minHeight: 180,
+    maxHeight: 300,
+    enableMarkdown: false,
+    updateFrequency: 'daily'
+  },
+  {
+    id: 'cm-demo-chart',
+    name: '技术趋势数据',
+    type: 'chart',
+    prompt: '展示当前主流前端框架的使用率数据和语言趋势，以JSON格式输出',
+    createdAt: Date.now(),
+    minHeight: 200,
+    maxHeight: 400,
+    enableMarkdown: false,
+    updateFrequency: 'monthly'
+  }
+]
+
+const DEFAULT_CUSTOM_MODULES_CACHE: Record<string, CustomModuleCachedContent> = {
+  'cm-demo-text': {
+    text: '### 🔧 解构赋值让代码更简洁\n\nJavaScript 的解构赋值可以从数组或对象中提取值并赋给变量：\n\n```js\n// 对象解构\nconst { name, age } = user;\n// 数组解构\nconst [first, ...rest] = arr;\n```\n\n让代码更简洁、可读性更强！',
+    rawText:
+      '### 🔧 解构赋值让代码更简洁\n\nJavaScript 的解构赋值可以从数组或对象中提取值并赋给变量：\n\n```js\n// 对象解构\nconst { name, age } = user;\n// 数组解构\nconst [first, ...rest] = arr;\n```\n\n让代码更简洁、可读性更强！',
+    updatedAt: Date.now()
+  },
+  'cm-demo-ranking': {
+    rankings: [
+      { title: '前端框架', items: ['React', 'Vue', 'Angular', 'Svelte', 'Solid'] },
+      {
+        title: 'CSS 方案',
+        items: ['Tailwind CSS', 'CSS Modules', 'Styled Components', 'Sass/SCSS']
+      },
+      { title: '构建工具', items: ['Vite', 'Webpack', 'Turbopack', 'esbuild'] }
+    ],
+    rawText:
+      '{"rankings":[{"title":"前端框架","items":["React","Vue","Angular","Svelte","Solid"]},{"title":"CSS 方案","items":["Tailwind CSS","CSS Modules","Styled Components","Sass/SCSS"]},{"title":"构建工具","items":["Vite","Webpack","Turbopack","esbuild"]}]}',
+    updatedAt: Date.now()
+  },
+  'cm-demo-link': {
+    links: [
+      {
+        title: 'GitHub Trending',
+        link: 'https://github.com/trending',
+        description: '每日热门开源项目'
+      },
+      { title: 'Hacker News', link: 'https://news.ycombinator.com', description: '科技新闻社区' },
+      { title: 'Dev.to', link: 'https://dev.to', description: '开发者技术社区' },
+      {
+        title: 'MDN Web Docs',
+        link: 'https://developer.mozilla.org/zh-CN/',
+        description: 'Web 技术权威文档'
+      }
+    ],
+    rawText:
+      '{"items":[{"title":"GitHub Trending","link":"https://github.com/trending","description":"每日热门开源项目"},{"title":"Hacker News","link":"https://news.ycombinator.com","description":"科技新闻社区"},{"title":"Dev.to","link":"https://dev.to","description":"开发者技术社区"},{"title":"MDN Web Docs","link":"https://developer.mozilla.org/zh-CN/","description":"Web 技术权威文档"}]}',
+    updatedAt: Date.now()
+  },
+  'cm-demo-chart': {
+    charts: [
+      {
+        title: '前端框架使用率',
+        type: 'bar',
+        labels: ['React', 'Vue', 'Angular', 'Svelte', 'Solid'],
+        series: [
+          { name: '使用率', type: 'bar', data: [42, 28, 16, 8, 6], color: 'rgba(0, 220, 255, 0.9)' }
+        ]
+      },
+      {
+        title: 'JavaScript 生态',
+        type: 'line',
+        labels: ['2019', '2020', '2021', '2022', '2023', '2024'],
+        series: [
+          {
+            name: 'React',
+            type: 'line',
+            data: [38, 40, 42, 43, 42, 42],
+            color: 'rgba(0, 220, 255, 0.9)'
+          },
+          {
+            name: 'Vue',
+            type: 'line',
+            data: [22, 25, 28, 30, 29, 28],
+            color: 'rgba(60, 180, 120, 0.9)'
+          }
+        ]
+      }
+    ],
+    rawText:
+      '{"charts":[{"title":"前端框架使用率","type":"bar","labels":["React","Vue","Angular","Svelte","Solid"],"series":[{"name":"使用率","type":"bar","data":[42,28,16,8,6]}]},{"title":"JavaScript 生态","type":"line","labels":["2019","2020","2021","2022","2023","2024"],"series":[{"name":"React","type":"line","data":[38,40,42,43,42,42]},{"name":"Vue","type":"line","data":[22,25,28,30,29,28]}]}]}',
+    updatedAt: Date.now()
+  }
+}
+
 function loadCustomModules(): void {
   try {
     const raw = localStorage.getItem(CUSTOM_MODULES_STORAGE_KEY)
@@ -286,10 +516,14 @@ function loadCustomModules(): void {
               (item as Record<string, unknown>).type === 'chart') &&
             typeof (item as Record<string, unknown>).prompt === 'string'
         )
+        return
       }
     }
+    customModules.value = DEFAULT_CUSTOM_MODULES.map((m) => ({ ...m, createdAt: Date.now() }))
+    saveCustomModules()
   } catch {
-    customModules.value = []
+    customModules.value = DEFAULT_CUSTOM_MODULES.map((m) => ({ ...m, createdAt: Date.now() }))
+    saveCustomModules()
   }
 }
 
@@ -366,10 +600,24 @@ function loadCustomModulesCache(): void {
       const parsed = JSON.parse(raw) as Record<string, unknown>
       if (parsed && typeof parsed === 'object') {
         customModulesCache.value = parsed as Record<string, CustomModuleCachedContent>
+        return
       }
     }
+    customModulesCache.value = Object.fromEntries(
+      Object.entries(DEFAULT_CUSTOM_MODULES_CACHE).map(([id, content]) => [
+        id,
+        { ...content, updatedAt: Date.now() }
+      ])
+    )
+    saveCustomModulesCache()
   } catch {
-    customModulesCache.value = {}
+    customModulesCache.value = Object.fromEntries(
+      Object.entries(DEFAULT_CUSTOM_MODULES_CACHE).map(([id, content]) => [
+        id,
+        { ...content, updatedAt: Date.now() }
+      ])
+    )
+    saveCustomModulesCache()
   }
 }
 
@@ -1544,13 +1792,23 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="page-content">
+  <div class="page-content" @mousemove="onPageMouseMove" @mouseleave="onPageMouseLeave">
     <header class="header">
       <div class="flex flex-col">
         <div class="title">Hello</div>
         <div class="subtitle">...</div>
       </div>
-      <div class="ctrl-btns"></div>
+      <div class="ctrl-btns">
+        <div
+          class="module-visibility-btn"
+          type="button"
+          title="模块显示设置"
+          @click="moduleVisibilityDrawerOpen = true"
+        >
+          <Stone :size="18" />
+          <span>个性化设置</span>
+        </div>
+      </div>
     </header>
 
     <div>
@@ -1558,6 +1816,7 @@ onUnmounted(() => {
         <template v-for="itemId in orderedGridItems" :key="itemId">
           <div
             v-if="itemId === 'weather-today'"
+            v-show="moduleVisibility['weather-today']"
             class="left-col"
             draggable="true"
             :class="{
@@ -1671,6 +1930,7 @@ onUnmounted(() => {
 
           <div
             v-else-if="itemId === 'weather-chart'"
+            v-show="moduleVisibility['weather-chart']"
             class="right-col"
             draggable="true"
             :class="{
@@ -1747,6 +2007,7 @@ onUnmounted(() => {
 
           <section
             v-else-if="itemId === 'work-calendar'"
+            v-show="moduleVisibility['work-calendar']"
             class="card work-calendar-card"
             draggable="true"
             :class="{
@@ -1805,6 +2066,7 @@ onUnmounted(() => {
 
           <div
             v-else-if="itemId === 'stack-tools'"
+            v-show="moduleVisibility['stack-tools']"
             class="stack-tool-wrap"
             draggable="true"
             :class="{
@@ -1948,6 +2210,10 @@ onUnmounted(() => {
           </section>
         </template>
       </div>
+    </div>
+
+    <div class="add-btn-float" :class="{ 'show-in': addBtnVisible }" @click="openAddModuleDialog">
+      <Plus :size="24" />
     </div>
   </div>
 
@@ -2108,6 +2374,32 @@ onUnmounted(() => {
     @close="moduleDialogOpen = false"
     @saved="handleModuleSaved"
   />
+
+  <a-drawer
+    :open="moduleVisibilityDrawerOpen"
+    title="模块显示设置"
+    placement="right"
+    :width="320"
+    @close="moduleVisibilityDrawerOpen = false"
+  >
+    <div class="module-visibility-list">
+      <div v-for="id in BUILTIN_MODULE_IDS" :key="id" class="module-visibility-item">
+        <div class="flex items-center gap-[10px]">
+          <component
+            :is="BUILTIN_MODULE_LABELS[id].icon"
+            :size="16"
+            class="module-visibility-icon"
+          />
+          <span class="module-visibility-label">{{ BUILTIN_MODULE_LABELS[id].title || id }}</span>
+        </div>
+
+        <AppSwitch
+          :model-value="moduleVisibility[id]"
+          @update:model-value="toggleModuleVisibility(id)"
+        />
+      </div>
+    </div>
+  </a-drawer>
 </template>
 
 <style lang="scss" scoped>
@@ -2383,6 +2675,21 @@ onUnmounted(() => {
 }
 
 .ctrl-btns {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  .module-visibility-btn {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    border: 1px solid rgba(180, 180, 180, 0.308);
+    padding: 4px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
   .avatar-box {
     display: flex;
     justify-content: center;
@@ -2392,6 +2699,32 @@ onUnmounted(() => {
     border-radius: 50%;
     background-color: #f5f5f5bb;
   }
+}
+
+.module-visibility-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.module-visibility-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  transition: background 0.15s ease;
+}
+
+.module-visibility-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.module-visibility-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(235, 235, 245, 0.92);
 }
 
 .title {
@@ -2866,12 +3199,6 @@ onUnmounted(() => {
   padding: 12px;
 }
 
-.answer-front {
-  /* background:
-    radial-gradient(600px 220px at 40% 0%, rgba(90, 210, 255, 0.22), transparent),
-    rgba(255, 255, 255, 0.03); */
-}
-
 .answer-back {
   transform: rotateY(180deg);
   background:
@@ -3332,6 +3659,31 @@ onUnmounted(() => {
 @media (max-width: 900px) {
   .weather-layout {
     grid-template-columns: 1fr;
+  }
+}
+
+.add-btn-float {
+  position: fixed;
+  z-index: 1000;
+  bottom: -80px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: var(--ev-c-theme);
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &.show-in {
+    bottom: 24px;
+  }
+
+  &:hover {
+    box-shadow: 0 0 0 2px rgba(0, 220, 255, 0.3);
   }
 }
 </style>
