@@ -10,22 +10,23 @@ import type {
   CustomModuleCachedContent,
   CustomModuleRankingItem,
   CustomModuleLinkItem,
-  CustomModuleSearchMeta,
-  UpdateFrequency
+  CustomModuleChartItem,
+  CustomModuleSearchMeta
 } from '@shared/custom-modules'
 import {
   CUSTOM_MODULES_EVENTS,
   CUSTOM_MODULES_STORAGE_KEY,
   CUSTOM_MODULES_CACHE_KEY
 } from '@shared/custom-modules'
-import CustomModuleCard from '../../components/CustomModuleCard.vue'
+import CustomModuleCard from '../../components/CustomModule/CustomModuleCard.vue'
+import ModuleDialog from '../../components/CustomModule/ModuleDialog.vue'
+import type { ModuleDialogData } from '../../components/CustomModule/ModuleDialog.vue'
 import SevenDayTempChart from '../../components/SevenDayTempChart.vue'
 import WeatherHourlyTrendsChart, {
   type HourlyMetricKey
 } from '../../components/WeatherHourlyTrendsChart.vue'
 import { LegalHoliday, SolarDay } from 'tyme4ts'
 import answerBookData from '../../../../libs/book-of-answers.json'
-import AppSwitch from '@renderer/components/AppSwitch.vue'
 
 const DEFAULT_STATION_ID = '59431'
 const stationId = ref<string>(localStorage.getItem('weather.stationId') ?? DEFAULT_STATION_ID)
@@ -181,17 +182,16 @@ const customModulesStreamId = ref<Record<string, string>>({})
 
 const moduleDialogOpen = ref(false)
 const moduleDialogMode = ref<'add' | 'edit'>('add')
-const moduleDraftId = ref('')
-const moduleDraftName = ref('')
-const moduleDraftType = ref<'text' | 'ranking' | 'link'>('text')
-const moduleDraftPrompt = ref('')
-const moduleDraftWebSearch = ref(false)
-const moduleDraftMinHeight = ref<number>(180)
-const moduleDraftEnableMarkdown = ref(false)
-const moduleDraftUpdateFrequency = ref<UpdateFrequency>('daily')
-const moduleDraftAdvancedOpen = ref(false)
-const moduleDraftSaving = ref(false)
-const moduleDraftError = ref('')
+const editingModuleId = ref('')
+const moduleDialogInitial = ref<ModuleDialogData>({
+  name: '',
+  type: 'text',
+  prompt: '',
+  webSearch: false,
+  minHeight: 180,
+  enableMarkdown: false,
+  updateFrequency: 'daily'
+})
 
 function generateModuleId(): string {
   return `cm-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
@@ -211,7 +211,8 @@ function loadCustomModules(): void {
             typeof (item as Record<string, unknown>).name === 'string' &&
             ((item as Record<string, unknown>).type === 'text' ||
               (item as Record<string, unknown>).type === 'ranking' ||
-              (item as Record<string, unknown>).type === 'link') &&
+              (item as Record<string, unknown>).type === 'link' ||
+              (item as Record<string, unknown>).type === 'chart') &&
             typeof (item as Record<string, unknown>).prompt === 'string'
         )
       }
@@ -310,87 +311,65 @@ function saveCustomModulesCache(): void {
 
 function openAddModuleDialog(): void {
   moduleDialogMode.value = 'add'
-  moduleDraftId.value = ''
-  moduleDraftName.value = ''
-  moduleDraftType.value = 'text'
-  moduleDraftPrompt.value = ''
-  moduleDraftWebSearch.value = false
-  moduleDraftMinHeight.value = 180
-  moduleDraftEnableMarkdown.value = false
-  moduleDraftUpdateFrequency.value = 'daily'
-  moduleDraftError.value = ''
+  editingModuleId.value = ''
+  moduleDialogInitial.value = {
+    name: '',
+    type: 'text',
+    prompt: '',
+    webSearch: false,
+    minHeight: 180,
+    enableMarkdown: false,
+    updateFrequency: 'daily'
+  }
   moduleDialogOpen.value = true
 }
 
 function openEditModuleDialog(module: CustomModuleConfig): void {
   moduleDialogMode.value = 'edit'
-  moduleDraftId.value = module.id
-  moduleDraftName.value = module.name
-  moduleDraftType.value = module.type
-  moduleDraftPrompt.value = module.prompt
-  moduleDraftWebSearch.value = !!module.webSearch
-  moduleDraftMinHeight.value = module.minHeight ?? 180
-  moduleDraftEnableMarkdown.value = !!module.enableMarkdown
-  moduleDraftUpdateFrequency.value = module.updateFrequency ?? 'realtime'
-  moduleDraftError.value = ''
+  editingModuleId.value = module.id
+  moduleDialogInitial.value = {
+    name: module.name,
+    type: module.type,
+    prompt: module.prompt,
+    webSearch: !!module.webSearch,
+    minHeight: module.minHeight ?? 180,
+    enableMarkdown: !!module.enableMarkdown,
+    updateFrequency: module.updateFrequency ?? 'realtime'
+  }
   moduleDialogOpen.value = true
 }
 
-function closeModuleDialog(): void {
-  if (moduleDraftSaving.value) return
-  moduleDialogOpen.value = false
-  moduleDraftError.value = ''
-  moduleDraftAdvancedOpen.value = false
-}
-
-function validateModuleDraft(): string {
-  if (!moduleDraftName.value.trim()) return '请输入模块名称'
-  if (!moduleDraftPrompt.value.trim()) return '请输入提示词'
-  return ''
-}
-
-function saveModuleDialog(): void {
-  const err = validateModuleDraft()
-  if (err) {
-    moduleDraftError.value = err
-    return
-  }
-  moduleDraftSaving.value = true
-  moduleDraftError.value = ''
-  try {
-    if (moduleDialogMode.value === 'add') {
-      const newModule: CustomModuleConfig = {
-        id: generateModuleId(),
-        name: moduleDraftName.value.trim(),
-        type: moduleDraftType.value,
-        prompt: moduleDraftPrompt.value.replace(/\r\n/g, '\n').trim(),
-        createdAt: Date.now(),
-        webSearch: moduleDraftWebSearch.value,
-        minHeight: moduleDraftMinHeight.value,
-        enableMarkdown: moduleDraftEnableMarkdown.value,
-        updateFrequency: moduleDraftUpdateFrequency.value
-      }
-      customModules.value.push(newModule)
-    } else {
-      const idx = customModules.value.findIndex((m) => m.id === moduleDraftId.value)
-      if (idx >= 0) {
-        customModules.value[idx] = {
-          ...customModules.value[idx],
-          name: moduleDraftName.value.trim(),
-          type: moduleDraftType.value,
-          prompt: moduleDraftPrompt.value.replace(/\r\n/g, '\n').trim(),
-          webSearch: moduleDraftWebSearch.value,
-          minHeight: moduleDraftMinHeight.value,
-          enableMarkdown: moduleDraftEnableMarkdown.value,
-          updateFrequency: moduleDraftUpdateFrequency.value
-        }
+function handleModuleSaved(data: ModuleDialogData): void {
+  if (moduleDialogMode.value === 'add') {
+    const newModule: CustomModuleConfig = {
+      id: generateModuleId(),
+      name: data.name,
+      type: data.type,
+      prompt: data.prompt,
+      createdAt: Date.now(),
+      webSearch: data.webSearch,
+      minHeight: data.minHeight,
+      enableMarkdown: data.enableMarkdown,
+      updateFrequency: data.updateFrequency
+    }
+    customModules.value.push(newModule)
+  } else {
+    const idx = customModules.value.findIndex((m) => m.id === editingModuleId.value)
+    if (idx >= 0) {
+      customModules.value[idx] = {
+        ...customModules.value[idx],
+        name: data.name,
+        type: data.type,
+        prompt: data.prompt,
+        webSearch: data.webSearch,
+        minHeight: data.minHeight,
+        enableMarkdown: data.enableMarkdown,
+        updateFrequency: data.updateFrequency
       }
     }
-    saveCustomModules()
-  } finally {
-    moduleDraftSaving.value = false
   }
-  closeModuleDialog()
+  saveCustomModules()
+  moduleDialogOpen.value = false
 }
 
 function deleteModule(moduleId: string): void {
@@ -438,6 +417,11 @@ function onCustomModuleChunk(_event: unknown, payload: unknown): void {
     if (parsed) {
       updateModuleCache(moduleId, { links: parsed })
     }
+  } else if (customModules.value.find((m) => m.id === moduleId)?.type === 'chart') {
+    const parsed = tryParseChartsFromText(next)
+    if (parsed) {
+      updateModuleCache(moduleId, { charts: parsed })
+    }
   }
 }
 
@@ -467,6 +451,13 @@ function onCustomModuleDone(_event: unknown, payload: unknown): void {
     const parsed = tryParseLinksFromText(text)
     if (parsed) {
       updateModuleCache(moduleId, { links: parsed, rawText: text, searchMeta })
+    } else {
+      updateModuleCache(moduleId, { rawText: text, searchMeta })
+    }
+  } else if (module?.type === 'chart') {
+    const parsed = tryParseChartsFromText(text)
+    if (parsed) {
+      updateModuleCache(moduleId, { charts: parsed, rawText: text, searchMeta })
     } else {
       updateModuleCache(moduleId, { rawText: text, searchMeta })
     }
@@ -659,6 +650,106 @@ function tryParseLinksFromText(rawText: string): CustomModuleLinkItem[] | null {
     idx = objEnd + 1
   }
 
+  return extracted.length > 0 ? extracted : null
+}
+
+function tryParseChartsFromText(rawText: string): CustomModuleChartItem[] | null {
+  const cleaned = rawText
+    .replace(/```json\s*/gi, '')
+    .replace(/```\s*/g, '')
+    .trim()
+
+  try {
+    const firstBrace = cleaned.indexOf('{')
+    const lastBrace = cleaned.lastIndexOf('}')
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+      const jsonStr = cleaned.slice(firstBrace, lastBrace + 1)
+      const data = JSON.parse(jsonStr) as { charts?: unknown }
+      if (data.charts && Array.isArray(data.charts)) {
+        const charts: CustomModuleChartItem[] = []
+        for (const item of data.charts) {
+          if (item && typeof item === 'object') {
+            const c = item as Record<string, unknown>
+            const title = typeof c.title === 'string' ? c.title.trim() : ''
+            const type = c.type === 'bar' || c.type === 'line' || c.type === 'pie' ? c.type : 'bar'
+            const labels = Array.isArray(c.labels)
+              ? c.labels.filter((l): l is string => typeof l === 'string')
+              : []
+            const series = Array.isArray(c.series)
+              ? c.series
+                  .filter((s): s is Record<string, unknown> => s !== null && typeof s === 'object')
+                  .map((s) => ({
+                    name: typeof s.name === 'string' ? s.name.trim() : '',
+                    type: (s.type === 'bar' || s.type === 'line' || s.type === 'pie'
+                      ? s.type
+                      : 'bar') as 'bar' | 'line' | 'pie',
+                    data: Array.isArray(s.data)
+                      ? s.data.filter((d): d is number => typeof d === 'number')
+                      : [],
+                    color: typeof s.color === 'string' ? s.color : undefined
+                  }))
+                  .filter((s) => s.name && s.data.length > 0)
+              : []
+            if (title && labels.length > 0 && series.length > 0) {
+              charts.push({ title, type, labels, series })
+            }
+          }
+        }
+        if (charts.length > 0) return charts
+      }
+    }
+  } catch {
+    // full parse failed — fall through
+  }
+
+  const extracted: CustomModuleChartItem[] = []
+  let idx = 0
+  while (idx < cleaned.length) {
+    const objStart = cleaned.indexOf('{', idx)
+    if (objStart < 0) break
+    let depth = 0
+    let objEnd = -1
+    for (let i = objStart; i < cleaned.length; i++) {
+      if (cleaned[i] === '{') depth++
+      else if (cleaned[i] === '}') {
+        depth--
+        if (depth === 0) {
+          objEnd = i
+          break
+        }
+      }
+    }
+    if (objEnd < 0) break
+    try {
+      const obj = JSON.parse(cleaned.slice(objStart, objEnd + 1)) as Record<string, unknown>
+      if (obj.series && Array.isArray(obj.series) && Array.isArray(obj.labels)) {
+        const title = typeof obj.title === 'string' ? obj.title.trim() : ''
+        const type =
+          obj.type === 'bar' || obj.type === 'line' || obj.type === 'pie' ? obj.type : 'bar'
+        const labels = obj.labels.filter((l: unknown): l is string => typeof l === 'string')
+        const series = obj.series
+          .filter((s: unknown): s is Record<string, unknown> => s !== null && typeof s === 'object')
+          .map((s: Record<string, unknown>) => ({
+            name: typeof s.name === 'string' ? s.name.trim() : '',
+            type: (s.type === 'bar' || s.type === 'line' || s.type === 'pie' ? s.type : 'bar') as
+              | 'bar'
+              | 'line'
+              | 'pie',
+            data: Array.isArray(s.data)
+              ? s.data.filter((d: unknown): d is number => typeof d === 'number')
+              : [],
+            color: typeof s.color === 'string' ? s.color : undefined
+          }))
+          .filter((s) => s.name && s.data.length > 0)
+        if (title && labels.length > 0 && series.length > 0) {
+          extracted.push({ title, type, labels, series })
+        }
+      }
+    } catch {
+      /* skip */
+    }
+    idx = objEnd + 1
+  }
   return extracted.length > 0 ? extracted : null
 }
 
@@ -1886,109 +1977,19 @@ onUnmounted(() => {
     </div>
   </a-modal>
 
-  <a-modal
+  <ModuleDialog
     :open="moduleDialogOpen"
-    :width="560"
-    centered
-    :mask-closable="!moduleDraftSaving"
-    :keyboard="!moduleDraftSaving"
-    :closable="!moduleDraftSaving"
-    :footer="null"
-    @cancel="closeModuleDialog"
-  >
-    <div class="picker-title">{{ moduleDialogMode === 'add' ? '添加模块' : '编辑模块' }}</div>
-    <div class="module-dialog-form">
-      <div class="module-dialog-field">
-        <div class="module-dialog-label">模块名称</div>
-        <a-input v-model:value="moduleDraftName" placeholder="例如：前端技术栈排行" />
-      </div>
-      <div class="module-dialog-field">
-        <div class="module-dialog-label">模块类型</div>
-        <a-segmented
-          v-model:value="moduleDraftType"
-          :options="[
-            { label: '生成文字', value: 'text' },
-            { label: '数据排行', value: 'ranking' },
-            { label: '资讯简报', value: 'link' }
-          ]"
-        />
-      </div>
-      <div class="module-dialog-field">
-        <div class="module-dialog-label">提示词</div>
-        <a-textarea
-          v-model:value="moduleDraftPrompt"
-          class="module-dialog-textarea"
-          :rows="6"
-          :placeholder="
-            moduleDraftType === 'ranking'
-              ? '输入你希望AI生成排行榜的主题，如：2025年最流行的前端框架'
-              : moduleDraftType === 'link'
-                ? '输入你希望AI收集的资讯主题，如：近期AI行业重大新闻'
-                : '输入你希望AI生成的内容主题'
-          "
-        />
-      </div>
-      <div class="module-dialog-field">
-        <div class="module-dialog-row">
-          <label class="module-dialog-label">联网搜索</label>
-          <AppSwitch v-model="moduleDraftWebSearch" :checked-value="true" />
-        </div>
-      </div>
-      <div class="module-dialog-field">
-        <div class="module-dialog-label">更新频率</div>
-        <a-segmented
-          v-model:value="moduleDraftUpdateFrequency"
-          :options="[
-            { label: '实时', value: 'realtime' },
-            { label: '每天', value: 'daily' },
-            { label: '每周', value: 'weekly' },
-            { label: '每月', value: 'monthly' }
-          ]"
-        />
-        <div class="module-dialog-hint">
-          实时：每次页面加载时自动更新；其他：在有效期内使用缓存内容，可手动刷新
-        </div>
-      </div>
-      <div class="module-dialog-advanced">
-        <button
-          class="advanced-toggle"
-          type="button"
-          @click="moduleDraftAdvancedOpen = !moduleDraftAdvancedOpen"
-        >
-          <span class="advanced-toggle-icon" :class="{ open: moduleDraftAdvancedOpen }">▶</span>
-          高级设置
-        </button>
-        <div v-show="moduleDraftAdvancedOpen" class="advanced-body">
-          <div class="module-dialog-field">
-            <div class="module-dialog-row">
-              <label class="module-dialog-label">模块最低高度 (px)</label>
-              <a-input-number
-                v-model:value="moduleDraftMinHeight"
-                :min="120"
-                :max="600"
-                :step="20"
-                size="small"
-                style="width: 100px"
-              />
-            </div>
-          </div>
-          <div v-if="moduleDraftType === 'text'" class="module-dialog-field">
-            <div class="module-dialog-row">
-              <label class="module-dialog-label">启用 Markdown 渲染</label>
-              <AppSwitch v-model="moduleDraftEnableMarkdown" :checked-value="true" />
-            </div>
-          </div>
-        </div>
-      </div>
-      <div v-if="moduleDraftError" class="error">{{ moduleDraftError }}</div>
-    </div>
-    <div class="picker-actions mt-[10px]">
-      <a-button :disabled="moduleDraftSaving" @click="closeModuleDialog">取消</a-button>
-      <a-button type="primary" :loading="moduleDraftSaving" @click="saveModuleDialog">{{
-        moduleDialogMode === 'add' ? '添加' : '保存'
-      }}</a-button>
-    </div>
-  </a-modal>
+    :mode="moduleDialogMode"
+    :initial-name="moduleDialogInitial.name"
+    :initial-type="moduleDialogInitial.type"
+    :initial-prompt="moduleDialogInitial.prompt"
+    :initial-web-search="moduleDialogInitial.webSearch"
+    :initial-min-height="moduleDialogInitial.minHeight"
+    :initial-enable-markdown="moduleDialogInitial.enableMarkdown"
+    :initial-update-frequency="moduleDialogInitial.updateFrequency"
+    @close="moduleDialogOpen = false"
+    @saved="handleModuleSaved"
+  />
 </template>
 
 <style lang="scss" scoped>
@@ -3208,84 +3209,6 @@ onUnmounted(() => {
 .add-module-text {
   font-size: 13px;
   font-weight: 700;
-}
-
-.module-dialog-form {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  margin-top: 10px;
-}
-
-.module-dialog-field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.module-dialog-label {
-  font-size: 13px;
-  color: rgba(235, 235, 245, 0.72);
-  font-weight: 700;
-}
-
-.module-dialog-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.module-dialog-textarea {
-  min-height: 140px;
-  resize: vertical;
-  line-height: 18px;
-}
-
-.module-dialog-hint {
-  font-size: 12px;
-  color: rgba(235, 235, 245, 0.45);
-  line-height: 1.4;
-  margin-top: 2px;
-}
-
-.module-dialog-advanced {
-  display: flex;
-  flex-direction: column;
-}
-
-.advanced-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 0;
-  border: none;
-  background: transparent;
-  color: rgba(235, 235, 245, 0.55);
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: color 0.12s ease;
-}
-
-.advanced-toggle:hover {
-  color: rgba(235, 235, 245, 0.85);
-}
-
-.advanced-toggle-icon {
-  display: inline-block;
-  font-size: 10px;
-  transition: transform 0.15s ease;
-}
-
-.advanced-toggle-icon.open {
-  transform: rotate(90deg);
-}
-
-.advanced-body {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 10px 0 0 0;
 }
 
 @media (max-width: 900px) {

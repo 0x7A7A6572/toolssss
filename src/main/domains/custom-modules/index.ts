@@ -229,6 +229,18 @@ const SEARCH_EXTRACT_SYSTEM_PROMPT = `你是一个搜索参数提取专家。你
 必须只输出JSON格式，不要附加任何解释或标记。
 JSON格式：{"objective": "搜索目标描述", "search_queries": ["关键词1", "关键词2"]}`
 
+const ENHANCE_PROMPT_SYSTEM_PROMPT = `你是一个专业的提示词优化专家。你的任务是根据用户提供的模块标题、现有提示词和模块类型，优化并完善这条提示词。
+
+要求：
+1. 保持原有的核心意图和需求
+2. 补充具体的细节、格式要求、约束条件，使提示词更清晰、可执行
+3. 根据模块类型（text=生成文字, ranking=数据排行, link=资讯简报, chart=数据图表）调整输出格式指引
+4. 使提示词更加结构化，明确输出要求
+5. 如果原有提示词已经很好，可以小幅优化，不要过度修改
+6. 只输出优化后的提示词本身，不要输出任何解释、前缀或标记`
+
+const ENHANCE_PROMPT_MAX_TOKENS = 600
+
 const SEARCH_EXTRACT_MAX_TOKENS = 300
 
 function trimAiText(text: string, maxLength = 4000): string {
@@ -244,6 +256,9 @@ function buildSystemPrompt(type: CustomModuleType, enableMarkdown?: boolean): st
   if (type === 'link') {
     return '你是一个资讯编辑。根据用户的要求输出结构化的信息列表，必须只输出JSON格式，不要附加任何解释或标记。JSON格式：{"items":[{"title":"标题","link":"https://...","description":"简短描述"}]}。其中link字段必须是真实可访问的URL，description为可选字段。'
   }
+  if (type === 'chart') {
+    return '你是一个数据可视化专家。根据用户的要求输出结构化的图表数据，必须只输出JSON格式，不要附加任何解释或标记。JSON格式：{"charts":[{"title":"图表标题","type":"bar","labels":["标签1","标签2","标签3"],"series":[{"name":"系列名","type":"bar","data":[10,20,30]}]}]}。支持的type有：bar（柱状图）, line（折线图）, pie（饼图）。series支持多系列，适合对比数据。'
+  }
   if (enableMarkdown) {
     return '你是一个知识丰富的助手。根据用户的要求输出简洁、准确的内容。可以使用Markdown格式排版。'
   }
@@ -251,7 +266,7 @@ function buildSystemPrompt(type: CustomModuleType, enableMarkdown?: boolean): st
 }
 
 function buildMaxTokens(type: CustomModuleType, webSearch = false): number {
-  const base = type === 'ranking' ? 2000 : type === 'link' ? 2500 : 800
+  const base = type === 'ranking' ? 2000 : type === 'link' ? 2500 : type === 'chart' ? 3000 : 800
   return webSearch ? base * 2 : base
 }
 
@@ -464,7 +479,7 @@ export function registerCustomModuleHandlers(args: { getSettings: () => AppSetti
         : {}
     const moduleId = typeof p.moduleId === 'string' ? p.moduleId.trim() : ''
     const type =
-      p.type === 'text' || p.type === 'ranking' || p.type === 'link'
+      p.type === 'text' || p.type === 'ranking' || p.type === 'link' || p.type === 'chart'
         ? (p.type as CustomModuleType)
         : 'text'
     const prompt = typeof p.prompt === 'string' ? p.prompt.trim() : ''
@@ -551,5 +566,84 @@ export function registerCustomModuleHandlers(args: { getSettings: () => AppSetti
     if (cur.timeout) clearTimeout(cur.timeout)
     if (foundModuleId) streamByModule.delete(foundModuleId)
     return true
+  })
+
+  ipcMain.handle(CUSTOM_MODULES_EVENTS.ENHANCE_PROMPT, async (_event, payload: unknown) => {
+    const p =
+      payload && typeof payload === 'object'
+        ? (payload as { title?: unknown; prompt?: unknown; type?: unknown })
+        : {}
+    const title = typeof p.title === 'string' ? p.title.trim() : ''
+    const prompt = typeof p.prompt === 'string' ? p.prompt.trim() : ''
+    const type =
+      p.type === 'text' || p.type === 'ranking' || p.type === 'link'
+        ? (p.type as CustomModuleType)
+        : 'text'
+
+    if (!title && !prompt) throw new Error('请至少输入模块名称或提示词')
+
+    const settings = args.getSettings()
+    if (!settings.ai.enabled) throw new Error('AI 未启用，请到「全局设置」开启。')
+    const base = settings.ai.baseUrl.trim()
+    if (!base) throw new Error('未配置 AI Base URL，请到「全局设置」完善。')
+    const model = settings.ai.model.trim()
+    if (!model) throw new Error('未配置 AI Model，请到「全局设置」完善。')
+    const apiKey = getAiApiKeyFromSecrets(settings.ai.activeProfileId)
+    if (!apiKey) throw new Error('未配置 AI API Key，请到「全局设置」完善。')
+
+    const typeLabel = type === 'text' ? '生成文字' : type === 'ranking' ? '数据排行' : '资讯简报'
+    const userContent = `模块标题：${title}\n模块类型：${typeLabel}\n当前提示词：${prompt}\n\n请优化以上提示词，使其更加完善和可执行。`
+
+    const url = buildAiChatCompletionsUrl(base)
+    const controller = new AbortController()
+    const timeoutMs = 30000
+    const timeout = setTimeout(() => controller.abort(), timeoutMs)
+
+    try {
+      const res = await fetch(url.toString(), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0.5,
+          max_tokens: ENHANCE_PROMPT_MAX_TOKENS,
+          stream: false,
+          messages: [
+            { role: 'system', content: ENHANCE_PROMPT_SYSTEM_PROMPT },
+            { role: 'user', content: userContent }
+          ]
+        }),
+        signal: controller.signal
+      })
+
+      clearTimeout(timeout)
+
+      if (!res.ok) {
+        const raw = await res.text()
+        const msg = extractAiErrorMessage(raw)
+        throw new Error(msg ? `AI 请求失败：${msg}` : raw || `AI 请求失败：HTTP ${res.status}`)
+      }
+
+      const raw = await res.text()
+      const data = JSON.parse(raw) as { choices?: Array<{ message?: { content?: string } }> }
+      const content = data?.choices?.[0]?.message?.content
+      if (!content || !content.trim()) throw new Error('AI 未返回有效内容')
+
+      return trimAiText(content)
+    } catch (e) {
+      clearTimeout(timeout)
+      if (
+        e &&
+        typeof e === 'object' &&
+        'name' in e &&
+        (e as { name: string }).name === 'AbortError'
+      ) {
+        throw new Error('AI 请求超时，请稍后重试')
+      }
+      throw e
+    }
   })
 }

@@ -6,9 +6,11 @@ import type {
   CustomModuleCachedContent,
   CustomModuleRankingItem,
   CustomModuleLinkItem,
+  CustomModuleChartItem,
   CustomModuleSearchMeta
 } from '@shared/custom-modules'
 import { PencilLine, Sparkles, Trash2, ExternalLink, Search, Maximize2, X } from 'lucide-vue-next'
+import CustomModuleChartCard from './CustomModuleChartCard.vue'
 
 const props = defineProps<{
   config: CustomModuleConfig
@@ -29,12 +31,14 @@ const expanded = ref(false)
 const typeLabel = computed(() => {
   if (props.config.type === 'text') return '生成文字'
   if (props.config.type === 'ranking') return '数据排行'
+  if (props.config.type === 'chart') return '数据图表'
   return '资讯简报'
 })
 
 const typeColor = computed(() => {
   if (props.config.type === 'text') return 'rgba(0, 220, 255, 0.85)'
   if (props.config.type === 'ranking') return 'rgba(255, 198, 0, 0.85)'
+  if (props.config.type === 'chart') return 'rgba(180, 140, 255, 0.85)'
   return 'rgba(60, 180, 120, 0.85)'
 })
 
@@ -211,9 +215,125 @@ const linkItems = computed<CustomModuleLinkItem[] | null>(() => {
   return null
 })
 
+function tryParseCharts(rawText: string): CustomModuleChartItem[] | null {
+  const cleaned = rawText
+    .replace(/```json\s*/gi, '')
+    .replace(/```\s*/g, '')
+    .trim()
+
+  try {
+    const firstBrace = cleaned.indexOf('{')
+    const lastBrace = cleaned.lastIndexOf('}')
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+      const jsonStr = cleaned.slice(firstBrace, lastBrace + 1)
+      const data = JSON.parse(jsonStr) as { charts?: unknown }
+      if (data.charts && Array.isArray(data.charts)) {
+        const charts: CustomModuleChartItem[] = []
+        for (const item of data.charts) {
+          if (item && typeof item === 'object') {
+            const c = item as Record<string, unknown>
+            const title = typeof c.title === 'string' ? c.title.trim() : ''
+            const type = c.type === 'bar' || c.type === 'line' || c.type === 'pie' ? c.type : 'bar'
+            const labels = Array.isArray(c.labels)
+              ? c.labels.filter((l): l is string => typeof l === 'string')
+              : []
+            const series = Array.isArray(c.series)
+              ? c.series
+                  .filter((s): s is Record<string, unknown> => s !== null && typeof s === 'object')
+                  .map((s) => ({
+                    name: typeof s.name === 'string' ? s.name.trim() : '',
+                    type: (s.type === 'bar' || s.type === 'line' || s.type === 'pie'
+                      ? s.type
+                      : 'bar') as 'bar' | 'line' | 'pie',
+                    data: Array.isArray(s.data)
+                      ? s.data.filter((d): d is number => typeof d === 'number')
+                      : [],
+                    color: typeof s.color === 'string' ? s.color : undefined
+                  }))
+                  .filter((s) => s.name && s.data.length > 0)
+              : []
+            if (title && labels.length > 0 && series.length > 0) {
+              charts.push({ title, type, labels, series })
+            }
+          }
+        }
+        if (charts.length > 0) return charts
+      }
+    }
+  } catch {
+    // full parse failed — fall through
+  }
+
+  const extracted: CustomModuleChartItem[] = []
+  let idx = 0
+  while (idx < cleaned.length) {
+    const objStart = cleaned.indexOf('{', idx)
+    if (objStart < 0) break
+    let depth = 0
+    let objEnd = -1
+    for (let i = objStart; i < cleaned.length; i++) {
+      if (cleaned[i] === '{') depth++
+      else if (cleaned[i] === '}') {
+        depth--
+        if (depth === 0) {
+          objEnd = i
+          break
+        }
+      }
+    }
+    if (objEnd < 0) break
+    try {
+      const obj = JSON.parse(cleaned.slice(objStart, objEnd + 1)) as Record<string, unknown>
+      if (obj.series && Array.isArray(obj.series) && Array.isArray(obj.labels)) {
+        const title = typeof obj.title === 'string' ? obj.title.trim() : ''
+        const type =
+          obj.type === 'bar' || obj.type === 'line' || obj.type === 'pie' ? obj.type : 'bar'
+        const labels = obj.labels.filter((l: unknown): l is string => typeof l === 'string')
+        const series = obj.series
+          .filter((s: unknown): s is Record<string, unknown> => s !== null && typeof s === 'object')
+          .map((s: Record<string, unknown>) => ({
+            name: typeof s.name === 'string' ? s.name.trim() : '',
+            type: (s.type === 'bar' || s.type === 'line' || s.type === 'pie' ? s.type : 'bar') as
+              | 'bar'
+              | 'line'
+              | 'pie',
+            data: Array.isArray(s.data)
+              ? s.data.filter((d: unknown): d is number => typeof d === 'number')
+              : [],
+            color: typeof s.color === 'string' ? s.color : undefined
+          }))
+          .filter((s: { name: string; data: number[] }) => s.name && s.data.length > 0)
+        if (title && labels.length > 0 && series.length > 0) {
+          extracted.push({ title, type, labels, series })
+        }
+      }
+    } catch {
+      /* skip */
+    }
+    idx = objEnd + 1
+  }
+  return extracted.length > 0 ? extracted : null
+}
+
+const chartItems = computed<CustomModuleChartItem[] | null>(() => {
+  if (props.content?.charts && props.content.charts.length > 0) {
+    return props.content.charts
+  }
+  if (props.content?.rawText) {
+    const parsed = tryParseCharts(props.content.rawText)
+    if (parsed) return parsed
+  }
+  return null
+})
+
 const showPlaceholder = computed(() => {
   return (
-    !props.loading && !props.errorText && !displayText.value && !rankings.value && !linkItems.value
+    !props.loading &&
+    !props.errorText &&
+    !displayText.value &&
+    !rankings.value &&
+    !linkItems.value &&
+    !chartItems.value
   )
 })
 
@@ -313,7 +433,9 @@ function openLink(url: string): void {
             <div class="ranking-title">{{ ranking.title }}</div>
             <div class="ranking-items">
               <div v-for="(item, ii) in ranking.items" :key="ii" class="ranking-item">
-                <span class="ranking-index">{{ ii + 1 }}</span>
+                <span class="ranking-index" :class="['ranking-color', `ranking-index-${ii + 1}`]">{{
+                  ii + 1
+                }}</span>
                 <span class="ranking-name">{{ item }}</span>
               </div>
             </div>
@@ -342,8 +464,12 @@ function openLink(url: string): void {
           </div>
         </div>
       </template>
+      <template v-else-if="config.type === 'chart' && chartItems">
+        <CustomModuleChartCard :charts="chartItems" />
+      </template>
       <template v-else-if="displayText">
-        <pre class="text-content">{{ displayText }}</pre>
+        <NoteEditor :model-value="displayText" :editable="false" :image-max-height="220" />
+        <!-- <pre class="text-content">{{ displayText }}</pre> -->
       </template>
     </div>
 
@@ -425,6 +551,11 @@ function openLink(url: string): void {
               </div>
             </div>
           </template>
+          <template v-else-if="config.type === 'chart' && chartItems">
+            <div class="expand-chart">
+              <CustomModuleChartCard :charts="chartItems" />
+            </div>
+          </template>
           <template v-else-if="displayText">
             <pre class="expand-text">{{ displayText }}</pre>
           </template>
@@ -446,7 +577,7 @@ function openLink(url: string): void {
   </Teleport>
 </template>
 
-<style scoped>
+<style lang="scss" scoped>
 .card {
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.04);
@@ -614,7 +745,7 @@ function openLink(url: string): void {
   color: rgba(235, 235, 245, 0.92);
   white-space: pre-wrap;
   line-height: 1.4;
-  max-height: 140px;
+  /* max-height: 140px; */
   overflow-y: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -629,7 +760,7 @@ function openLink(url: string): void {
   font-size: 14px;
   color: rgba(235, 235, 245, 0.92);
   line-height: 1.5;
-  max-height: 220px;
+  /* max-height: 220px; */
   overflow-y: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -727,7 +858,7 @@ function openLink(url: string): void {
   flex-direction: column;
   gap: 12px;
   overflow-y: auto;
-  max-height: 220px;
+  /* max-height: 220px; */
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
@@ -777,6 +908,19 @@ function openLink(url: string): void {
   background: rgba(255, 255, 255, 0.06);
   color: rgba(235, 235, 245, 0.62);
   flex-shrink: 0;
+
+  &.ranking-index-1 {
+    background: rgba(228, 217, 8, 0.736);
+  }
+  &.ranking-index-2 {
+    background: rgba(228, 78, 8, 0.736);
+  }
+  &.ranking-index-3 {
+    background: rgba(8, 206, 228, 0.736);
+  }
+  /* &.ranking-index-4 {
+    background: rgba(8, 228, 37, 0.736);
+  } */
 }
 
 .ranking-name {
@@ -789,7 +933,7 @@ function openLink(url: string): void {
   flex-direction: column;
   gap: 6px;
   overflow-y: auto;
-  max-height: 240px;
+  /* max-height: 240px; */
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
@@ -1154,6 +1298,11 @@ function openLink(url: string): void {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.expand-chart {
+  min-height: 300px;
+  width: 100%;
 }
 
 .expand-link-list {
