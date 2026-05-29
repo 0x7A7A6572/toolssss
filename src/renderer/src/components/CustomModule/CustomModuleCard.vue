@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { marked } from 'marked'
+import { MdPreview } from 'md-editor-v3'
+import 'md-editor-v3/lib/style.css'
 import type {
   CustomModuleConfig,
   CustomModuleCachedContent,
@@ -9,7 +10,15 @@ import type {
   CustomModuleChartItem,
   CustomModuleSearchMeta
 } from '@shared/custom-modules'
-import { PencilLine, Sparkles, Trash2, ExternalLink, Search, Maximize2, X } from 'lucide-vue-next'
+import {
+  PencilLine,
+  Sparkles,
+  Trash2,
+  ExternalLink,
+  Search,
+  Maximize2,
+  Minimize2
+} from 'lucide-vue-next'
 import CustomModuleChartCard from './CustomModuleChartCard.vue'
 
 const props = defineProps<{
@@ -64,6 +73,20 @@ function onDragEnd(): void {
 }
 
 const expanded = ref(false)
+const closing = ref(false)
+
+function toggleExpand(): void {
+  if (closing.value) return
+  if (expanded.value) {
+    closing.value = true
+    setTimeout(() => {
+      expanded.value = false
+      closing.value = false
+    }, 250)
+  } else {
+    expanded.value = true
+  }
+}
 
 const typeLabel = computed(() => {
   if (props.config.type === 'text') return '生成文字'
@@ -215,19 +238,25 @@ const displayText = computed(() => {
   return ''
 })
 
-const cardStyle = computed(() => {
-  const h = props.config.minHeight
-  if (h && h > 0) {
-    return { minHeight: `${h}px` }
-  }
-  return {}
-})
+function resolveMaxHeight(): string | undefined {
+  const mh = props.config.maxHeight
+  if (mh === 0 || mh === 'auto') return undefined
+  if (typeof mh === 'number' && mh > 0) return `${mh}px`
+  return '300px'
+}
 
-const renderedMarkdown = computed(() => {
-  if (props.config.enableMarkdown && displayText.value) {
-    return marked.parse(displayText.value, { breaks: true })
+const cardStyle = computed(() => {
+  if (expanded.value) return {}
+  const style: Record<string, string> = {}
+  const minH = props.config.minHeight
+  if (minH && minH > 0) {
+    style.minHeight = `${minH}px`
   }
-  return ''
+  const maxH = resolveMaxHeight()
+  if (maxH) {
+    style.maxHeight = maxH
+  }
+  return style
 })
 
 const rankings = computed<CustomModuleRankingItem[] | null>(() => {
@@ -409,7 +438,9 @@ function openLink(url: string): void {
       loading,
       'has-error': !!errorText,
       'is-dragging': isDragging,
-      'is-drag-over': isDragOver
+      'is-drag-over': isDragOver,
+      expanded,
+      closing
     }"
     :draggable="!!moduleId"
     @dragstart="onDragStart"
@@ -421,9 +452,9 @@ function openLink(url: string): void {
     <div class="card-head">
       <div class="card-title-row">
         <span class="card-title">{{ config.name }}</span>
-        <span class="type-badge" :style="{ color: typeColor, borderColor: typeColor }">{{
+        <!-- <span class="type-badge" :style="{ color: typeColor, borderColor: typeColor }">{{
           typeLabel
-        }}</span>
+        }}</span> -->
       </div>
       <div class="card-actions">
         <button
@@ -472,8 +503,14 @@ function openLink(url: string): void {
         点击刷新按钮生成内容
       </div>
       <template v-else-if="config.type === 'text' && displayText">
-        <div v-if="config.enableMarkdown" class="markdown-content" v-html="renderedMarkdown" />
-        <div v-else class="text-content">{{ displayText }}</div>
+        <MdPreview
+          :model-value="displayText"
+          theme="dark"
+          class="markdown-content"
+          :no-mermaid="true"
+          :no-katex="true"
+          :no-highlight="false"
+        />
       </template>
       <template v-else-if="config.type === 'ranking' && rankings">
         <div class="ranking-list">
@@ -516,8 +553,7 @@ function openLink(url: string): void {
         <CustomModuleChartCard :charts="chartItems" />
       </template>
       <template v-else-if="displayText">
-        <NoteEditor :model-value="displayText" :editable="false" :image-max-height="220" />
-        <!-- <pre class="text-content">{{ displayText }}</pre> -->
+        <MdPreview :model-value="displayText" theme="dark" :no-mermaid="true" :no-katex="true" />
       </template>
     </div>
 
@@ -532,97 +568,27 @@ function openLink(url: string): void {
             : `${searchMeta.resultCount}条结果`
         }}
       </span>
-      <button class="expand-btn" type="button" title="展开查看" @click="expanded = true">
-        <Maximize2 :size="13" />
+      <span class="type-badge" :style="{ color: typeColor, borderColor: typeColor }">{{
+        typeLabel
+      }}</span>
+      <button
+        class="expand-btn"
+        type="button"
+        :title="expanded ? '收起' : '展开查看'"
+        @click="toggleExpand"
+      >
+        <Maximize2 v-if="!expanded" :size="13" />
+        <Minimize2 v-else :size="13" />
       </button>
     </div>
   </section>
 
-  <Teleport to="body">
-    <div v-if="expanded" class="expand-overlay" @click.self="expanded = false">
-      <div class="expand-container">
-        <div class="expand-header">
-          <div class="expand-title-row">
-            <span class="expand-title">{{ config.name }}</span>
-            <span class="type-badge" :style="{ color: typeColor, borderColor: typeColor }">{{
-              typeLabel
-            }}</span>
-          </div>
-          <button class="expand-close-btn" type="button" title="关闭" @click="expanded = false">
-            <X :size="18" />
-          </button>
-        </div>
-        <div class="expand-body">
-          <div v-if="loading" class="state-content">
-            <div class="streaming-text">生成中...</div>
-          </div>
-          <div v-else-if="errorText" class="state-content error-text">{{ errorText }}</div>
-          <div v-else-if="showPlaceholder" class="state-content placeholder-text">
-            点击刷新按钮生成内容
-          </div>
-          <template v-else-if="config.type === 'text' && displayText">
-            <div v-if="config.enableMarkdown" class="expand-markdown" v-html="renderedMarkdown" />
-            <div v-else class="expand-text">{{ displayText }}</div>
-          </template>
-          <template v-else-if="config.type === 'ranking' && rankings">
-            <div class="expand-ranking-list">
-              <div v-for="(ranking, ri) in rankings" :key="ri" class="ranking-group">
-                <div class="ranking-title">{{ ranking.title }}</div>
-                <div class="ranking-items">
-                  <div v-for="(item, ii) in ranking.items" :key="ii" class="ranking-item">
-                    <span class="ranking-index">{{ ii + 1 }}</span>
-                    <span class="ranking-name">{{ item }}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </template>
-          <template v-else-if="config.type === 'link' && linkItems">
-            <div class="expand-link-list">
-              <div
-                v-for="(item, ii) in linkItems"
-                :key="ii"
-                class="link-item"
-                role="button"
-                tabindex="0"
-                @click="openLink(item.link)"
-                @keydown.enter.prevent="openLink(item.link)"
-              >
-                <div class="link-item-main">
-                  <span class="link-index">{{ ii + 1 }}</span>
-                  <div class="link-item-text">
-                    <span class="link-title">{{ item.title }}</span>
-                    <span v-if="item.description" class="link-desc">{{ item.description }}</span>
-                  </div>
-                </div>
-                <ExternalLink :size="14" class="link-icon" />
-              </div>
-            </div>
-          </template>
-          <template v-else-if="config.type === 'chart' && chartItems">
-            <div class="expand-chart">
-              <CustomModuleChartCard :charts="chartItems" />
-            </div>
-          </template>
-          <template v-else-if="displayText">
-            <pre class="expand-text">{{ displayText }}</pre>
-          </template>
-        </div>
-        <div class="expand-footer">
-          <span v-if="config.webSearch" class="websearch-badge" title="已开启联网搜索">
-            <Search :size="11" />
-          </span>
-          <span v-if="searchMeta" class="source-badge" :title="sourceTooltip">
-            {{
-              searchMeta.sources.length > 0
-                ? `${searchMeta.sources.length}个来源`
-                : `${searchMeta.resultCount}条结果`
-            }}
-          </span>
-        </div>
-      </div>
-    </div>
-  </Teleport>
+  <div
+    v-if="expanded || closing"
+    class="expand-backdrop"
+    :class="{ 'backdrop-closing': closing }"
+    @click="toggleExpand"
+  />
 </template>
 
 <style lang="scss" scoped>
@@ -672,9 +638,9 @@ function openLink(url: string): void {
 }
 
 .type-badge {
-  font-size: 11px;
+  font-size: 9px;
   font-weight: 700;
-  padding: 2px 6px;
+  padding: 1px 4px;
   border-radius: 4px;
   border: 1px solid;
   white-space: nowrap;
@@ -750,6 +716,21 @@ function openLink(url: string): void {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
+}
+
+:deep(.md-editor-preview) {
+  /* padding: 12px; */
+  white-space: normal;
+}
+
+:deep(.md-editor) {
+  background-color: none;
+  background: none;
+
+  .default-theme p {
+    font-size: 13px !important;
+  }
 }
 
 .state-content {
@@ -786,120 +767,6 @@ function openLink(url: string): void {
   50% {
     opacity: 1;
   }
-}
-
-.text-content {
-  font-size: 14px;
-  font-weight: 600;
-  color: rgba(235, 235, 245, 0.92);
-  white-space: pre-wrap;
-  line-height: 1.4;
-  /* max-height: 140px; */
-  overflow-y: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-.text-content::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-}
-
-.markdown-content {
-  font-size: 14px;
-  color: rgba(235, 235, 245, 0.92);
-  line-height: 1.5;
-  /* max-height: 220px; */
-  overflow-y: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-.markdown-content::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-}
-
-.markdown-content h1,
-.markdown-content h2,
-.markdown-content h3,
-.markdown-content h4 {
-  font-size: 15px;
-  font-weight: 800;
-  margin: 8px 0 4px;
-  color: rgba(235, 235, 245, 0.96);
-}
-
-.markdown-content h1 {
-  font-size: 16px;
-}
-.markdown-content h2 {
-  font-size: 15px;
-}
-.markdown-content h3 {
-  font-size: 14px;
-}
-
-.markdown-content p {
-  margin: 4px 0;
-}
-
-.markdown-content ul,
-.markdown-content ol {
-  margin: 4px 0;
-  padding-left: 20px;
-}
-
-.markdown-content li {
-  margin: 2px 0;
-}
-
-.markdown-content code {
-  font-size: 13px;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(200, 200, 220, 0.95);
-}
-
-.markdown-content pre {
-  margin: 6px 0;
-  padding: 8px 10px;
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.25);
-  overflow-x: auto;
-}
-
-.markdown-content pre code {
-  background: transparent;
-  padding: 0;
-}
-
-.markdown-content strong {
-  font-weight: 800;
-  color: rgba(235, 235, 245, 0.96);
-}
-
-.markdown-content a {
-  color: rgba(60, 160, 255, 0.9);
-  text-decoration: none;
-}
-
-.markdown-content a:hover {
-  text-decoration: underline;
-}
-
-.markdown-content blockquote {
-  margin: 6px 0;
-  padding: 4px 10px;
-  border-left: 3px solid rgba(100, 100, 130, 0.4);
-  color: rgba(235, 235, 245, 0.7);
-}
-
-.markdown-content hr {
-  margin: 8px 0;
-  border: none;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .ranking-list {
@@ -1134,17 +1001,14 @@ function openLink(url: string): void {
   color: rgba(235, 235, 245, 0.85);
 }
 
-.expand-overlay {
+.expand-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 9999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  animation: expand-fade-in 0.18s ease;
+  z-index: 998;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: expand-fade-in 0.2s ease;
 }
 
 @keyframes expand-fade-in {
@@ -1156,216 +1020,86 @@ function openLink(url: string): void {
   }
 }
 
-.expand-container {
-  width: min(700px, 90vw);
-  max-height: 85vh;
-  background: #1c1c24;
+.card.expanded {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 80vw;
+  max-height: 80vh;
+  height: 83vh;
+  z-index: 999;
+  background: #2b2b2b;
+  // box-shadow: -2px 1px 20px 9px #026fa9;
   border-radius: 14px;
-  display: flex;
-  flex-direction: column;
-  box-shadow:
-    0 24px 80px rgba(0, 0, 0, 0.5),
-    0 0 0 1px rgba(255, 255, 255, 0.06);
-  animation: expand-scale-in 0.2s cubic-bezier(0.18, 0.89, 0.32, 1.1);
+  padding: 20px;
+  transition:
+    position 0s 0s,
+    top 0.3s ease,
+    left 0.3s ease,
+    transform 0.3s ease,
+    width 0.3s ease,
+    height 0.3s ease,
+    max-height 0.3s ease,
+    box-shadow 0.3s ease,
+    background 0.3s ease,
+    padding 0.3s ease;
+
+  .card-body {
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+
+    &::-webkit-scrollbar {
+      width: 5px;
+    }
+
+    &::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 3px;
+    }
+  }
+
+  .expand-btn {
+    color: rgba(235, 235, 245, 0.7);
+  }
+
+  .expand-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: rgba(235, 235, 245, 0.95);
+  }
 }
 
-@keyframes expand-scale-in {
+.card.expanded.closing {
+  animation: card-collapse 0.25s ease forwards;
+  pointer-events: none;
+}
+
+@keyframes card-collapse {
   0% {
-    opacity: 0;
-    transform: scale(0.92);
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
   }
   100% {
-    opacity: 1;
-    transform: scale(1);
+    transform: translate(-50%, -50%) scale(0.88);
+    opacity: 0;
   }
 }
 
-.expand-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 20px 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  flex-shrink: 0;
+.expand-backdrop.backdrop-closing {
+  animation: backdrop-fade-out 0.25s ease forwards;
 }
 
-.expand-title-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.expand-title {
-  font-size: 16px;
-  font-weight: 800;
-  color: rgba(235, 235, 245, 0.95);
-}
-
-.expand-close-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border: none;
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(235, 235, 245, 0.62);
-  border-radius: 8px;
-  cursor: pointer;
-  padding: 0;
-  transition:
-    background 0.15s ease,
-    color 0.15s ease;
-  flex-shrink: 0;
-}
-
-.expand-close-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: rgba(235, 235, 245, 0.92);
-}
-
-.expand-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 16px 20px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
-}
-
-.expand-body::-webkit-scrollbar {
-  width: 5px;
-}
-
-.expand-body::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.expand-body::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 3px;
-}
-
-.expand-text {
-  font-size: 15px;
-  font-weight: 600;
-  color: rgba(235, 235, 245, 0.92);
-  white-space: pre-wrap;
-  line-height: 1.5;
-}
-
-.expand-markdown {
-  font-size: 15px;
-  color: rgba(235, 235, 245, 0.92);
-  line-height: 1.6;
-}
-
-.expand-markdown h1,
-.expand-markdown h2,
-.expand-markdown h3,
-.expand-markdown h4 {
-  font-size: 16px;
-  font-weight: 800;
-  margin: 12px 0 6px;
-  color: rgba(235, 235, 245, 0.96);
-}
-
-.expand-markdown h1 {
-  font-size: 18px;
-}
-.expand-markdown h2 {
-  font-size: 17px;
-}
-.expand-markdown h3 {
-  font-size: 16px;
-}
-
-.expand-markdown p {
-  margin: 6px 0;
-}
-
-.expand-markdown ul,
-.expand-markdown ol {
-  margin: 6px 0;
-  padding-left: 22px;
-}
-
-.expand-markdown li {
-  margin: 3px 0;
-}
-
-.expand-markdown code {
-  font-size: 14px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(200, 200, 220, 0.95);
-}
-
-.expand-markdown pre {
-  margin: 8px 0;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.3);
-  overflow-x: auto;
-}
-
-.expand-markdown pre code {
-  background: transparent;
-  padding: 0;
-}
-
-.expand-markdown strong {
-  font-weight: 800;
-  color: rgba(235, 235, 245, 0.96);
-}
-
-.expand-markdown a {
-  color: rgba(60, 160, 255, 0.9);
-  text-decoration: none;
-}
-
-.expand-markdown a:hover {
-  text-decoration: underline;
-}
-
-.expand-markdown blockquote {
-  margin: 8px 0;
-  padding: 6px 12px;
-  border-left: 3px solid rgba(100, 100, 130, 0.4);
-  color: rgba(235, 235, 245, 0.7);
-}
-
-.expand-markdown hr {
-  margin: 10px 0;
-  border: none;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.expand-ranking-list {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.expand-chart {
-  min-height: 300px;
-  width: 100%;
-}
-
-.expand-link-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.expand-footer {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 20px 14px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  flex-shrink: 0;
+@keyframes backdrop-fade-out {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
 }
 </style>

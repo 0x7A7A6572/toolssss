@@ -10,6 +10,7 @@ export interface ModuleDialogData {
   prompt: string
   webSearch: boolean
   minHeight: number
+  maxHeight: number | 'auto'
   enableMarkdown: boolean
   updateFrequency: UpdateFrequency
 }
@@ -23,6 +24,7 @@ const props = withDefaults(
     initialPrompt?: string
     initialWebSearch?: boolean
     initialMinHeight?: number
+    initialMaxHeight?: number | 'auto'
     initialEnableMarkdown?: boolean
     initialUpdateFrequency?: UpdateFrequency
   }>(),
@@ -32,6 +34,7 @@ const props = withDefaults(
     initialPrompt: '',
     initialWebSearch: false,
     initialMinHeight: 180,
+    initialMaxHeight: 300,
     initialEnableMarkdown: false,
     initialUpdateFrequency: 'daily'
   }
@@ -54,6 +57,8 @@ const draftType = ref<'text' | 'ranking' | 'link' | 'chart'>('text')
 const draftPrompt = ref('')
 const draftWebSearch = ref(false)
 const draftMinHeight = ref<number>(180)
+const draftMaxHeightValue = ref<number>(300)
+const draftMaxHeightUnlimited = ref(false)
 const draftEnableMarkdown = ref(false)
 const draftUpdateFrequency = ref<UpdateFrequency>('daily')
 const draftAdvancedOpen = ref(false)
@@ -67,6 +72,9 @@ function resetForm(): void {
   draftPrompt.value = props.initialPrompt
   draftWebSearch.value = props.initialWebSearch
   draftMinHeight.value = props.initialMinHeight
+  draftMaxHeightValue.value =
+    typeof props.initialMaxHeight === 'number' ? props.initialMaxHeight : 300
+  draftMaxHeightUnlimited.value = props.initialMaxHeight === 'auto'
   draftEnableMarkdown.value = props.initialEnableMarkdown
   draftUpdateFrequency.value = props.initialUpdateFrequency
   draftAdvancedOpen.value = false
@@ -133,6 +141,7 @@ function save(): void {
       prompt: draftPrompt.value.replace(/\r\n/g, '\n').trim(),
       webSearch: draftWebSearch.value,
       minHeight: draftMinHeight.value,
+      maxHeight: draftMaxHeightUnlimited.value ? 'auto' : draftMaxHeightValue.value,
       enableMarkdown: draftEnableMarkdown.value,
       updateFrequency: draftUpdateFrequency.value
     })
@@ -253,6 +262,24 @@ function save(): void {
               style="width: 100px"
             />
           </div>
+
+          <div class="module-dialog-row mt-[10px]">
+            <label class="module-dialog-label">模块最大高度</label>
+            <div class="max-height-row">
+              <a-input-number
+                v-model:value="draftMaxHeightValue"
+                :min="100"
+                :max="1200"
+                :step="50"
+                :disabled="draftMaxHeightUnlimited"
+                size="small"
+                style="width: 90px"
+              />
+              <span class="max-height-unit">px</span>
+              <AppSwitch v-model="draftMaxHeightUnlimited" :checked-value="true" />
+              <span class="max-height-label">不限制</span>
+            </div>
+          </div>
         </div>
         <div v-if="draftType === 'text'" class="module-dialog-field">
           <div class="module-dialog-row mt-[10px]">
@@ -320,6 +347,22 @@ function save(): void {
   color: rgba(235, 235, 245, 0.45);
   line-height: 1.4;
   margin-top: 2px;
+}
+
+.max-height-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.max-height-unit {
+  font-size: 12px;
+  color: rgba(235, 235, 245, 0.45);
+}
+
+.max-height-label {
+  font-size: 12px;
+  color: rgba(235, 235, 245, 0.55);
 }
 
 .module-dialog-advanced {

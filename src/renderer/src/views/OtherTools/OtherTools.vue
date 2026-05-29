@@ -189,6 +189,7 @@ const moduleDialogInitial = ref<ModuleDialogData>({
   prompt: '',
   webSearch: false,
   minHeight: 180,
+  maxHeight: 300,
   enableMarkdown: false,
   updateFrequency: 'daily'
 })
@@ -319,6 +320,7 @@ function openAddModuleDialog(): void {
     prompt: '',
     webSearch: false,
     minHeight: 180,
+    maxHeight: 300,
     enableMarkdown: false,
     updateFrequency: 'daily'
   }
@@ -334,6 +336,7 @@ function openEditModuleDialog(module: CustomModuleConfig): void {
     prompt: module.prompt,
     webSearch: !!module.webSearch,
     minHeight: module.minHeight ?? 180,
+    maxHeight: module.maxHeight ?? 300,
     enableMarkdown: !!module.enableMarkdown,
     updateFrequency: module.updateFrequency ?? 'realtime'
   }
@@ -350,6 +353,7 @@ function handleModuleSaved(data: ModuleDialogData): void {
       createdAt: Date.now(),
       webSearch: data.webSearch,
       minHeight: data.minHeight,
+      maxHeight: data.maxHeight,
       enableMarkdown: data.enableMarkdown,
       updateFrequency: data.updateFrequency
     }
@@ -364,6 +368,7 @@ function handleModuleSaved(data: ModuleDialogData): void {
         prompt: data.prompt,
         webSearch: data.webSearch,
         minHeight: data.minHeight,
+        maxHeight: data.maxHeight,
         enableMarkdown: data.enableMarkdown,
         updateFrequency: data.updateFrequency
       }

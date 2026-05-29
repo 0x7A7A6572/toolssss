@@ -9,6 +9,7 @@ export interface CustomModuleConfig {
   createdAt: number
   webSearch?: boolean
   minHeight?: number
+  maxHeight?: number | 'auto'
   enableMarkdown?: boolean
   updateFrequency?: UpdateFrequency
 }
