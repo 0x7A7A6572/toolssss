@@ -295,6 +295,9 @@ onMounted(async () => {
   flex-direction: column;
   gap: 20px;
   height: 100%;
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
 }
 
 .header {

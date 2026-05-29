@@ -487,7 +487,7 @@ onBeforeUnmount(() => {
 }
 
 .tl-date {
-  font-size: 32px;
+  /* font-size: 32px; */
   font-weight: 800;
   color: rgba(235, 235, 245, 0.86);
   /* text-align: left; */
