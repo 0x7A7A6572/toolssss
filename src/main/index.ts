@@ -30,6 +30,7 @@ import { createTranslatorDomain } from './domains/translator'
 import { registerWeatherHandlers } from './domains/weather'
 import { applyScheduledTasks, registerScheduledTasksHandlers } from './domains/scheduled-tasks'
 import { registerFunFactHandlers } from './domains/fun-fact'
+import { registerCustomModuleHandlers } from './domains/custom-modules'
 import {
   disposeExternalWindowPowerShell,
   warmupExternalWindowPowerShell
@@ -423,6 +424,7 @@ app.whenReady().then(async () => {
     return next
   })
   registerFunFactHandlers({ getSettings: () => settings })
+  registerCustomModuleHandlers({ getSettings: () => settings })
   ipcMain.handle('sticky-notes:saveDir:choose', async () => {
     const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
     const options: OpenDialogOptions = { properties: ['openDirectory', 'createDirectory'] }

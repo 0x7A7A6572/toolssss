@@ -242,6 +242,9 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  max-width: 800px;
+  margin: 0 auto;
+  width: 100%;
   /* height: 100%; */
 }
 

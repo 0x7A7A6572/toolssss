@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, ref } from 'vue'
 import type { AlarmReason } from '@shared/settings'
 
 const reason = ref<AlarmReason>('alarm')
-const title = ref('提醒')
+const title = ref('该休息了')
 const body = ref('')
 const secondsLeft = ref<number | null>(null)
 let timer: number | null = null
@@ -306,7 +306,7 @@ $shooting-time: 8000ms;
 .btn {
   cursor: pointer;
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: none;
   padding: 8px 10px;
   background: rgba(255, 255, 255, 0.06);
   color: rgba(255, 255, 245, 0.92);
