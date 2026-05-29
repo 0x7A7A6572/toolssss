@@ -180,6 +180,76 @@ const customModulesSearching = ref<Record<string, boolean>>({})
 const customModulesError = ref<Record<string, string>>({})
 const customModulesStreamId = ref<Record<string, string>>({})
 
+const BUILTIN_MODULE_IDS = [
+  'weather-today',
+  'weather-chart',
+  'work-calendar',
+  'stack-tools'
+] as const
+const ADD_MODULE_ID = '__add__'
+const GRID_ORDER_KEY = 'customModules.gridOrder'
+
+const gridOrder = ref<string[]>([])
+
+function loadGridOrder(): void {
+  try {
+    const raw = localStorage.getItem(GRID_ORDER_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw) as unknown
+      if (Array.isArray(parsed)) {
+        gridOrder.value = parsed.filter((id): id is string => typeof id === 'string')
+        return
+      }
+    }
+  } catch {
+    gridOrder.value = []
+  }
+  const builtinIds = [...BUILTIN_MODULE_IDS]
+  const customIds = customModules.value.map((m) => m.id)
+  gridOrder.value = [...builtinIds, ...customIds, ADD_MODULE_ID]
+}
+
+function saveGridOrder(): void {
+  try {
+    localStorage.setItem(GRID_ORDER_KEY, JSON.stringify(gridOrder.value))
+  } catch {
+    return
+  }
+}
+
+const orderedGridItems = computed(() => {
+  const validIds = new Set<string>([...BUILTIN_MODULE_IDS])
+  for (const mod of customModules.value) {
+    validIds.add(mod.id)
+  }
+  const seen = new Set<string>()
+  const items: string[] = []
+  for (const id of gridOrder.value) {
+    if (validIds.has(id) && !seen.has(id)) {
+      items.push(id)
+      seen.add(id)
+    }
+  }
+  for (const id of BUILTIN_MODULE_IDS) {
+    if (!seen.has(id)) {
+      items.push(id)
+      seen.add(id)
+    }
+  }
+  if (!seen.has(ADD_MODULE_ID)) {
+    items.push(ADD_MODULE_ID)
+  }
+  return items
+})
+
+const customModuleMap = computed(() => {
+  const map = new Map<string, CustomModuleConfig>()
+  for (const mod of customModules.value) {
+    map.set(mod.id, mod)
+  }
+  return map
+})
+
 const moduleDialogOpen = ref(false)
 const moduleDialogMode = ref<'add' | 'edit'>('add')
 const editingModuleId = ref('')
@@ -258,25 +328,25 @@ function onModuleDragLeave(): void {
 function onModuleDrop(payload: { id: string; event: DragEvent }): void {
   payload.event.preventDefault()
   const sourceId = draggedModuleId.value
-  const targetModuleId = payload.id
-  if (!sourceId || sourceId === targetModuleId) {
+  const targetId = payload.id
+  if (!sourceId || sourceId === targetId || targetId === ADD_MODULE_ID) {
     resetModuleDragState()
     return
   }
 
-  const sourceIdx = customModules.value.findIndex((m) => m.id === sourceId)
-  const targetIdx = customModules.value.findIndex((m) => m.id === targetModuleId)
+  const sourceIdx = gridOrder.value.indexOf(sourceId)
+  const targetIdx = gridOrder.value.indexOf(targetId)
   if (sourceIdx === -1 || targetIdx === -1) {
     resetModuleDragState()
     return
   }
 
-  const items = [...customModules.value]
+  const items = [...gridOrder.value]
   const [moved] = items.splice(sourceIdx, 1)
   const adjustedTarget = sourceIdx < targetIdx ? targetIdx - 1 : targetIdx
   items.splice(adjustedTarget, 0, moved)
-  customModules.value = items
-  saveCustomModules()
+  gridOrder.value = items
+  saveGridOrder()
   resetModuleDragState()
 }
 
@@ -358,6 +428,12 @@ function handleModuleSaved(data: ModuleDialogData): void {
       updateFrequency: data.updateFrequency
     }
     customModules.value.push(newModule)
+    const addIdx = gridOrder.value.indexOf(ADD_MODULE_ID)
+    if (addIdx >= 0) {
+      gridOrder.value.splice(addIdx, 0, newModule.id)
+    } else {
+      gridOrder.value.push(newModule.id)
+    }
   } else {
     const idx = customModules.value.findIndex((m) => m.id === editingModuleId.value)
     if (idx >= 0) {
@@ -375,12 +451,15 @@ function handleModuleSaved(data: ModuleDialogData): void {
     }
   }
   saveCustomModules()
+  saveGridOrder()
   moduleDialogOpen.value = false
 }
 
 function deleteModule(moduleId: string): void {
   customModules.value = customModules.value.filter((m) => m.id !== moduleId)
+  gridOrder.value = gridOrder.value.filter((id) => id !== moduleId)
   saveCustomModules()
+  saveGridOrder()
   delete customModulesCache.value[moduleId]
   saveCustomModulesCache()
 }
@@ -1434,6 +1513,7 @@ onMounted(() => {
   }
   loadCustomModules()
   loadCustomModulesCache()
+  loadGridOrder()
   maybeAutoRefreshModules()
   refresh().catch(() => null)
 })
@@ -1470,167 +1550,176 @@ onUnmounted(() => {
         <div class="title">Hello</div>
         <div class="subtitle">...</div>
       </div>
-      <div class="ctrl-btns">
-        <!-- <img src="/avatar.png" alt="avatar" /> -->
-        <!-- <div class="avatar-box">
-          <User class="text-#666666" :size="24" />
-        </div> -->
-      </div>
+      <div class="ctrl-btns"></div>
     </header>
 
-    <section class="card">
-      <div class="weather-layout">
-        <div class="left-col">
-          <div class="block has-emoji">
-            <div
-              class="weather-emoji"
-              :class="{
-                'is-dragging': emojiPulling,
-                'is-ready': emojiPullReady,
-                'is-loading': loadingSate.weather
-              }"
-              :style="{ transform: `translate(-50%, ${emojiPullY}px)` }"
-              aria-hidden="true"
-              @pointerdown.prevent="onEmojiPointerDown"
-              @pointermove.prevent="onEmojiPointerMove"
-              @pointerup.prevent="onEmojiPointerUp"
-              @pointercancel.prevent="onEmojiPointerCancel"
-              @lostpointercapture="onEmojiPointerLostCapture"
-            >
-              <div v-if="loadingSate.weather" class="weather-emoji-spinner" />
-              <template v-else>{{ todayWeatherEmoji }}</template>
-            </div>
-
-            <div class="weather-content">
-              <div class="block-title">今日</div>
-              <div class="now-main">
-                <button class="location location-btn" type="button" @click="openCityPicker">
-                  <span>{{ dashboard?.now?.locationName }}</span>
-                  <span class="location-caret">▾</span>
-                </button>
-                <div class="temp">
-                  <span class="temp-value">{{
-                    dashboard?.now?.temperatureC == null
-                      ? '—'
-                      : Math.round(dashboard?.now?.temperatureC ?? 0)
-                  }}</span>
-                  <span class="temp-unit">℃</span>
-                </div>
+    <div>
+      <div class="custom-modules-grid">
+        <template v-for="itemId in orderedGridItems" :key="itemId">
+          <div
+            v-if="itemId === 'weather-today'"
+            class="left-col"
+            draggable="true"
+            :class="{
+              'is-dragging': draggedModuleId === itemId,
+              'is-drag-over': dragOverModuleId === itemId
+            }"
+            @dragstart="onModuleDragStart({ id: itemId, event: $event })"
+            @dragover="onModuleDragOver({ id: itemId, event: $event })"
+            @dragleave="onModuleDragLeave"
+            @drop="onModuleDrop({ id: itemId, event: $event })"
+            @dragend="onModuleDragEnd"
+          >
+            <div class="block has-emoji">
+              <div
+                class="weather-emoji"
+                :class="{
+                  'is-dragging': emojiPulling,
+                  'is-ready': emojiPullReady,
+                  'is-loading': loadingSate.weather
+                }"
+                :style="{ transform: `translate(-50%, ${emojiPullY}px)` }"
+                aria-hidden="true"
+                @pointerdown.prevent="onEmojiPointerDown"
+                @pointermove.prevent="onEmojiPointerMove"
+                @pointerup.prevent="onEmojiPointerUp"
+                @pointercancel.prevent="onEmojiPointerCancel"
+                @lostpointercapture="onEmojiPointerLostCapture"
+              >
+                <div v-if="loadingSate.weather" class="weather-emoji-spinner" />
+                <template v-else>{{ todayWeatherEmoji }}</template>
               </div>
-              <div class="meta">
-                <div class="meta-row">
-                  <span class="meta-k">体感</span>
-                  <span class="meta-v">{{
-                    dashboard?.now?.feelsLikeC == null
-                      ? '—'
-                      : `${Math.round(dashboard?.now?.feelsLikeC ?? 0)}℃`
-                  }}</span>
+
+              <div class="weather-content">
+                <div class="block-title">今日</div>
+                <div class="now-main">
+                  <button class="location location-btn" type="button" @click="openCityPicker">
+                    <span>{{ dashboard?.now?.locationName }}</span>
+                    <span class="location-caret">▾</span>
+                  </button>
+                  <div class="temp">
+                    <span class="temp-value">{{
+                      dashboard?.now?.temperatureC == null
+                        ? '—'
+                        : Math.round(dashboard?.now?.temperatureC ?? 0)
+                    }}</span>
+                    <span class="temp-unit">℃</span>
+                  </div>
                 </div>
-                <div class="meta-row">
-                  <span class="meta-k">湿度</span>
-                  <span class="meta-v">{{
-                    dashboard?.now?.humidityPercent == null
-                      ? '—'
-                      : `${Math.round(dashboard?.now?.humidityPercent ?? 0)}%`
-                  }}</span>
-                </div>
-                <div class="meta-row">
-                  <span class="meta-k">气压</span>
-                  <span class="meta-v">{{
-                    dashboard?.now?.pressureHpa == null
-                      ? '—'
-                      : `${Math.round(dashboard?.now?.pressureHpa ?? 0)}hPa`
-                  }}</span>
-                </div>
-                <div class="meta-row">
-                  <span class="meta-k">降水</span>
-                  <span class="meta-v">{{
-                    dashboard?.now?.precipitationMm == null
-                      ? '—'
-                      : `${dashboard?.now?.precipitationMm ?? 0}mm`
-                  }}</span>
-                </div>
-                <div class="meta-row">
-                  <span class="meta-k">风</span>
-                  <span class="meta-v">{{
-                    dashboard?.now?.windDirectionText && dashboard?.now?.windScaleText
-                      ? `${dashboard?.now?.windDirectionText} ${dashboard?.now?.windScaleText}`
-                      : '—'
-                  }}</span>
-                </div>
-                <!-- <div class="meta-row">
+                <div class="meta">
+                  <div class="meta-row">
+                    <span class="meta-k">体感</span>
+                    <span class="meta-v">{{
+                      dashboard?.now?.feelsLikeC == null
+                        ? '—'
+                        : `${Math.round(dashboard?.now?.feelsLikeC ?? 0)}℃`
+                    }}</span>
+                  </div>
+                  <div class="meta-row">
+                    <span class="meta-k">湿度</span>
+                    <span class="meta-v">{{
+                      dashboard?.now?.humidityPercent == null
+                        ? '—'
+                        : `${Math.round(dashboard?.now?.humidityPercent ?? 0)}%`
+                    }}</span>
+                  </div>
+                  <div class="meta-row">
+                    <span class="meta-k">气压</span>
+                    <span class="meta-v">{{
+                      dashboard?.now?.pressureHpa == null
+                        ? '—'
+                        : `${Math.round(dashboard?.now?.pressureHpa ?? 0)}hPa`
+                    }}</span>
+                  </div>
+                  <div class="meta-row">
+                    <span class="meta-k">降水</span>
+                    <span class="meta-v">{{
+                      dashboard?.now?.precipitationMm == null
+                        ? '—'
+                        : `${dashboard?.now?.precipitationMm ?? 0}mm`
+                    }}</span>
+                  </div>
+                  <div class="meta-row">
+                    <span class="meta-k">风</span>
+                    <span class="meta-v">{{
+                      dashboard?.now?.windDirectionText && dashboard?.now?.windScaleText
+                        ? `${dashboard?.now?.windDirectionText} ${dashboard?.now?.windScaleText}`
+                        : '—'
+                    }}</span>
+                  </div>
+                  <!-- <div class="meta-row">
                   <span class="meta-k">更新</span>
                   <span class="meta-v">{{ dashboard?.now?.lastUpdateText ?? '—' }}</span>
                 </div> -->
+                </div>
+              </div>
+            </div>
+            <div class="block border-none">
+              <div class="block-title">
+                <span>3小时降雨预警</span>
+                <div class="warning-line">
+                  <span class="badge" :class="{ danger: dashboard?.threeHour?.willRain }">
+                    {{ dashboard?.threeHour?.willRain ? '可能降雨' : '无降雨' }}
+                  </span>
+                  <span v-if="dashboard?.threeHour?.willRain" class="warning-hint">
+                    最大 {{ dashboard?.threeHour?.maxPrecipitationMm ?? 0 }}mm
+                  </span>
+                </div>
               </div>
             </div>
           </div>
-          <div class="block border-none">
-            <div class="block-title">
-              <span>3小时降雨预警</span>
-              <div class="warning-line">
-                <span class="badge" :class="{ danger: dashboard?.threeHour?.willRain }">
-                  {{ dashboard?.threeHour?.willRain ? '可能降雨' : '无降雨' }}
-                </span>
-                <span v-if="dashboard?.threeHour?.willRain" class="warning-hint">
-                  最大 {{ dashboard?.threeHour?.maxPrecipitationMm ?? 0 }}mm
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
 
-        <div class="right-col">
-          <!-- <div class="block border-none">
-            <div class="block-title">
-              <span>3小时降雨预警</span>
-              <div class="warning-line">
-                <span class="badge" :class="{ danger: dashboard?.threeHour?.willRain }">
-                  {{ dashboard?.threeHour?.willRain ? '可能降雨' : '无降雨' }}
+          <div
+            v-else-if="itemId === 'weather-chart'"
+            class="right-col"
+            draggable="true"
+            :class="{
+              'is-dragging': draggedModuleId === itemId,
+              'is-drag-over': dragOverModuleId === itemId
+            }"
+            @dragstart="onModuleDragStart({ id: itemId, event: $event })"
+            @dragover="onModuleDragOver({ id: itemId, event: $event })"
+            @dragleave="onModuleDragLeave"
+            @drop="onModuleDrop({ id: itemId, event: $event })"
+            @dragend="onModuleDragEnd"
+          >
+            <div class="block border-none !h-[200px]">
+              <div class="block-title">
+                <span>
+                  <a-segmented
+                    v-model:value="weatherType"
+                    size="small"
+                    :options="[
+                      { label: '7日天气', value: 'recently' },
+                      { label: '24小时天气', value: 'now' }
+                    ]"
+                  />
                 </span>
-                <span v-if="dashboard?.threeHour?.willRain" class="warning-hint">
-                  最大 {{ dashboard?.threeHour?.maxPrecipitationMm ?? 0 }}mm
-                </span>
-              </div>
-            </div>
-          </div> -->
-          <div class="block border-none">
-            <div class="block-title">
-              <span>
-                <a-segmented
-                  v-model:value="weatherType"
-                  size="small"
-                  :options="[
-                    { label: '7日天气', value: 'recently' },
-                    { label: '24小时天气', value: 'now' }
-                  ]"
-                />
-              </span>
-              <span class="legend">
-                <template v-if="weatherType === 'recently'">
-                  <span class="lg lg-high"></span>
-                  <span class="lg lg-low"></span>
-                </template>
-                <template v-else>
-                  <a-tooltip v-for="it in hourlyLegend" :key="it.key" placement="topLeft">
-                    <template #title>
-                      <span>{{ it.label }}</span>
-                    </template>
-                    <span
-                      :key="it.key"
-                      :class="['lg', it.key, hourlyActiveKey === it.key ? 'active' : '']"
-                      :label="it.label"
-                      @click="toggleHourlyMetric(it.key)"
-                    ></span>
-                  </a-tooltip>
-                  <!-- <span
+                <span class="legend">
+                  <template v-if="weatherType === 'recently'">
+                    <span class="lg lg-high"></span>
+                    <span class="lg lg-low"></span>
+                  </template>
+                  <template v-else>
+                    <a-tooltip v-for="it in hourlyLegend" :key="it.key" placement="topLeft">
+                      <template #title>
+                        <span>{{ it.label }}</span>
+                      </template>
+                      <span
+                        :key="it.key"
+                        :class="['lg', it.key, hourlyActiveKey === it.key ? 'active' : '']"
+                        :label="it.label"
+                        @click="toggleHourlyMetric(it.key)"
+                      ></span>
+                    </a-tooltip>
+                    <!-- <span
                     v-for="it in hourlyLegend"
                     :key="it.key"
                     class="lg"
                     :label="it.label"
                     @click="toggleHourlyMetric(it.key)"
                   ></span> -->
-                  <!-- <button
+                    <!-- <button
                     v-for="it in hourlyLegend"
                     :key="it.key"
                     class="legend-item"
@@ -1640,199 +1729,224 @@ onUnmounted(() => {
                   >
                     {{ it.label }}
                   </button> -->
-                </template>
-              </span>
-            </div>
-            <SevenDayTempChart
-              v-if="weatherType === 'recently' && (dashboard?.days?.length ?? 0) > 0"
-              :days="dashboard?.days ?? []"
-            />
-            <WeatherHourlyTrendsChart
-              v-else-if="weatherType === 'now' && hourlyTrends"
-              :trends="hourlyTrends"
-              :active-key="hourlyActiveKey"
-            />
-            <div v-else class="empty">暂无数据</div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <div class="mini-tools-row">
-      <section class="card work-calendar-card">
-        <div class="work-calendar-head">
-          <div class="work-calendar-title">打工人日历</div>
-          <div class="work-calendar-btn" type="button" @click="openPaydayDialog">
-            <!-- 每月{{ paydayDay }}日 -->
-            <Settings :size="18" />
-          </div>
-        </div>
-
-        <div class="work-calendar-list">
-          <div class="work-calendar-row">
-            <div class="work-calendar-label">
-              <div class="work-calendar-k">距离休息日</div>
-              <div class="work-calendar-sub">周末</div>
-            </div>
-            <div class="work-calendar-value">
-              <span class="work-calendar-num">{{ daysUntilRest }}</span>
-              <span class="work-calendar-unit">天</span>
+                  </template>
+                </span>
+              </div>
+              <SevenDayTempChart
+                v-if="weatherType === 'recently' && (dashboard?.days?.length ?? 0) > 0"
+                :days="dashboard?.days ?? []"
+              />
+              <WeatherHourlyTrendsChart
+                v-else-if="weatherType === 'now' && hourlyTrends"
+                :trends="hourlyTrends"
+                :active-key="hourlyActiveKey"
+              />
+              <div v-else class="empty">暂无数据</div>
             </div>
           </div>
 
-          <div class="work-calendar-row">
-            <div class="work-calendar-label">
-              <div class="work-calendar-k">距离发工资</div>
-              <div class="work-calendar-sub">{{ nextPaydayDate.toLocaleDateString() }}</div>
-            </div>
-            <div class="work-calendar-value">
-              <span class="work-calendar-num">{{ daysUntilPayday }}</span>
-              <span class="work-calendar-unit">天</span>
-            </div>
-          </div>
-
-          <div class="work-calendar-row">
-            <div class="work-calendar-label">
-              <div class="work-calendar-k">距离{{ nextHoliday?.name ?? '节假日' }}</div>
-              <div class="work-calendar-sub">{{ nextHoliday?.ymdText ?? '—' }}</div>
-            </div>
-            <div class="work-calendar-value">
-              <span class="work-calendar-num">{{ nextHoliday ? nextHoliday.days : '—' }}</span>
-              <span class="work-calendar-unit">天</span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <div class="stack-tool-wrap">
-        <section
-          class="card stack-card"
-          :class="{ active: stackActive === 'answer', inactive: stackActive !== 'answer' }"
-          :style="{
-            background: stackColors[0]
-          }"
-        >
-          <button
-            class="stack-head answer-book-head"
-            type="button"
-            :disabled="stackActive === 'answer'"
-            @click="setStackActive('answer')"
+          <section
+            v-else-if="itemId === 'work-calendar'"
+            class="card work-calendar-card"
+            draggable="true"
+            :class="{
+              'is-dragging': draggedModuleId === itemId,
+              'is-drag-over': dragOverModuleId === itemId
+            }"
+            @dragstart="onModuleDragStart({ id: itemId, event: $event })"
+            @dragover="onModuleDragOver({ id: itemId, event: $event })"
+            @dragleave="onModuleDragLeave"
+            @drop="onModuleDrop({ id: itemId, event: $event })"
+            @dragend="onModuleDragEnd"
           >
-            <div class="answer-book-title">答案之书</div>
-          </button>
+            <div class="work-calendar-head">
+              <div class="work-calendar-title">打工人日历</div>
+              <div class="work-calendar-btn" type="button" @click="openPaydayDialog">
+                <!-- 每月{{ paydayDay }}日 -->
+                <Settings :size="18" />
+              </div>
+            </div>
 
-          <div v-show="stackActive === 'answer'" class="answer-book-body stack-body">
-            <div
-              :key="answerAnimKey"
-              class="answer-flip"
-              :class="{
-                flipped: answerFlipped,
-                spotlight: answerSpotlightActive
-              }"
-              :style="answerSpotlightStyle"
-              role="button"
-              tabindex="0"
-              @mouseenter="onAnswerMouseEnter"
-              @mousemove="onAnswerMouseMove"
-              @mouseleave="onAnswerMouseLeave"
-              @click="drawAnswer"
-              @keydown.enter.prevent="drawAnswer"
-            >
-              <div class="answer-flip-inner">
-                <div class="answer-face answer-front">
-                  <div class="answer-front-title">心中默念你的问题，命运会给你答案</div>
-                  <div class="answer-front-sub">移动鼠标，用探照灯看清答案</div>
+            <div class="work-calendar-list">
+              <div class="work-calendar-row">
+                <div class="work-calendar-label">
+                  <div class="work-calendar-k">距离休息日</div>
+                  <div class="work-calendar-sub">周末</div>
                 </div>
-                <div class="answer-face answer-back">
-                  <div v-if="answerCurrent" class="answer-text">
-                    <div class="answer-zh">{{ answerCurrent.zh }}</div>
-                    <div class="answer-en">{{ answerCurrent.en }}</div>
-                  </div>
-                  <div v-else class="answer-text">
-                    <div class="answer-zh">—</div>
-                  </div>
+                <div class="work-calendar-value">
+                  <span class="work-calendar-num">{{ daysUntilRest }}</span>
+                  <span class="work-calendar-unit">天</span>
+                </div>
+              </div>
+
+              <div class="work-calendar-row">
+                <div class="work-calendar-label">
+                  <div class="work-calendar-k">距离发工资</div>
+                  <div class="work-calendar-sub">{{ nextPaydayDate.toLocaleDateString() }}</div>
+                </div>
+                <div class="work-calendar-value">
+                  <span class="work-calendar-num">{{ daysUntilPayday }}</span>
+                  <span class="work-calendar-unit">天</span>
+                </div>
+              </div>
+
+              <div class="work-calendar-row">
+                <div class="work-calendar-label">
+                  <div class="work-calendar-k">距离{{ nextHoliday?.name ?? '节假日' }}</div>
+                  <div class="work-calendar-sub">{{ nextHoliday?.ymdText ?? '—' }}</div>
+                </div>
+                <div class="work-calendar-value">
+                  <span class="work-calendar-num">{{ nextHoliday ? nextHoliday.days : '—' }}</span>
+                  <span class="work-calendar-unit">天</span>
                 </div>
               </div>
             </div>
-          </div>
-        </section>
+          </section>
 
-        <section
-          class="card stack-card"
-          :class="{ active: stackActive === 'funFact', inactive: stackActive !== 'funFact' }"
-          :style="{
-            background: stackColors[1]
-          }"
-        >
-          <button
-            class="stack-head fun-fact-head"
-            type="button"
-            :disabled="stackActive === 'funFact'"
-            @click="setStackActive('funFact')"
+          <div
+            v-else-if="itemId === 'stack-tools'"
+            class="stack-tool-wrap"
+            draggable="true"
+            :class="{
+              'is-dragging': draggedModuleId === itemId,
+              'is-drag-over': dragOverModuleId === itemId
+            }"
+            @dragstart="onModuleDragStart({ id: itemId, event: $event })"
+            @dragover="onModuleDragOver({ id: itemId, event: $event })"
+            @dragleave="onModuleDragLeave"
+            @drop="onModuleDrop({ id: itemId, event: $event })"
+            @dragend="onModuleDragEnd"
           >
-            <div class="fun-fact-title">
-              {{ funFactTitle }}
+            <section
+              class="card stack-card"
+              :class="{ active: stackActive === 'answer', inactive: stackActive !== 'answer' }"
+              :style="{
+                background: stackColors[0]
+              }"
+            >
               <button
-                class="bg-transparent border-none"
+                class="stack-head answer-book-head"
                 type="button"
-                :disabled="funFactLoading"
-                @click.stop="openFunFactEditor"
+                :disabled="stackActive === 'answer'"
+                @click="setStackActive('answer')"
               >
-                <PencilLine :size="14" />
+                <div class="answer-book-title">答案之书</div>
               </button>
-            </div>
-            <div v-if="stackActive === 'funFact'" class="actions">
+
+              <div v-show="stackActive === 'answer'" class="answer-book-body stack-body">
+                <div
+                  :key="answerAnimKey"
+                  class="answer-flip"
+                  :class="{
+                    flipped: answerFlipped,
+                    spotlight: answerSpotlightActive
+                  }"
+                  :style="answerSpotlightStyle"
+                  role="button"
+                  tabindex="0"
+                  @mouseenter="onAnswerMouseEnter"
+                  @mousemove="onAnswerMouseMove"
+                  @mouseleave="onAnswerMouseLeave"
+                  @click="drawAnswer"
+                  @keydown.enter.prevent="drawAnswer"
+                >
+                  <div class="answer-flip-inner">
+                    <div class="answer-face answer-front">
+                      <div class="answer-front-title">心中默念你的问题，命运会给你答案</div>
+                      <div class="answer-front-sub">移动鼠标，用探照灯看清答案</div>
+                    </div>
+                    <div class="answer-face answer-back">
+                      <div v-if="answerCurrent" class="answer-text">
+                        <div class="answer-zh">{{ answerCurrent.zh }}</div>
+                        <div class="answer-en">{{ answerCurrent.en }}</div>
+                      </div>
+                      <div v-else class="answer-text">
+                        <div class="answer-zh">—</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section
+              class="card stack-card"
+              :class="{ active: stackActive === 'funFact', inactive: stackActive !== 'funFact' }"
+              :style="{
+                background: stackColors[1]
+              }"
+            >
               <button
-                class="bg-transparent border-none"
+                class="stack-head fun-fact-head"
                 type="button"
-                :disabled="funFactLoading || !aiReady"
-                @click.stop="refreshDailyFunFact(true)"
+                :disabled="stackActive === 'funFact'"
+                @click="setStackActive('funFact')"
               >
-                <Sparkles v-if="!loadingSate.daily" :size="16" />
-                <div v-else class="loading-spinner"></div>
+                <div class="fun-fact-title">
+                  {{ funFactTitle }}
+                  <button
+                    class="bg-transparent border-none"
+                    type="button"
+                    :disabled="funFactLoading"
+                    @click.stop="openFunFactEditor"
+                  >
+                    <PencilLine :size="14" />
+                  </button>
+                </div>
+                <div v-if="stackActive === 'funFact'" class="actions">
+                  <button
+                    class="bg-transparent border-none"
+                    type="button"
+                    :disabled="funFactLoading || !aiReady"
+                    @click.stop="refreshDailyFunFact(true)"
+                  >
+                    <Sparkles v-if="!loadingSate.daily" :size="16" />
+                    <div v-else class="loading-spinner"></div>
+                  </button>
+                </div>
               </button>
-            </div>
-          </button>
 
-          <div v-show="stackActive === 'funFact'" class="stack-body">
-            <div v-if="funFactErrorText" class="error">{{ funFactErrorText }}</div>
-            <div v-else class="fun-fact-body">
-              <div class="fun-fact-meta">{{ funFactYmd || funFactTodayYmd }}</div>
-              <div class="fun-fact-text">{{ funFactText || '—' }}</div>
-            </div>
+              <div v-show="stackActive === 'funFact'" class="stack-body">
+                <div v-if="funFactErrorText" class="error">{{ funFactErrorText }}</div>
+                <div v-else class="fun-fact-body">
+                  <div class="fun-fact-meta">{{ funFactYmd || funFactTodayYmd }}</div>
+                  <div class="fun-fact-text">{{ funFactText || '—' }}</div>
+                </div>
+              </div>
+            </section>
           </div>
-        </section>
-      </div>
-    </div>
 
-    <div>
-      <div class="custom-modules-grid">
-        <CustomModuleCard
-          v-for="mod in customModules"
-          :key="mod.id"
-          :config="mod"
-          :content="getModuleCache(mod.id) ?? null"
-          :loading="!!customModulesLoading[mod.id]"
-          :searching="!!customModulesSearching[mod.id]"
-          :error-text="customModulesError[mod.id] || ''"
-          :module-id="mod.id"
-          :is-dragging="draggedModuleId === mod.id"
-          :is-drag-over="dragOverModuleId === mod.id"
-          @dragstart="onModuleDragStart"
-          @dragover="onModuleDragOver"
-          @dragleave="onModuleDragLeave"
-          @drop="onModuleDrop"
-          @dragend="onModuleDragEnd"
-          @refresh="enqueueModuleRefresh(mod)"
-          @edit="openEditModuleDialog(mod)"
-          @delete="deleteModule(mod.id)"
-        />
-        <section class="card add-module-card" type="button" @click="openAddModuleDialog">
-          <div class="add-module-inner">
-            <Plus :size="32" />
-            <div class="add-module-text">添加模块</div>
-          </div>
-        </section>
+          <CustomModuleCard
+            v-else-if="customModuleMap.has(itemId)"
+            :config="customModuleMap.get(itemId)!"
+            :content="getModuleCache(itemId) ?? null"
+            :loading="!!customModulesLoading[itemId]"
+            :searching="!!customModulesSearching[itemId]"
+            :error-text="customModulesError[itemId] || ''"
+            :module-id="itemId"
+            :is-dragging="draggedModuleId === itemId"
+            :is-drag-over="dragOverModuleId === itemId"
+            @dragstart="onModuleDragStart"
+            @dragover="onModuleDragOver"
+            @dragleave="onModuleDragLeave"
+            @drop="onModuleDrop"
+            @dragend="onModuleDragEnd"
+            @refresh="enqueueModuleRefresh(customModuleMap.get(itemId)!)"
+            @edit="openEditModuleDialog(customModuleMap.get(itemId)!)"
+            @delete="deleteModule(itemId)"
+          />
+          <section
+            v-else-if="itemId === '__add__'"
+            class="card add-module-card"
+            type="button"
+            @click="openAddModuleDialog"
+          >
+            <div class="add-module-inner">
+              <Plus :size="32" />
+              <div class="add-module-text">添加模块</div>
+            </div>
+          </section>
+        </template>
       </div>
     </div>
   </div>
@@ -2922,14 +3036,14 @@ onUnmounted(() => {
   gap: 12px;
   flex: auto;
   flex-grow: 0;
-  min-width: 350px;
+  // min-width: 350px;
 }
 .right-col {
   flex: 1;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  width: 300px;
+  // width: 300px;
 }
 
 .block {
