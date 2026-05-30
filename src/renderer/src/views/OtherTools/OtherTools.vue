@@ -3604,6 +3604,7 @@ onUnmounted(() => {
 .custom-modules-grid {
   column-width: 320px;
   column-gap: 12px;
+  padding-bottom: 30vh;
 }
 
 .custom-modules-grid > * {

@@ -243,7 +243,7 @@ const ENHANCE_PROMPT_MAX_TOKENS = 600
 
 const SEARCH_EXTRACT_MAX_TOKENS = 300
 
-function trimAiText(text: string, maxLength = 4000): string {
+function trimAiText(text: string, maxLength = 64000): string {
   const t = text.replace(/\r\n/g, '\n').trim()
   if (t.length <= maxLength) return t
   return t.slice(0, maxLength).trimEnd()
@@ -265,8 +265,8 @@ function buildSystemPrompt(type: CustomModuleType, enableMarkdown?: boolean): st
   return '你是一个知识丰富的助手。根据用户的要求输出简洁、准确的内容。不要使用列表格式，直接输出段落文字。'
 }
 
-function buildMaxTokens(type: CustomModuleType, webSearch = false): number {
-  const base = type === 'ranking' ? 2000 : type === 'link' ? 2500 : type === 'chart' ? 3000 : 800
+function buildMaxTokens(_type: CustomModuleType, webSearch = false): number {
+  const base = 16384
   return webSearch ? base * 2 : base
 }
 

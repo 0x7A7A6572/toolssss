@@ -61,7 +61,6 @@ const draftMaxHeightValue = ref<number>(300)
 const draftMaxHeightUnlimited = ref(false)
 const draftEnableMarkdown = ref(false)
 const draftUpdateFrequency = ref<UpdateFrequency>('daily')
-const draftAdvancedOpen = ref(false)
 const draftSaving = ref(false)
 const draftError = ref('')
 const draftAiEnhancing = ref(false)
@@ -77,7 +76,6 @@ function resetForm(): void {
   draftMaxHeightUnlimited.value = props.initialMaxHeight === 'auto'
   draftEnableMarkdown.value = props.initialEnableMarkdown
   draftUpdateFrequency.value = props.initialUpdateFrequency
-  draftAdvancedOpen.value = false
   draftSaving.value = false
   draftError.value = ''
   draftAiEnhancing.value = false
@@ -159,7 +157,6 @@ function save(): void {
     centered
     @close="close"
   >
-    <!-- <div class="picker-title">{{ mode === 'add' ? '添加模块' : '编辑模块' }}</div> -->
     <div class="module-dialog-form">
       <div class="flex gap-[10px]">
         <div
@@ -244,47 +241,54 @@ function save(): void {
           实时：每次页面加载时自动更新；其他：在有效期内使用缓存内容，可手动刷新
         </div>
       </div>
-      <div class="module-dialog-advanced">
-        <div class="module-dialog-field">
-          <div class="module-dialog-label">高级设置</div>
 
-          <div class="module-dialog-row">
-            <label class="module-dialog-label">模块最低高度 (px)</label>
-            <a-input-number
-              v-model:value="draftMinHeight"
-              :min="120"
-              :max="600"
-              :step="20"
-              size="small"
-              style="width: 100px"
-            />
-          </div>
+      <a-collapse ghost :style="{ background: 'transparent' }">
+        <a-collapse-panel key="advanced" header="高级设置">
+          <div class="advanced-body">
+            <div class="module-dialog-field">
+              <div class="module-dialog-row">
+                <label class="module-dialog-label">模块最低高度 (px)</label>
+                <a-input-number
+                  v-model:value="draftMinHeight"
+                  :min="120"
+                  :max="600"
+                  :step="20"
+                  size="small"
+                  style="width: 100px"
+                />
+              </div>
+            </div>
 
-          <div class="module-dialog-row mt-[10px]">
-            <label class="module-dialog-label">模块最大高度</label>
-            <div class="max-height-row">
-              <a-input-number
-                v-model:value="draftMaxHeightValue"
-                :min="100"
-                :max="1200"
-                :step="50"
-                :disabled="draftMaxHeightUnlimited"
-                size="small"
-                style="width: 90px"
-              />
-              <span class="max-height-unit">px</span>
-              <AppSwitch v-model="draftMaxHeightUnlimited" :checked-value="true" />
-              <span class="max-height-label">不限制</span>
+            <div class="module-dialog-field">
+              <div class="module-dialog-row">
+                <label class="module-dialog-label">模块最大高度</label>
+                <div class="max-height-row">
+                  <a-input-number
+                    v-model:value="draftMaxHeightValue"
+                    :min="100"
+                    :max="1200"
+                    :step="50"
+                    :disabled="draftMaxHeightUnlimited"
+                    size="small"
+                    style="width: 90px"
+                  />
+                  <span class="max-height-unit">px</span>
+                  <AppSwitch v-model="draftMaxHeightUnlimited" :checked-value="true" />
+                  <span class="max-height-label">不限制</span>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="draftType === 'text'" class="module-dialog-field">
+              <div class="module-dialog-row">
+                <label class="module-dialog-label">启用 Markdown 渲染</label>
+                <AppSwitch v-model="draftEnableMarkdown" :checked-value="true" />
+              </div>
             </div>
           </div>
-        </div>
-        <div v-if="draftType === 'text'" class="module-dialog-field">
-          <div class="module-dialog-row mt-[10px]">
-            <label class="module-dialog-label">启用 Markdown 渲染</label>
-            <AppSwitch v-model="draftEnableMarkdown" :checked-value="true" />
-          </div>
-        </div>
-      </div>
+        </a-collapse-panel>
+      </a-collapse>
+
       <div v-if="draftError" class="error">{{ draftError }}</div>
     </div>
     <div class="picker-actions mt-[10px]">
@@ -367,39 +371,11 @@ function save(): void {
   flex-direction: column;
 }
 
-.advanced-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 0;
-  border: none;
-  background: transparent;
-  color: rgba(235, 235, 245, 0.55);
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: color 0.12s ease;
-}
-
-.advanced-toggle:hover {
-  color: rgba(235, 235, 245, 0.85);
-}
-
-.advanced-toggle-icon {
-  display: inline-block;
-  font-size: 10px;
-  transition: transform 0.15s ease;
-}
-
-.advanced-toggle-icon.open {
-  transform: rotate(90deg);
-}
-
 .advanced-body {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 10px 0 0 0;
+  gap: 14px;
+  padding: 6px 0 0 0;
 }
 
 .ai-enhance-btn {
