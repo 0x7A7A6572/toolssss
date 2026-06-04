@@ -28,52 +28,20 @@ const props = defineProps<{
   errorText: string
   searching?: boolean
   moduleId?: string
-  isDragging?: boolean
-  isDragOver?: boolean
 }>()
 
 const emit = defineEmits<{
   refresh: []
   edit: []
   delete: []
-  dragstart: [payload: { id: string; event: DragEvent }]
-  dragover: [payload: { id: string; event: DragEvent }]
-  dragleave: []
-  drop: [payload: { id: string; event: DragEvent }]
-  dragend: []
+  expandchange: [value: boolean]
 }>()
-
-function onDragStart(e: DragEvent): void {
-  if (props.moduleId) {
-    emit('dragstart', { id: props.moduleId, event: e })
-  }
-}
-
-function onDragOver(e: DragEvent): void {
-  if (props.moduleId) {
-    e.preventDefault()
-    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
-    emit('dragover', { id: props.moduleId, event: e })
-  }
-}
-
-function onDragLeave(): void {
-  emit('dragleave')
-}
-
-function onDrop(e: DragEvent): void {
-  e.preventDefault()
-  if (props.moduleId) {
-    emit('drop', { id: props.moduleId, event: e })
-  }
-}
-
-function onDragEnd(): void {
-  emit('dragend')
-}
 
 const expanded = ref(false)
 const closing = ref(false)
+const cardEl = ref<HTMLElement | null>(null)
+const expandPlaceholder = ref(false)
+const placeholderSize = ref({ width: 0, height: 0 })
 
 function toggleExpand(): void {
   if (closing.value) return
@@ -82,9 +50,17 @@ function toggleExpand(): void {
     setTimeout(() => {
       expanded.value = false
       closing.value = false
+      expandPlaceholder.value = false
+      emit('expandchange', false)
     }, 250)
   } else {
+    if (cardEl.value) {
+      const rect = cardEl.value.getBoundingClientRect()
+      placeholderSize.value = { width: rect.width, height: rect.height }
+    }
+    expandPlaceholder.value = true
     expanded.value = true
+    emit('expandchange', true)
   }
 }
 
@@ -431,23 +407,21 @@ function openLink(url: string): void {
 </script>
 
 <template>
+  <div
+    v-if="expandPlaceholder"
+    class="card-placeholder"
+    :style="{ width: placeholderSize.width + 'px', height: placeholderSize.height + 'px' }"
+  />
   <section
+    ref="cardEl"
     class="card custom-module-card"
     :style="cardStyle"
     :class="{
       loading,
       'has-error': !!errorText,
-      'is-dragging': isDragging,
-      'is-drag-over': isDragOver,
       expanded,
       closing
     }"
-    :draggable="!!moduleId"
-    @dragstart="onDragStart"
-    @dragover="onDragOver"
-    @dragleave="onDragLeave"
-    @drop="onDrop"
-    @dragend="onDragEnd"
   >
     <div class="card-head">
       <div class="card-title-row">
@@ -1101,5 +1075,10 @@ function openLink(url: string): void {
   100% {
     opacity: 0;
   }
+}
+
+.card-placeholder {
+  visibility: hidden;
+  pointer-events: none;
 }
 </style>

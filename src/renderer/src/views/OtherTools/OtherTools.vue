@@ -48,6 +48,7 @@ import WeatherHourlyTrendsChart, {
 import { LegalHoliday, SolarDay } from 'tyme4ts'
 import answerBookData from '../../../../libs/book-of-answers.json'
 import AppSwitch from '@renderer/components/AppSwitch.vue'
+import { useSortableGrid } from '@renderer/composables/useSortableGrid'
 
 const DEFAULT_STATION_ID = '59431'
 const stationId = ref<string>(localStorage.getItem('weather.stationId') ?? DEFAULT_STATION_ID)
@@ -535,63 +536,26 @@ function saveCustomModules(): void {
   }
 }
 
-const draggedModuleId = ref<string | null>(null)
-const dragOverModuleId = ref<string | null>(null)
+const modulesGridRef = ref<HTMLElement | null>(null)
+const anyModuleExpanded = ref(false)
 
-function onModuleDragStart(payload: { id: string; event: DragEvent }): void {
-  draggedModuleId.value = payload.id
-  if (payload.event.dataTransfer) {
-    payload.event.dataTransfer.effectAllowed = 'move'
-    payload.event.dataTransfer.setData('text/plain', payload.id)
+function onModuleExpandChange(moduleId: string, expanded: boolean): void {
+  if (expanded) {
+    anyModuleExpanded.value = true
+  } else {
+    anyModuleExpanded.value = false
   }
 }
 
-function onModuleDragOver(payload: { id: string; event: DragEvent }): void {
-  if (draggedModuleId.value === payload.id) return
-  payload.event.preventDefault()
-  if (payload.event.dataTransfer) {
-    payload.event.dataTransfer.dropEffect = 'move'
+useSortableGrid(modulesGridRef, {
+  items: gridOrder,
+  disabled: anyModuleExpanded,
+  filter: '.add-module-card',
+  onChange(newOrder) {
+    gridOrder.value = newOrder
+    saveGridOrder()
   }
-  dragOverModuleId.value = payload.id
-}
-
-function onModuleDragLeave(): void {
-  dragOverModuleId.value = null
-}
-
-function onModuleDrop(payload: { id: string; event: DragEvent }): void {
-  payload.event.preventDefault()
-  const sourceId = draggedModuleId.value
-  const targetId = payload.id
-  if (!sourceId || sourceId === targetId || targetId === ADD_MODULE_ID) {
-    resetModuleDragState()
-    return
-  }
-
-  const sourceIdx = gridOrder.value.indexOf(sourceId)
-  const targetIdx = gridOrder.value.indexOf(targetId)
-  if (sourceIdx === -1 || targetIdx === -1) {
-    resetModuleDragState()
-    return
-  }
-
-  const items = [...gridOrder.value]
-  const [moved] = items.splice(sourceIdx, 1)
-  const adjustedTarget = sourceIdx < targetIdx ? targetIdx - 1 : targetIdx
-  items.splice(adjustedTarget, 0, moved)
-  gridOrder.value = items
-  saveGridOrder()
-  resetModuleDragState()
-}
-
-function onModuleDragEnd(): void {
-  resetModuleDragState()
-}
-
-function resetModuleDragState(): void {
-  draggedModuleId.value = null
-  dragOverModuleId.value = null
-}
+})
 
 function loadCustomModulesCache(): void {
   try {
@@ -1812,22 +1776,12 @@ onUnmounted(() => {
     </header>
 
     <div>
-      <div class="custom-modules-grid">
+      <div ref="modulesGridRef" class="custom-modules-grid">
         <template v-for="itemId in orderedGridItems" :key="itemId">
           <div
             v-if="itemId === 'weather-today'"
             v-show="moduleVisibility['weather-today']"
             class="left-col"
-            draggable="true"
-            :class="{
-              'is-dragging': draggedModuleId === itemId,
-              'is-drag-over': dragOverModuleId === itemId
-            }"
-            @dragstart="onModuleDragStart({ id: itemId, event: $event })"
-            @dragover="onModuleDragOver({ id: itemId, event: $event })"
-            @dragleave="onModuleDragLeave"
-            @drop="onModuleDrop({ id: itemId, event: $event })"
-            @dragend="onModuleDragEnd"
           >
             <div class="block has-emoji">
               <div
@@ -1932,16 +1886,6 @@ onUnmounted(() => {
             v-else-if="itemId === 'weather-chart'"
             v-show="moduleVisibility['weather-chart']"
             class="right-col"
-            draggable="true"
-            :class="{
-              'is-dragging': draggedModuleId === itemId,
-              'is-drag-over': dragOverModuleId === itemId
-            }"
-            @dragstart="onModuleDragStart({ id: itemId, event: $event })"
-            @dragover="onModuleDragOver({ id: itemId, event: $event })"
-            @dragleave="onModuleDragLeave"
-            @drop="onModuleDrop({ id: itemId, event: $event })"
-            @dragend="onModuleDragEnd"
           >
             <div class="block border-none !h-[200px]">
               <div class="block-title">
@@ -2009,16 +1953,6 @@ onUnmounted(() => {
             v-else-if="itemId === 'work-calendar'"
             v-show="moduleVisibility['work-calendar']"
             class="card work-calendar-card"
-            draggable="true"
-            :class="{
-              'is-dragging': draggedModuleId === itemId,
-              'is-drag-over': dragOverModuleId === itemId
-            }"
-            @dragstart="onModuleDragStart({ id: itemId, event: $event })"
-            @dragover="onModuleDragOver({ id: itemId, event: $event })"
-            @dragleave="onModuleDragLeave"
-            @drop="onModuleDrop({ id: itemId, event: $event })"
-            @dragend="onModuleDragEnd"
           >
             <div class="work-calendar-head">
               <div class="work-calendar-title">打工人日历</div>
@@ -2068,16 +2002,6 @@ onUnmounted(() => {
             v-else-if="itemId === 'stack-tools'"
             v-show="moduleVisibility['stack-tools']"
             class="stack-tool-wrap"
-            draggable="true"
-            :class="{
-              'is-dragging': draggedModuleId === itemId,
-              'is-drag-over': dragOverModuleId === itemId
-            }"
-            @dragstart="onModuleDragStart({ id: itemId, event: $event })"
-            @dragover="onModuleDragOver({ id: itemId, event: $event })"
-            @dragleave="onModuleDragLeave"
-            @drop="onModuleDrop({ id: itemId, event: $event })"
-            @dragend="onModuleDragEnd"
           >
             <section
               class="card stack-card"
@@ -2186,20 +2110,14 @@ onUnmounted(() => {
             :searching="!!customModulesSearching[itemId]"
             :error-text="customModulesError[itemId] || ''"
             :module-id="itemId"
-            :is-dragging="draggedModuleId === itemId"
-            :is-drag-over="dragOverModuleId === itemId"
-            @dragstart="onModuleDragStart"
-            @dragover="onModuleDragOver"
-            @dragleave="onModuleDragLeave"
-            @drop="onModuleDrop"
-            @dragend="onModuleDragEnd"
+            @expandchange="(v: boolean) => onModuleExpandChange(itemId, v)"
             @refresh="enqueueModuleRefresh(customModuleMap.get(itemId)!)"
             @edit="openEditModuleDialog(customModuleMap.get(itemId)!)"
             @delete="deleteModule(itemId)"
           />
           <section
             v-else-if="itemId === '__add__'"
-            class="card add-module-card"
+            class="card add-module-card not-sortable"
             type="button"
             @click="openAddModuleDialog"
           >
@@ -2212,7 +2130,11 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div class="add-btn-float" :class="{ 'show-in': addBtnVisible }" @click="openAddModuleDialog">
+    <div
+      class="add-btn-float"
+      :class="{ 'show-in': addBtnVisible && !anyModuleExpanded }"
+      @click="!anyModuleExpanded && openAddModuleDialog()"
+    >
       <Plus :size="24" />
     </div>
   </div>
@@ -2770,7 +2692,7 @@ onUnmounted(() => {
 
   &.disabled {
     cursor: not-allowed;
-    opacity: 0.5;
+    opacity: 0;
   }
 }
 
@@ -3612,11 +3534,14 @@ onUnmounted(() => {
   margin-bottom: 12px;
 }
 
-.custom-modules-grid :deep(.is-dragging) {
-  opacity: 0.35;
+.custom-modules-grid .sortable-ghost {
+  opacity: 0.25;
+  outline: 2px dashed rgba(60, 130, 255, 0.5);
+  outline-offset: -2px;
+  border-radius: 12px;
 }
 
-.custom-modules-grid :deep(.is-drag-over) {
+.custom-modules-grid .sortable-chosen {
   outline: 2px solid rgba(60, 130, 255, 0.65);
   outline-offset: -1px;
   border-radius: 12px;
@@ -3685,6 +3610,12 @@ onUnmounted(() => {
 
   &:hover {
     box-shadow: 0 0 0 2px rgba(0, 220, 255, 0.3);
+  }
+
+  &.disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+    pointer-events: none;
   }
 }
 </style>

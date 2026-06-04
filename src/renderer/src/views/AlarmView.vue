@@ -1,12 +1,20 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
 import type { AlarmReason } from '@shared/settings'
+import restTips from '../../../libs/rest-tips.json'
 
 const reason = ref<AlarmReason>('alarm')
 const title = ref('该休息了')
 const body = ref('')
+const randomTip = ref('')
 const secondsLeft = ref<number | null>(null)
 let timer: number | null = null
+
+function pickRandomTip(): string {
+  const tips = restTips as string[]
+  if (!tips.length) return ''
+  return tips[Math.floor(Math.random() * tips.length)]
+}
 
 const showSnooze = computed(() => reason.value === 'alarm')
 
@@ -29,6 +37,7 @@ const onShow = (_: unknown, payload: unknown): void => {
   if (p.reason === 'alarm' || p.reason === 'break') reason.value = p.reason
   if (typeof p.title === 'string') title.value = p.title
   if (typeof p.body === 'string') body.value = p.body
+  randomTip.value = pickRandomTip()
   const closeOnEnd = typeof p.closeOnEnd === 'boolean' ? p.closeOnEnd : true
   const total = typeof p.timeoutSec === 'number' ? p.timeoutSec : undefined
   clearTimer()
@@ -100,6 +109,7 @@ onBeforeUnmount(() => {
         <span v-if="secondsLeft !== null" class="countdown">{{ secondsLeft }}s</span>
       </div>
       <div class="body">{{ body }}</div>
+      <div class="tip">{{ randomTip }}</div>
       <div class="actions">
         <button v-if="showSnooze" class="btn" type="button" @click="snooze">稍后 5 分钟</button>
         <!-- <button class="btn" type="button" @click="close">关闭</button> -->
@@ -287,6 +297,13 @@ $shooting-time: 8000ms;
 .body {
   font-size: 18px;
   color: rgba(235, 235, 245, 0.86);
+}
+
+.tip {
+  font-size: 20px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.96);
+  margin-top: 4px;
 }
 
 .countdown {
