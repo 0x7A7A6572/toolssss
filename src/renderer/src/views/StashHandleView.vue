@@ -18,6 +18,7 @@ const handleColor = ref(initialColor)
 
 const showHandleTitle = computed(() => settings.value.windowStash.showHandleTitle !== false)
 const showHandleDrag = computed(() => settings.value.windowStash.showHandleDrag !== false)
+const isClosingWindows = ref(false)
 
 function truncateByCodePoints(value: string, maxChars: number): string {
   const s = typeof value === 'string' ? value : ''
@@ -197,6 +198,8 @@ function startDragging(ev: PointerEvent): void {
 
 function restore(): void {
   if (!hwnd.trim()) return
+  if (isClosingWindows.value) return
+  isClosingWindows.value = true
   window.electron.ipcRenderer.send('window-stash:toggle', { hwnd, activate: true })
 }
 </script>
@@ -210,17 +213,22 @@ function restore(): void {
     @dblclick.stop.prevent="restore"
   >
     <div class="content" :class="{ vertical }">
-      <button
-        v-if="showHandleDrag"
-        class="drag"
-        type="button"
-        @pointerdown.stop.prevent="startDragging"
-      >
-        <component :is="vertical ? GripVertical : GripHorizontal" :size="14" />
-      </button>
-      <div v-if="showHandleTitle" class="text" :class="{ vertical }">
-        {{ displayTitle }}
-      </div>
+      <template v-if="!isClosingWindows">
+        <button
+          v-if="showHandleDrag"
+          class="drag"
+          type="button"
+          @pointerdown.stop.prevent="startDragging"
+        >
+          <component :is="vertical ? GripVertical : GripHorizontal" :size="14" />
+        </button>
+        <div v-if="showHandleTitle" class="text" :class="{ vertical }">
+          {{ displayTitle }}
+        </div>
+      </template>
+      <template v-else>
+        <div class="text" :class="{ vertical }">正在关闭</div>
+      </template>
     </div>
   </div>
 </template>
