@@ -11,7 +11,7 @@ function killProjectElectron() {
     const escaped = projectRoot.replace(/'/g, "''")
     try {
       execSync(
-        `powershell -NoProfile -Command "Get-Process electron,toolssss -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*${escaped}*' } | Stop-Process -Force -ErrorAction SilentlyContinue"`,
+        `powershell -NoProfile -Command "Get-Process electron,forge-studio -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*${escaped}*' } | Stop-Process -Force -ErrorAction SilentlyContinue"`,
         { stdio: 'ignore' }
       )
     } catch {

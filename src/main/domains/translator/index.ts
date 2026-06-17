@@ -5,8 +5,8 @@ import { join } from 'path'
 import { BrowserWindow, clipboard, ipcMain, screen } from 'electron'
 import type { AppSettings } from '@shared/settings'
 import { TRANSLATOR_EVENTS, type TranslatePayload, type TranslateResult } from '@shared/translator'
-import { getAiApiKeyFromSecrets } from '@main-core/secrets'
-import { buildAiChatCompletionsUrl, extractAiErrorMessage } from '@main-core/ai-client'
+import { SystemMessage, HumanMessage } from '@langchain/core/messages'
+import { createChatModel, resolveAiModelConfig, resolveApiKey, invokeText } from '@main-core/ai-service'
 
 const execAsync = promisify(exec)
 
@@ -287,77 +287,46 @@ export function createTranslatorDomain(deps: Deps): {
     settings: AppSettings,
     args: { text: string; source: string; target: string }
   ): Promise<string> => {
-    if (!settings.ai.enabled) throw new Error('AI 未启用，请到「全局设置」开启。')
-    const base = settings.ai.baseUrl.trim()
-    if (!base) throw new Error('未配置 AI Base URL，请到「全局设置」完善。')
-    const model = settings.ai.model.trim()
-    if (!model) throw new Error('未配置 AI Model，请到「全局设置」完善。')
-    const apiKey = getAiApiKeyFromSecrets(settings.ai.activeProfileId)
-    if (!apiKey) throw new Error('未配置 AI API Key，请到「全局设置」完善。')
-
-    const source = args.source && args.source !== 'auto' ? args.source : 'auto'
+    const sourceLabel = args.source && args.source !== 'auto' ? args.source : 'auto'
     const target = args.target
     if (!target) throw new Error('未指定目标语言')
 
-    const url = buildAiChatCompletionsUrl(base)
+    const config = resolveAiModelConfig(settings)
+    const apiKey = resolveApiKey(config.profileId)
+    const model = createChatModel(config, apiKey, {
+      temperature: 0.1,
+      maxTokens: 2000
+    })
+    const messages = [
+      new SystemMessage(
+        '你是一个翻译引擎。只输出译文，不要解释，不要加引号。保留原文换行与格式。'
+      ),
+      new HumanMessage(
+        `请把下面内容翻译成目标语言。\n` +
+          `源语言：${sourceLabel === 'auto' ? '自动检测' : sourceLabel}\n` +
+          `目标语言：${target}\n` +
+          `内容：\n` +
+          args.text
+      )
+    ]
+
     const controller = new AbortController()
     const timeoutMs = 45000
     const timeout = setTimeout(() => controller.abort(), timeoutMs)
     try {
-      let res: Response
-      try {
-        res = await fetch(url.toString(), {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${apiKey}`
-          },
-          body: JSON.stringify({
-            model,
-            temperature: 0.1,
-            max_tokens: 2000,
-            messages: [
-              {
-                role: 'system',
-                content: '你是一个翻译引擎。只输出译文，不要解释，不要加引号。保留原文换行与格式。'
-              },
-              {
-                role: 'user',
-                content:
-                  `请把下面内容翻译成目标语言。\n` +
-                  `源语言：${source === 'auto' ? '自动检测' : source}\n` +
-                  `目标语言：${target}\n` +
-                  `内容：\n` +
-                  args.text
-              }
-            ]
-          }),
-          signal: controller.signal
-        })
-      } catch (e) {
-        const name =
-          e &&
-          typeof e === 'object' &&
-          'name' in e &&
-          typeof (e as { name?: unknown }).name === 'string'
-            ? ((e as { name: string }).name as string)
-            : ''
-        if (name === 'AbortError')
-          throw new Error(`AI 翻译超时（${Math.round(timeoutMs / 1000)}秒），请稍后重试`)
-        throw e
-      }
-
-      const raw = await res.text()
-      if (!res.ok) {
-        const msg = extractAiErrorMessage(raw)
-        throw new Error(msg ? `AI 翻译失败：${msg}` : raw || `AI 翻译失败：HTTP ${res.status}`)
-      }
-      const data = JSON.parse(raw) as {
-        choices?: Array<{ message?: { content?: unknown } }>
-      }
-      const content = data?.choices?.[0]?.message?.content
-      if (typeof content !== 'string' || !content.trim()) throw new Error('AI 未返回有效内容')
+      const content = await invokeText(model, messages, controller.signal)
       return trimAiTranslateText(content)
+    } catch (e) {
+      const name =
+        e &&
+        typeof e === 'object' &&
+        'name' in e &&
+        typeof (e as { name?: unknown }).name === 'string'
+          ? ((e as { name: string }).name as string)
+          : ''
+      if (name === 'AbortError')
+        throw new Error(`AI 翻译超时（${Math.round(timeoutMs / 1000)}秒），请稍后重试`)
+      throw e
     } finally {
       clearTimeout(timeout)
     }

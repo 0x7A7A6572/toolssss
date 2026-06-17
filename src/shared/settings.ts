@@ -1,8 +1,32 @@
 import type { AiProviderKey } from './ai-providers'
+import type { AgentConfig, KnowledgeBaseConfig } from './agents'
 
 export type AlarmReason = 'alarm' | 'break'
 export type AiProvider = AiProviderKey | 'custom'
 export type AiProfileSource = 'provider' | 'custom'
+
+/** AI 模型类型标识 */
+export type AiModelType = 'llm' | 'vision' | 'multimodal' | 'speech' | 'embedding' | 'reasoning'
+
+/** 模型类型中文标签 */
+export const AI_MODEL_TYPE_LABELS: Record<AiModelType, string> = {
+  llm: '大语言模型',
+  vision: '视觉模型',
+  multimodal: '全模态模型',
+  speech: '语音模型',
+  embedding: '向量模型',
+  reasoning: '推理模型'
+}
+
+/** 模型类型主题色 */
+export const AI_MODEL_TYPE_COLORS: Record<AiModelType, string> = {
+  llm: '#3b82f6',
+  vision: '#22c55e',
+  multimodal: '#a855f7',
+  speech: '#f59e0b',
+  embedding: '#06b6d4',
+  reasoning: '#ec4899'
+}
 
 export interface AiProfile {
   id: string
@@ -12,6 +36,21 @@ export interface AiProfile {
   baseUrl: string
   model: string
   apiKeySet: boolean
+  /** 模型类型，默认为 llm */
+  modelType: AiModelType
+}
+
+export interface EmbeddingProfileConfig {
+  enabled: boolean
+  profileId: string
+  model: string
+  dimensions: number
+}
+
+export interface RagRuntimeConfig {
+  topK: number
+  chunkSize: number
+  chunkOverlap: number
 }
 
 export interface AppSettings {
@@ -53,6 +92,7 @@ export interface AppSettings {
     activeProfileId: string
     profiles: AiProfile[]
     searchMcpCommand: string
+    embedding: EmbeddingProfileConfig
   }
   funFact: {
     title: string
@@ -94,6 +134,11 @@ export interface AppSettings {
     topmostBorderColor: string
     topmostBorderWidth: number
   }
+  agents: {
+    configs: AgentConfig[]
+    knowledgeBases: KnowledgeBaseConfig[]
+    rag: RagRuntimeConfig
+  }
 }
 
 export type SettingsPatch = Partial<{
@@ -114,6 +159,7 @@ export type SettingsPatch = Partial<{
   break: Partial<AppSettings['break']>
   scheduledTasks: Partial<AppSettings['scheduledTasks']>
   windowStash: Partial<AppSettings['windowStash']>
+  agents: Partial<AppSettings['agents']>
 }>
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -178,7 +224,13 @@ export const DEFAULT_SETTINGS: AppSettings = {
     apiKeySet: false,
     activeProfileId: '',
     profiles: [],
-    searchMcpCommand: 'npx -y mcp-remote https://search.parallel.ai/mcp'
+    searchMcpCommand: 'npx -y mcp-remote https://search.parallel.ai/mcp',
+    embedding: {
+      enabled: false,
+      profileId: '',
+      model: 'text-embedding-3-small',
+      dimensions: 1536
+    }
   },
   funFact: {
     title: '每日冷知识',
@@ -225,5 +277,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
     topmostHighlightEnabled: true,
     topmostBorderColor: '#3b82f6',
     topmostBorderWidth: 3
+  },
+  agents: {
+    configs: [],
+    knowledgeBases: [],
+    rag: {
+      topK: 4,
+      chunkSize: 700,
+      chunkOverlap: 120
+    }
   }
 }

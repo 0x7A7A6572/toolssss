@@ -10,6 +10,7 @@ const route = useRoute()
 
 const tabs = [
   { id: 'OtherTools', label: House, type: 'icon', path: '/other-tools' },
+  { id: 'AgentChat', label: '智能体', path: '/agents' },
   { id: 'StickyNotes', label: '便签', path: '/sticky-notes' },
   { id: 'EyeProtection', label: '护眼', path: '/eye-protection' },
   { id: 'Translator', label: '快捷翻译', path: '/translator' },
@@ -258,8 +259,12 @@ onBeforeUnmount(() => {
       </button>
     </aside>
 
-    <div class="page">
-      <router-view />
+    <div class="page" :class="(route.meta?.pageClass as string) || ''">
+      <router-view v-slot="{ Component }">
+        <keep-alive>
+          <component :is="Component" />
+        </keep-alive>
+      </router-view>
     </div>
   </div>
 </template>
@@ -464,6 +469,14 @@ onBeforeUnmount(() => {
   border-top-left-radius: 15px;
   border-top-right-radius: 15px;
   margin-top: 35px;
+}
+
+/* 智能体聊天页：无边距、无圆角、overflow 由子组件自行管理 */
+.page-chat {
+  padding: 0;
+  border-radius: 0;
+  margin-top: 35px;
+  overflow: hidden;
 }
 
 .update-card {

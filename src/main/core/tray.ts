@@ -39,7 +39,7 @@ export function syncTray(deps: Deps, settings: AppSettings): Tray | null {
         }
       }
     ])
-    tray.setToolTip('toolssss')
+    tray.setToolTip('Forge Studio')
     tray.setContextMenu(contextMenu)
     tray.on('click', showApp)
     tray.on('double-click', showApp)

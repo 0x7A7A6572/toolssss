@@ -445,7 +445,7 @@ function showStickerContextMenu(win: BrowserWindow, payload: StickerPayload | nu
     const ts = formatSnipFileName(Date.now()).replace(/\.png$/i, '')
     const ext = kind === 'image' ? 'png' : 'txt'
     const result = await dialog.showSaveDialog(win, {
-      defaultPath: join(app.getPath('pictures'), `toolssss-sticker-${ts}.${ext}`),
+      defaultPath: join(app.getPath('pictures'), `forge-studio-sticker-${ts}.${ext}`),
       filters:
         kind === 'image'
           ? [{ name: 'PNG Image', extensions: ['png'] }]

@@ -77,7 +77,7 @@ async function installUpdate(): Promise<void> {
 
 // const faqs: Faq[] = [
 //   {
-//     q: 'toolsss 是什么？',
+//     q: 'Forge Studio 是什么？',
 //     a: '一个桌面端工具箱，把常用小工具集中到一个地方，减少你在应用之间来回切换。'
 //   },
 //   {
@@ -110,10 +110,10 @@ onBeforeUnmount(() => {
   <div class="landing">
     <section class="about">
       <div class="about-left">
-        <img class="about-logo" :src="logoUrl" alt="TOOLSSSS" />
+        <img class="about-logo" :src="logoUrl" alt="Forge Studio" />
         <div class="about-meta">
           <div class="about-title">
-            TOOLSSSS
+            Forge Studio
             <span v-if="update?.hasUpdate" class="about-dot" />
           </div>
           <div class="about-sub">版本 {{ version || '-' }}</div>
@@ -132,7 +132,7 @@ onBeforeUnmount(() => {
 
     <!-- <section class="hero card">
       <div class="hero-main">
-        <div class="kicker">TOOLSSSS</div>
+        <div class="kicker">FORGE STUDIO</div>
         <h1 class="hero-title">把碎片工具变成一套工作流</h1>
         <p class="hero-subtitle">
           便签、截屏贴图、翻译、脚本库……你需要的不是更多工具，而是更少切换。

@@ -2,13 +2,15 @@ import { ipcMain } from 'electron'
 import type { AppSettings } from '@shared/settings'
 import type { CustomModuleType } from '@shared/custom-modules'
 import { CUSTOM_MODULES_EVENTS } from '@shared/custom-modules'
+import { createAiStreamId } from '@main-core/ai-client'
+import { SystemMessage, HumanMessage } from '@langchain/core/messages'
 import {
-  buildAiChatCompletionsUrl,
-  createAiStreamId,
-  extractAiErrorMessage,
-  tryParseAiSseDelta
-} from '@main-core/ai-client'
-import { getAiApiKeyFromSecrets } from '@main-core/secrets'
+  createChatModel,
+  resolveAiModelConfig,
+  resolveApiKey,
+  streamText,
+  invokeText
+} from '@main-core/ai-service'
 import { runMcpSearch, type McpSearchResult } from '@main-core/mcp-client'
 
 const streamByModule = new Map<
@@ -324,40 +326,18 @@ async function extractSearchParamsViaAi(args: {
   prompt: string
   signal: AbortSignal
 }): Promise<{ objective: string; searchQueries: string[] } | null> {
-  const settings = args.settings
-  if (!settings.ai.enabled) return null
-  const base = settings.ai.baseUrl.trim()
-  if (!base) return null
-  const model = settings.ai.model.trim()
-  if (!model) return null
-  const apiKey = getAiApiKeyFromSecrets(settings.ai.activeProfileId)
-  if (!apiKey) return null
-
-  const url = buildAiChatCompletionsUrl(base)
   try {
-    const res = await fetch(url.toString(), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0.3,
-        max_tokens: SEARCH_EXTRACT_MAX_TOKENS,
-        stream: false,
-        messages: [
-          { role: 'system', content: SEARCH_EXTRACT_SYSTEM_PROMPT },
-          { role: 'user', content: args.prompt }
-        ]
-      }),
-      signal: args.signal
+    const config = resolveAiModelConfig(args.settings)
+    const apiKey = resolveApiKey(config.profileId)
+    const model = createChatModel(config, apiKey, {
+      temperature: 0.3,
+      maxTokens: SEARCH_EXTRACT_MAX_TOKENS
     })
-    if (!res.ok) return null
-    const raw = await res.text()
-    const data = JSON.parse(raw) as { choices?: Array<{ message?: { content?: string } }> }
-    const content = data?.choices?.[0]?.message?.content
-    if (!content || !content.trim()) return null
+    const messages = [
+      new SystemMessage(SEARCH_EXTRACT_SYSTEM_PROMPT),
+      new HumanMessage(args.prompt)
+    ]
+    const content = await invokeText(model, messages, args.signal)
     const parsed = tryParseSearchParams(content)
     if (parsed) {
       console.log(
@@ -380,88 +360,17 @@ async function requestFromAiStreamed(args: {
   enableMarkdown?: boolean
   onDelta: (delta: string) => void
 }): Promise<string> {
-  const settings = args.settings
-  if (!settings.ai.enabled) throw new Error('AI 未启用，请到「全局设置」开启。')
-  const base = settings.ai.baseUrl.trim()
-  if (!base) throw new Error('未配置 AI Base URL，请到「全局设置」完善。')
-  const model = settings.ai.model.trim()
-  if (!model) throw new Error('未配置 AI Model，请到「全局设置」完善。')
-  const apiKey = getAiApiKeyFromSecrets(settings.ai.activeProfileId)
-  if (!apiKey) throw new Error('未配置 AI API Key，请到「全局设置」完善。')
-
-  const messages: Array<{ role: string; content: string }> = [
-    {
-      role: 'system',
-      content: buildSystemPrompt(args.type, args.enableMarkdown)
-    },
-    {
-      role: 'user',
-      content: args.prompt
-    }
-  ]
-
-  const url = buildAiChatCompletionsUrl(base)
-  const res = await fetch(url.toString(), {
-    method: 'POST',
-    headers: {
-      Accept: 'text/event-stream',
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`
-    },
-    body: JSON.stringify({
-      model,
-      temperature: 0.7,
-      max_tokens: buildMaxTokens(args.type, args.webSearch),
-      stream: true,
-      messages
-    }),
-    signal: args.signal
+  const config = resolveAiModelConfig(args.settings)
+  const apiKey = resolveApiKey(config.profileId)
+  const model = createChatModel(config, apiKey, {
+    temperature: 0.7,
+    maxTokens: buildMaxTokens(args.type, args.webSearch)
   })
-
-  if (!res.ok) {
-    const raw = await res.text()
-    const msg = extractAiErrorMessage(raw)
-    throw new Error(msg ? `AI 请求失败：${msg}` : raw || `AI 请求失败：HTTP ${res.status}`)
-  }
-
-  const ct = res.headers.get('content-type') ?? ''
-  if (!/text\/event-stream/i.test(ct) || !res.body) {
-    const raw = await res.text()
-    const data = JSON.parse(raw) as {
-      choices?: Array<{ message?: { content?: unknown } }>
-    }
-    const content = data?.choices?.[0]?.message?.content
-    if (typeof content !== 'string' || !content.trim()) throw new Error('AI 未返回有效内容')
-    const out = trimAiText(content)
-    if (out) args.onDelta(out)
-    return out
-  }
-
-  const reader = res.body.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ''
-  let full = ''
-  while (true) {
-    const { value, done } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    while (true) {
-      const idx = buffer.indexOf('\n')
-      if (idx < 0) break
-      const line = buffer.slice(0, idx)
-      buffer = buffer.slice(idx + 1)
-      const trimmed = line.trim()
-      if (!trimmed) continue
-      if (!trimmed.startsWith('data:')) continue
-      const data = trimmed.slice('data:'.length).trim()
-      if (!data) continue
-      if (data === '[DONE]') return trimAiText(full)
-      const delta = tryParseAiSseDelta(data)
-      if (!delta) continue
-      full += delta
-      args.onDelta(delta)
-    }
-  }
+  const messages = [
+    new SystemMessage(buildSystemPrompt(args.type, args.enableMarkdown)),
+    new HumanMessage(args.prompt)
+  ]
+  const full = await streamText(model, messages, args.signal, args.onDelta)
   return trimAiText(full)
 }
 
@@ -583,58 +492,28 @@ export function registerCustomModuleHandlers(args: { getSettings: () => AppSetti
     if (!title && !prompt) throw new Error('请至少输入模块名称或提示词')
 
     const settings = args.getSettings()
-    if (!settings.ai.enabled) throw new Error('AI 未启用，请到「全局设置」开启。')
-    const base = settings.ai.baseUrl.trim()
-    if (!base) throw new Error('未配置 AI Base URL，请到「全局设置」完善。')
-    const model = settings.ai.model.trim()
-    if (!model) throw new Error('未配置 AI Model，请到「全局设置」完善。')
-    const apiKey = getAiApiKeyFromSecrets(settings.ai.activeProfileId)
-    if (!apiKey) throw new Error('未配置 AI API Key，请到「全局设置」完善。')
+    const config = resolveAiModelConfig(settings)
+    const apiKey = resolveApiKey(config.profileId)
+    const model = createChatModel(config, apiKey, {
+      temperature: 0.5,
+      maxTokens: ENHANCE_PROMPT_MAX_TOKENS
+    })
 
     const typeLabel = type === 'text' ? '生成文字' : type === 'ranking' ? '数据排行' : '资讯简报'
     const userContent = `模块标题：${title}\n模块类型：${typeLabel}\n当前提示词：${prompt}\n\n请优化以上提示词，使其更加完善和可执行。`
 
-    const url = buildAiChatCompletionsUrl(base)
+    const messages = [
+      new SystemMessage(ENHANCE_PROMPT_SYSTEM_PROMPT),
+      new HumanMessage(userContent)
+    ]
+
     const controller = new AbortController()
-    const timeoutMs = 30000
-    const timeout = setTimeout(() => controller.abort(), timeoutMs)
+    const timeout = setTimeout(() => controller.abort(), 30000)
 
     try {
-      const res = await fetch(url.toString(), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model,
-          temperature: 0.5,
-          max_tokens: ENHANCE_PROMPT_MAX_TOKENS,
-          stream: false,
-          messages: [
-            { role: 'system', content: ENHANCE_PROMPT_SYSTEM_PROMPT },
-            { role: 'user', content: userContent }
-          ]
-        }),
-        signal: controller.signal
-      })
-
-      clearTimeout(timeout)
-
-      if (!res.ok) {
-        const raw = await res.text()
-        const msg = extractAiErrorMessage(raw)
-        throw new Error(msg ? `AI 请求失败：${msg}` : raw || `AI 请求失败：HTTP ${res.status}`)
-      }
-
-      const raw = await res.text()
-      const data = JSON.parse(raw) as { choices?: Array<{ message?: { content?: string } }> }
-      const content = data?.choices?.[0]?.message?.content
-      if (!content || !content.trim()) throw new Error('AI 未返回有效内容')
-
+      const content = await invokeText(model, messages, controller.signal)
       return trimAiText(content)
     } catch (e) {
-      clearTimeout(timeout)
       if (
         e &&
         typeof e === 'object' &&
@@ -644,6 +523,8 @@ export function registerCustomModuleHandlers(args: { getSettings: () => AppSetti
         throw new Error('AI 请求超时，请稍后重试')
       }
       throw e
+    } finally {
+      clearTimeout(timeout)
     }
   })
 }

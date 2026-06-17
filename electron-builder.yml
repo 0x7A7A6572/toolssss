@@ -1,5 +1,5 @@
-appId: cn.zzerx.toolssss
-productName: toolssss
+appId: cn.zzerx.forge-studio
+productName: Forge Studio
 icon: resources/icon.png
 directories:
   buildResources: build
@@ -24,7 +24,7 @@ extraResources:
   - from: node_modules/@tesseract.js-data/eng/4.0.0_best_int/eng.traineddata.gz
     to: tessdata/eng.traineddata.gz
 win:
-  executableName: toolssss
+  executableName: forge-studio
   icon: build/icon.ico
   signAndEditExecutable: true
 nsis:
@@ -57,6 +57,6 @@ appImage:
 npmRebuild: false
 publish:
   provider: generic
-  url: https://toolssss.zzerx.cn/auto-updates
+  url: https://forge-studio.zzerx.cn/auto-updates
 electronDownload:
   mirror: https://npmmirror.com/mirrors/electron/

@@ -41,7 +41,7 @@ export function createSnipDomain(deps: Deps): {
   const defaultSnipSaveDir = (): string => {
     const pictures = app.getPath('pictures')
     const legacy = join(pictures, 'freamx', 'screenshots')
-    const next = join(pictures, 'toolssss', 'screenshots')
+    const next = join(pictures, 'forge-studio', 'screenshots')
     if (existsSync(legacy) && !existsSync(next)) return legacy
     return next
   }

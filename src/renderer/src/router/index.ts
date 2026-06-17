@@ -46,6 +46,12 @@ const routes = [
     component: () => import('../views/ScheduledTasks/ScheduledTasks.vue')
   },
   {
+    path: '/agents',
+    name: 'AgentChat',
+    component: () => import('../views/AgentChat/AgentChatView.vue'),
+    meta: { pageClass: 'page-chat' }
+  },
+  {
     path: '/settings',
     name: 'Settings',
     component: () => import('../views/Settings/SettingsView.vue')

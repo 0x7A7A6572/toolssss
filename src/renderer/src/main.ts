@@ -5,6 +5,7 @@ import 'ant-design-vue/dist/reset.css'
 import { createApp } from 'vue'
 import App from './App.vue'
 import Antd from 'ant-design-vue'
+import AntDesignX from 'ant-design-x-vue'
 import { initSettingsStore } from '@renderer/state/settings'
 
 async function bootstrap(): Promise<void> {
@@ -26,7 +27,7 @@ async function bootstrap(): Promise<void> {
     audio.play().catch(() => null)
   }
 
-  const app = createApp(App).use(Antd)
+  const app = createApp(App).use(Antd).use(AntDesignX)
 
   if (mode === 'main') {
     const m = await import('./router')

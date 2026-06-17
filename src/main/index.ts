@@ -51,6 +51,7 @@ import {
 } from './domains/window-stash'
 import { createEyeOverlayDomain } from './domains/eye-overlay'
 import { createRemindersDomain } from './domains/reminders'
+import { createAgentDomain } from './domains/agents'
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
@@ -425,6 +426,10 @@ app.whenReady().then(async () => {
   })
   registerFunFactHandlers({ getSettings: () => settings })
   registerCustomModuleHandlers({ getSettings: () => settings })
+  createAgentDomain({
+    getSettings: () => settings,
+    commitSettings: (next) => commitSettings(next)
+  }).registerIpcHandlers()
   ipcMain.handle('sticky-notes:saveDir:choose', async () => {
     const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
     const options: OpenDialogOptions = { properties: ['openDirectory', 'createDirectory'] }

@@ -4,20 +4,38 @@ import { join } from 'path'
 import { AI_PROVIDERS } from '@shared/ai-providers'
 import {
   DEFAULT_SETTINGS,
+  type EmbeddingProfileConfig,
   type AiProfile,
   type AiProvider,
+  type AiModelType,
   type AppSettings,
+  type RagRuntimeConfig,
   type SettingsPatch
 } from '@shared/settings'
 import { clampNumber, normalizeTimeString } from '@main-shared/primitives'
+import type { AgentConfig, KnowledgeBaseConfig } from '@shared/agents'
 import {
   getAiApiKeyFromSecrets,
   getLegacyAiApiKeyFromSecrets,
   setAiApiKeyToSecrets
 } from './secrets'
+import { createKnowledgeBaseStore, migrateLegacyKnowledgeBases } from '@main/domains/agents/knowledge-base-store'
 
 function isAiProvider(value: unknown): value is AiProvider {
   return value === 'custom' || (typeof value === 'string' && value in AI_PROVIDERS)
+}
+
+const AI_MODEL_TYPES: Set<string> = new Set<string>([
+  'llm',
+  'vision',
+  'multimodal',
+  'speech',
+  'embedding',
+  'reasoning'
+])
+
+function isAiModelType(value: unknown): value is AiModelType {
+  return typeof value === 'string' && AI_MODEL_TYPES.has(value)
 }
 
 function normalizeAiProfile(input: unknown): AiProfile | null {
@@ -46,7 +64,81 @@ function normalizeAiProfile(input: unknown): AiProfile | null {
     provider,
     baseUrl,
     model,
-    apiKeySet: Boolean(raw['apiKeySet'])
+    apiKeySet: Boolean(raw['apiKeySet']),
+    modelType: isAiModelType(raw['modelType']) ? raw['modelType'] : 'llm'
+  }
+}
+
+function normalizeKnowledgeBase(input: unknown): KnowledgeBaseConfig | null {
+  if (!input || typeof input !== 'object') return null
+  const raw = input as Record<string, unknown>
+  const id = typeof raw['id'] === 'string' ? raw['id'].trim() : ''
+  const name = typeof raw['name'] === 'string' ? raw['name'].trim() : ''
+  if (!id || !name) return null
+  return {
+    id,
+    name,
+    docCount:
+      typeof raw['docCount'] === 'number'
+        ? raw['docCount']
+        : Array.isArray(raw['docs'])
+          ? raw['docs'].length
+          : 0,
+    indexedAt: typeof raw['indexedAt'] === 'number' ? raw['indexedAt'] : null
+  }
+}
+
+function normalizeEmbeddingProfileConfig(input: unknown): Partial<EmbeddingProfileConfig> {
+  if (!input || typeof input !== 'object') return {}
+  const raw = input as Record<string, unknown>
+  return {
+    enabled: typeof raw['enabled'] === 'boolean' ? raw['enabled'] : undefined,
+    profileId: typeof raw['profileId'] === 'string' ? raw['profileId'].trim() : undefined,
+    model: typeof raw['model'] === 'string' ? raw['model'].trim() : undefined,
+    dimensions: typeof raw['dimensions'] === 'number' ? raw['dimensions'] : undefined
+  }
+}
+
+function normalizeRagRuntimeConfig(input: unknown): Partial<RagRuntimeConfig> {
+  if (!input || typeof input !== 'object') return {}
+  const raw = input as Record<string, unknown>
+  return {
+    topK: typeof raw['topK'] === 'number' ? clampNumber(raw['topK'], 1, 20) : undefined,
+    chunkSize:
+      typeof raw['chunkSize'] === 'number' ? clampNumber(raw['chunkSize'], 100, 4000) : undefined,
+    chunkOverlap:
+      typeof raw['chunkOverlap'] === 'number'
+        ? clampNumber(raw['chunkOverlap'], 0, 1000)
+        : undefined
+  }
+}
+
+function extractLegacyKnowledgeBases(input: unknown): unknown[] {
+  if (!input || typeof input !== 'object') return []
+  const agents = (input as { agents?: unknown }).agents
+  if (!agents || typeof agents !== 'object') return []
+  const knowledgeBases = (agents as { knowledgeBases?: unknown }).knowledgeBases
+  if (!Array.isArray(knowledgeBases)) return []
+  return knowledgeBases.filter((item) => {
+    if (!item || typeof item !== 'object') return false
+    return Array.isArray((item as { docs?: unknown }).docs)
+  })
+}
+
+function normalizeAgentConfig(input: unknown): AgentConfig | null {
+  if (!input || typeof input !== 'object') return null
+  const raw = input as Record<string, unknown>
+  const id = typeof raw['id'] === 'string' ? raw['id'].trim() : ''
+  const name = typeof raw['name'] === 'string' ? raw['name'].trim() : ''
+  if (!id || !name) return null
+  return {
+    id,
+    name,
+    systemPrompt: typeof raw['systemPrompt'] === 'string' ? raw['systemPrompt'] : '',
+    knowledgeBaseId:
+      typeof raw['knowledgeBaseId'] === 'string' ? raw['knowledgeBaseId'].trim() || null : null,
+    createdAt: typeof raw['createdAt'] === 'number' ? raw['createdAt'] : Date.now(),
+    updatedAt: typeof raw['updatedAt'] === 'number' ? raw['updatedAt'] : Date.now()
   }
 }
 
@@ -75,7 +167,8 @@ function createLegacyAiProfile(ai: AppSettings['ai']): AiProfile {
     provider,
     baseUrl: ai.baseUrl.trim(),
     model: ai.model.trim(),
-    apiKeySet: ai.apiKeySet
+    apiKeySet: ai.apiKeySet,
+    modelType: 'llm'
   }
 }
 
@@ -253,6 +346,11 @@ export function normalizeSettings(input: unknown): AppSettings {
         .filter((item): item is AiProfile => item !== null)
       base.ai.profiles = profiles
     }
+    const embedding = normalizeEmbeddingProfileConfig(ai['embedding'])
+    if (typeof embedding.enabled === 'boolean') base.ai.embedding.enabled = embedding.enabled
+    if (typeof embedding.profileId === 'string') base.ai.embedding.profileId = embedding.profileId
+    if (typeof embedding.model === 'string' && embedding.model) base.ai.embedding.model = embedding.model
+    if (typeof embedding.dimensions === 'number') base.ai.embedding.dimensions = embedding.dimensions
   }
 
   if (
@@ -347,6 +445,27 @@ export function normalizeSettings(input: unknown): AppSettings {
     }
     if (typeof ws['topmostBorderWidth'] === 'number')
       base.windowStash.topmostBorderWidth = clampNumber(Number(ws['topmostBorderWidth']), 1, 16)
+  }
+
+  if (
+    (obj as { agents?: unknown }).agents &&
+    typeof (obj as { agents?: unknown }).agents === 'object'
+  ) {
+    const agents = (obj as { agents: Record<string, unknown> }).agents
+    if (Array.isArray(agents['configs'])) {
+      base.agents.configs = (agents['configs'] as unknown[])
+        .map((item) => normalizeAgentConfig(item))
+        .filter((item): item is AgentConfig => item !== null)
+    }
+    if (Array.isArray(agents['knowledgeBases'])) {
+      base.agents.knowledgeBases = (agents['knowledgeBases'] as unknown[])
+        .map((item) => normalizeKnowledgeBase(item))
+        .filter((item): item is KnowledgeBaseConfig => item !== null)
+    }
+    const rag = normalizeRagRuntimeConfig(agents['rag'])
+    if (typeof rag.topK === 'number') base.agents.rag.topK = rag.topK
+    if (typeof rag.chunkSize === 'number') base.agents.rag.chunkSize = rag.chunkSize
+    if (typeof rag.chunkOverlap === 'number') base.agents.rag.chunkOverlap = rag.chunkOverlap
   }
 
   if (
@@ -488,6 +607,11 @@ export function applySettingsPatch(current: AppSettings, patch: unknown): AppSet
     }
     if (typeof ai['searchMcpCommand'] === 'string')
       next.ai.searchMcpCommand = ai['searchMcpCommand'] as string
+    const embedding = normalizeEmbeddingProfileConfig(ai['embedding'])
+    if (typeof embedding.enabled === 'boolean') next.ai.embedding.enabled = embedding.enabled
+    if (typeof embedding.profileId === 'string') next.ai.embedding.profileId = embedding.profileId
+    if (typeof embedding.model === 'string' && embedding.model) next.ai.embedding.model = embedding.model
+    if (typeof embedding.dimensions === 'number') next.ai.embedding.dimensions = embedding.dimensions
   }
 
   if (
@@ -574,6 +698,27 @@ export function applySettingsPatch(current: AppSettings, patch: unknown): AppSet
     }
   }
 
+  if (
+    (p as { agents?: unknown }).agents &&
+    typeof (p as { agents?: unknown }).agents === 'object'
+  ) {
+    const agents = (p as { agents: Record<string, unknown> }).agents
+    if (Array.isArray(agents['configs'])) {
+      next.agents.configs = (agents['configs'] as unknown[])
+        .map((item) => normalizeAgentConfig(item))
+        .filter((item): item is AgentConfig => item !== null)
+    }
+    if (Array.isArray(agents['knowledgeBases'])) {
+      next.agents.knowledgeBases = (agents['knowledgeBases'] as unknown[])
+        .map((item) => normalizeKnowledgeBase(item))
+        .filter((item): item is KnowledgeBaseConfig => item !== null)
+    }
+    const rag = normalizeRagRuntimeConfig(agents['rag'])
+    if (typeof rag.topK === 'number') next.agents.rag.topK = rag.topK
+    if (typeof rag.chunkSize === 'number') next.agents.rag.chunkSize = rag.chunkSize
+    if (typeof rag.chunkOverlap === 'number') next.agents.rag.chunkOverlap = rag.chunkOverlap
+  }
+
   return normalizeSettings(next)
 }
 
@@ -587,6 +732,12 @@ export function loadSettingsFromDisk(): AppSettings {
   }
 
   const normalized = normalizeSettings(parsed)
+  const legacyKnowledgeBases = extractLegacyKnowledgeBases(parsed)
+  if (legacyKnowledgeBases.length) {
+    const store = createKnowledgeBaseStore()
+    normalized.agents.knowledgeBases = migrateLegacyKnowledgeBases(legacyKnowledgeBases, store)
+    saveSettingsToDisk(normalized)
+  }
   normalized.ai.profiles = normalized.ai.profiles.map((item) => ({
     ...item,
     apiKeySet: Boolean(getAiApiKeyFromSecrets(item.id))

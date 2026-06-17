@@ -10,7 +10,7 @@ const builderArgs = ['electron-builder', ...args]
 if (existsSync(path.join(projectRoot, 'dist', 'win-unpacked'))) {
   console.warn(
     '[pack] dist/win-unpacked could not be removed (file lock). Packaging to release/ instead.\n' +
-      '       Close running toolssss/electron, and close any editor tabs under dist/ (especially app.asar).'
+      '       Close running forge-studio/electron, and close any editor tabs under dist/ (especially app.asar).'
   )
   builderArgs.push('--config.directories.output=release')
 }

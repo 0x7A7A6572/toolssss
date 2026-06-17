@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import type {
+  AiModelType,
   AiProfile,
   AiProfileSource,
   AiProvider,
   AppSettings,
   SettingsPatch
 } from '@shared/settings'
+import { AI_MODEL_TYPE_LABELS, AI_MODEL_TYPE_COLORS } from '@shared/settings'
 import ShortcutInput from '../../components/ShortcutInput.vue'
 import AppSwitch from '../../components/AppSwitch.vue'
 import { FolderOpen, Plus, Trash2 } from 'lucide-vue-next'
@@ -33,6 +35,7 @@ type AiConfigDraft = {
   baseUrl: string
   model: string
   apiKey: string
+  modelType: AiModelType
 }
 
 const shortcutLabels: Record<string, string> = {
@@ -200,9 +203,9 @@ function joinPath(base: string, tail: string): string {
 const snipPlaceholder = computed(() => {
   const pictures = appPaths.value?.pictures
   if (typeof pictures === 'string' && pictures.trim()) {
-    return `默认：${joinPath(joinPath(pictures, 'toolssss'), 'screenshots')}`
+    return `默认：${joinPath(joinPath(pictures, 'forge-studio'), 'screenshots')}`
   }
-  return '默认：系统图片目录/toolssss/screenshots'
+  return '默认：系统图片目录/forge-studio/screenshots'
 })
 
 const stickyNotesPlaceholder = computed(() => {
@@ -221,7 +224,8 @@ function createAiConfigDraft(provider: Exclude<AiProvider, 'custom'> = 'openai')
     provider,
     baseUrl: preset.baseUrl,
     model: preset.models[0] ?? '',
-    apiKey: ''
+    apiKey: '',
+    modelType: 'llm'
   }
 }
 
@@ -253,6 +257,17 @@ type AiSelectorItem = {
   label: string
   value: AiModelOptionValue
   isActive: boolean
+  modelType: AiModelType
+}
+
+/** 模型类型对应的标签内联样式 */
+function getModelTypeTagStyle(modelType: AiModelType): Record<string, string> {
+  const color = AI_MODEL_TYPE_COLORS[modelType]
+  return {
+    color,
+    borderColor: color,
+    backgroundColor: `${color}1a`
+  }
 }
 
 const serviceAiSelectorItems = computed<AiSelectorItem[]>(() => {
@@ -260,7 +275,8 @@ const serviceAiSelectorItems = computed<AiSelectorItem[]>(() => {
     id: item.id,
     label: item.name,
     value: `profile:${item.id}` as AiModelOptionValue,
-    isActive: item.id === settings.value.ai.activeProfileId
+    isActive: item.id === settings.value.ai.activeProfileId,
+    modelType: item.modelType
   }))
 })
 
@@ -269,7 +285,8 @@ const customAiSelectorItems = computed<AiSelectorItem[]>(() => {
     id: item.id,
     label: item.name,
     value: `profile:${item.id}` as AiModelOptionValue,
-    isActive: item.id === settings.value.ai.activeProfileId
+    isActive: item.id === settings.value.ai.activeProfileId,
+    modelType: item.modelType
   }))
 })
 
@@ -325,6 +342,12 @@ const aiCurrentModelSummary = computed(() => {
     title: '未配置模型',
     subtitle: '先添加服务商模型或自定义模型'
   }
+})
+
+const aiModelTypeOptions = computed(() => {
+  return (Object.entries(AI_MODEL_TYPE_LABELS) as Array<[AiModelType, string]>).map(
+    ([value, label]) => ({ value, label })
+  )
 })
 
 const aiConfigProviderModelOptions = computed(() => {
@@ -416,7 +439,8 @@ function openEditAiConfigModal(): void {
     provider: profile.provider,
     baseUrl: profile.baseUrl,
     model: profile.model,
-    apiKey: ''
+    apiKey: '',
+    modelType: profile.modelType
   }
   if (profile.source === 'provider' && profile.provider !== 'custom') syncAiConfigProviderDraft()
   aiConfigModalOpen.value = true
@@ -525,7 +549,8 @@ async function submitAiConfig(): Promise<void> {
         provider,
         baseUrl: preset.baseUrl,
         model,
-        apiKeySet: hasExistingApiKey
+        apiKeySet: hasExistingApiKey,
+        modelType: aiConfigDraft.value.modelType
       }
       const nextProfiles = upsertAiProfile(settings.value.ai.profiles, nextProfile)
       await update({
@@ -567,7 +592,8 @@ async function submitAiConfig(): Promise<void> {
       provider: 'custom',
       baseUrl,
       model,
-      apiKeySet: hasApiKey
+      apiKeySet: hasApiKey,
+      modelType: aiConfigDraft.value.modelType
     }
     const nextProfiles = upsertAiProfile(settings.value.ai.profiles, nextProfile)
     await update({
@@ -640,6 +666,7 @@ onMounted(() => {
     })
     .catch(() => null)
 })
+
 </script>
 
 <template>
@@ -1177,7 +1204,9 @@ onMounted(() => {
                       @click="onAiModelChange(item.value)"
                     >
                       <span class="selector-item-label">{{ item.label }}</span>
-                      <!-- <span v-if="item.isActive" class="selector-item-badge">当前</span> -->
+                      <span class="model-type-tag" :style="getModelTypeTagStyle(item.modelType)">
+                        {{ AI_MODEL_TYPE_LABELS[item.modelType] }}
+                      </span>
                     </button>
                     <button
                       v-if="!item.isActive"
@@ -1224,7 +1253,16 @@ onMounted(() => {
       </div>
 
       <div class="ai-current-model">
-        <div class="ai-current-model-title">{{ aiCurrentModelSummary.title }}</div>
+        <div class="ai-current-model-title">
+          {{ aiCurrentModelSummary.title }}
+          <span
+            v-if="activeAiProfile"
+            class="model-type-tag"
+            :style="getModelTypeTagStyle(activeAiProfile.modelType)"
+          >
+            {{ AI_MODEL_TYPE_LABELS[activeAiProfile.modelType] }}
+          </span>
+        </div>
         <div class="ai-current-model-meta">
           <span>{{ settings.ai.apiKeySet ? '已配置密钥' : '未配置密钥' }}</span>
           <span>{{ settings.ai.enabled ? '已启用' : '未启用' }}</span>
@@ -1341,6 +1379,16 @@ onMounted(() => {
           </div>
 
           <div class="ai-config-field">
+            <div class="ai-config-field-label">模型类型</div>
+            <a-select
+              class="select ai-config-select"
+              :value="aiConfigDraft.modelType"
+              :options="aiModelTypeOptions"
+              @change="aiConfigDraft.modelType = $event"
+            />
+          </div>
+
+          <div class="ai-config-field">
             <div class="ai-config-field-label">Base URL</div>
             <input
               class="text ai-config-input"
@@ -1397,6 +1445,16 @@ onMounted(() => {
               class="text ai-config-input"
               type="text"
               placeholder="例如：deepseek-reasoner"
+            />
+          </div>
+
+          <div class="ai-config-field">
+            <div class="ai-config-field-label">模型类型</div>
+            <a-select
+              class="select ai-config-select"
+              :value="aiConfigDraft.modelType"
+              :options="aiModelTypeOptions"
+              @change="aiConfigDraft.modelType = $event"
             />
           </div>
 
@@ -1509,6 +1567,14 @@ onMounted(() => {
   flex: 1;
 }
 
+.muted-text {
+  flex: 1.6;
+  font-size: 12px;
+  color: var(--ev-c-text-3);
+  line-height: 1.4;
+  text-align: right;
+}
+
 .ai-model-label {
   font-size: 13px;
   color: var(--ev-c-text-2);
@@ -1605,6 +1671,16 @@ onMounted(() => {
   border-radius: 999px;
   background: rgba(34, 197, 94, 0.14);
   color: #86efac;
+}
+
+.model-type-tag {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid;
+  white-space: nowrap;
 }
 
 .selector-item-delete {
