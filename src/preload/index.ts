@@ -9,8 +9,11 @@ const electronAPI = {
     on: (
       channel: string,
       listener: (event: IpcRendererEvent, ...args: unknown[]) => void
-    ): void => {
+    ): (() => void) => {
       ipcRenderer.on(channel, listener)
+      return (): void => {
+        ipcRenderer.off(channel, listener)
+      }
     },
     once: (
       channel: string,
@@ -22,7 +25,7 @@ const electronAPI = {
       channel: string,
       listener: (event: IpcRendererEvent, ...args: unknown[]) => void
     ): void => {
-      ipcRenderer.removeListener(channel, listener)
+      ipcRenderer.off(channel, listener)
     },
     removeAllListeners: (channel: string): void => {
       ipcRenderer.removeAllListeners(channel)

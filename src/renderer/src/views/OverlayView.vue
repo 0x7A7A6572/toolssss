@@ -12,6 +12,8 @@ const onSettings = (_: unknown, eye: unknown): void => {
   if (typeof candidate.color === 'string') color.value = candidate.color
 }
 
+let offOverlaySettings = (): void => {}
+
 function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
   const s = hex.trim()
   const m = s.match(/^#?([0-9a-f]{3}|[0-9a-f]{6})$/i)
@@ -33,7 +35,7 @@ const style = computed(() => {
 })
 
 onMounted(() => {
-  window.electron.ipcRenderer.on('overlay:settings', onSettings)
+  offOverlaySettings = window.electron.ipcRenderer.on('overlay:settings', onSettings)
   window.electron.ipcRenderer
     .invoke('settings:get')
     .then((s) => {
@@ -45,7 +47,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  window.electron.ipcRenderer.removeListener('overlay:settings', onSettings)
+  offOverlaySettings()
 })
 </script>
 

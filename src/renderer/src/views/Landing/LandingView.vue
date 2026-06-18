@@ -97,12 +97,14 @@ onMounted(() => {
     .invoke('update:status:get')
     .then((v: unknown) => onUpdateStatus(null, v))
     .catch(() => null)
-  window.electron.ipcRenderer.on('update:status', onUpdateStatus)
+  offUpdateStatus = window.electron.ipcRenderer.on('update:status', onUpdateStatus)
   void checkUpdate()
 })
 
+let offUpdateStatus = (): void => {}
+
 onBeforeUnmount(() => {
-  window.electron.ipcRenderer.removeListener('update:status', onUpdateStatus)
+  offUpdateStatus()
 })
 </script>
 

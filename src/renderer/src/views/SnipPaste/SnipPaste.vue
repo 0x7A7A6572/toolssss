@@ -224,6 +224,8 @@ const onSavedChanged = (): void => {
   refreshSaved().catch(() => null)
 }
 
+let offSavedChanged = (): void => {}
+
 onMounted(() => {
   thumbObserver = new IntersectionObserver(
     (entries) => {
@@ -238,7 +240,7 @@ onMounted(() => {
     { rootMargin: '220px' }
   )
   refreshSaved().catch(() => null)
-  window.electron.ipcRenderer.on('snip:saved:changed', onSavedChanged)
+  offSavedChanged = window.electron.ipcRenderer.on('snip:saved:changed', onSavedChanged)
 })
 
 onBeforeUnmount(() => {
@@ -247,7 +249,7 @@ onBeforeUnmount(() => {
     thumbObserver.disconnect()
     thumbObserver = null
   }
-  window.electron.ipcRenderer.removeListener('snip:saved:changed', onSavedChanged)
+  offSavedChanged()
 })
 </script>
 

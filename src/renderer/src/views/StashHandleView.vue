@@ -159,12 +159,14 @@ const onHandleUpdate = (_: unknown, payload: unknown): void => {
   handleColor.value = c
 }
 
+let offHandleUpdate = (): void => {}
+
 onMounted(() => {
-  window.electron.ipcRenderer.on('window-stash:handle:update', onHandleUpdate)
+  offHandleUpdate = window.electron.ipcRenderer.on('window-stash:handle:update', onHandleUpdate)
 })
 
 onBeforeUnmount(() => {
-  window.electron.ipcRenderer.removeListener('window-stash:handle:update', onHandleUpdate)
+  offHandleUpdate()
   stopDragging()
 })
 

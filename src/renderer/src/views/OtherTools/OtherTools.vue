@@ -1699,16 +1699,20 @@ async function refresh(): Promise<void> {
   }
 }
 
+let offIpcListeners: Array<() => void> = []
+
 onMounted(() => {
   window.addEventListener('keydown', onKeydown)
-  window.electron.ipcRenderer.on('ai:funfact:daily:chunk', onFunFactChunk)
-  window.electron.ipcRenderer.on('ai:funfact:daily:done', onFunFactDone)
-  window.electron.ipcRenderer.on('ai:funfact:daily:error', onFunFactError)
-  window.electron.ipcRenderer.on('ai:funfact:daily:cancelled', onFunFactCancelled)
-  window.electron.ipcRenderer.on(CUSTOM_MODULES_EVENTS.CHUNK, onCustomModuleChunk)
-  window.electron.ipcRenderer.on(CUSTOM_MODULES_EVENTS.DONE, onCustomModuleDone)
-  window.electron.ipcRenderer.on(CUSTOM_MODULES_EVENTS.ERROR, onCustomModuleError)
-  window.electron.ipcRenderer.on(CUSTOM_MODULES_EVENTS.SEARCHING, onCustomModuleSearching)
+  offIpcListeners = [
+    window.electron.ipcRenderer.on('ai:funfact:daily:chunk', onFunFactChunk),
+    window.electron.ipcRenderer.on('ai:funfact:daily:done', onFunFactDone),
+    window.electron.ipcRenderer.on('ai:funfact:daily:error', onFunFactError),
+    window.electron.ipcRenderer.on('ai:funfact:daily:cancelled', onFunFactCancelled),
+    window.electron.ipcRenderer.on(CUSTOM_MODULES_EVENTS.CHUNK, onCustomModuleChunk),
+    window.electron.ipcRenderer.on(CUSTOM_MODULES_EVENTS.DONE, onCustomModuleDone),
+    window.electron.ipcRenderer.on(CUSTOM_MODULES_EVENTS.ERROR, onCustomModuleError),
+    window.electron.ipcRenderer.on(CUSTOM_MODULES_EVENTS.SEARCHING, onCustomModuleSearching)
+  ]
   tickTimer = window.setInterval(() => {
     nowTickMs.value = Date.now()
     normalizeCachedFunFact()
@@ -1732,10 +1736,8 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
-  // window.electron.ipcRenderer.removeListener('ai:funfact:daily:chunk', onFunFactChunk)
-  // window.electron.ipcRenderer.removeListener('ai:funfact:daily:done', onFunFactDone)
-  // window.electron.ipcRenderer.removeListener('ai:funfact:daily:error', onFunFactError)
-  // window.electron.ipcRenderer.removeListener('ai:funfact:daily:cancelled', onFunFactCancelled)
+  for (const off of offIpcListeners) off()
+  offIpcListeners = []
   if (funFactStreamId.value) {
     window.electron.ipcRenderer
       .invoke('ai:funfact:daily:cancel', { id: funFactStreamId.value })

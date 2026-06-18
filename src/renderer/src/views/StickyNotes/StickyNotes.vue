@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onBeforeUnmount, onMounted } from 'vue'
 import type { StickyNote } from '@shared/sticky-notes'
 import { STICKY_NOTES_EVENTS } from '@shared/sticky-notes'
 import { MasonryWall } from '@yeger/vue-masonry-wall'
@@ -117,12 +117,14 @@ function openFullscreen(payload: { note: StickyNote; content: string }): void {
 
 onMounted(() => {
   loadNotes()
-  window.electron.ipcRenderer.on('sticky-notes:changed', onChanged)
+  offStickyNotesChanged = window.electron.ipcRenderer.on('sticky-notes:changed', onChanged)
 })
 
-// onBeforeUnmount(() => {
-//   window.electron.ipcRenderer.removeListener('sticky-notes:changed', onChanged)
-// })
+let offStickyNotesChanged = (): void => {}
+
+onBeforeUnmount(() => {
+  offStickyNotesChanged()
+})
 </script>
 
 <template>

@@ -199,17 +199,19 @@ function onOpen(_: unknown, payload: unknown): void {
   if (inputText.value.trim()) requestTranslate({ recordHistory: true }).catch(() => null)
 }
 
+let offPopupOpen = (): void => {}
+
 onMounted(() => {
   settingsStore.init().catch(() => null)
   window.addEventListener('keydown', onKeyDown)
-  window.electron.ipcRenderer.on('translator-popup:open', onOpen)
+  offPopupOpen = window.electron.ipcRenderer.on('translator-popup:open', onOpen)
 })
 
 onBeforeUnmount(() => {
   if (autoTranslateTimer) clearTimeout(autoTranslateTimer)
   if (slowHintTimer) clearTimeout(slowHintTimer)
   window.removeEventListener('keydown', onKeyDown)
-  window.electron.ipcRenderer.removeListener('translator-popup:open', onOpen)
+  offPopupOpen()
 })
 
 watch(

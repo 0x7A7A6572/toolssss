@@ -103,12 +103,15 @@ function closeWindow(): void {
   window.electron.ipcRenderer.send('window:control', { action: 'close' })
 }
 
+let offUpdateStatus = (): void => {}
+let offWindowState = (): void => {}
+
 onMounted(() => {
   window.electron.ipcRenderer
     .invoke('update:status:get')
     .then((v: unknown) => onUpdateStatus(null, v))
     .catch(() => null)
-  window.electron.ipcRenderer.on('update:status', onUpdateStatus)
+  offUpdateStatus = window.electron.ipcRenderer.on('update:status', onUpdateStatus)
   window.electron.ipcRenderer
     .invoke('window:state:get')
     .then((v: unknown) => {
@@ -116,15 +119,15 @@ onMounted(() => {
       maximized.value = Boolean(p.maximized)
     })
     .catch(() => null)
-  window.electron.ipcRenderer.on('window:state', (_: unknown, payload: unknown) => {
+  offWindowState = window.electron.ipcRenderer.on('window:state', (_: unknown, payload: unknown) => {
     const p = payload && typeof payload === 'object' ? (payload as { maximized?: unknown }) : {}
     maximized.value = Boolean(p.maximized)
   })
 })
 
 onBeforeUnmount(() => {
-  window.electron.ipcRenderer.removeListener('update:status', onUpdateStatus)
-  window.electron.ipcRenderer.removeAllListeners('window:state')
+  offUpdateStatus()
+  offWindowState()
 })
 </script>
 

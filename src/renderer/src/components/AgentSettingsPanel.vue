@@ -9,7 +9,7 @@ import {
   type KnowledgeBaseConfig
 } from '@shared/agents'
 import AppSwitch from './AppSwitch.vue'
-import { Plus, Trash2 } from 'lucide-vue-next'
+import { Pencil, Plus, RefreshCw, Trash2 } from 'lucide-vue-next'
 import { useSettingsStore } from '@renderer/state/settings'
 
 const settingsStore = useSettingsStore()
@@ -290,9 +290,15 @@ onMounted(() => {
     <section class="card">
       <div class="card-head">
         <div class="card-title">智能体设置</div>
-        <a-button size="small" type="primary" @click="openAddAgentModal">
-          <template #icon><Plus :size="12" /></template>
-          添加
+        <a-button
+          class="icon-action-btn"
+          type="text"
+          size="small"
+          title="添加智能体"
+          aria-label="添加智能体"
+          @click="openAddAgentModal"
+        >
+          <template #icon><Plus :size="14" /></template>
         </a-button>
       </div>
 
@@ -309,15 +315,31 @@ onMounted(() => {
           </div>
         </div>
         <div class="agent-item-actions">
-          <a-button size="small" @click="openEditAgentModal(agent)">编辑</a-button>
+          <a-button
+            class="icon-action-btn"
+            type="text"
+            size="small"
+            title="编辑智能体"
+            aria-label="编辑智能体"
+            @click="openEditAgentModal(agent)"
+          >
+            <template #icon><Pencil :size="14" /></template>
+          </a-button>
           <a-popconfirm
             title="确定删除此智能体？"
             ok-text="删除"
             cancel-text="取消"
             @confirm="deleteAgent(agent)"
           >
-            <a-button size="small" danger>
-              <template #icon><Trash2 :size="12" /></template>
+            <a-button
+              class="icon-action-btn danger"
+              type="text"
+              size="small"
+              danger
+              title="删除智能体"
+              aria-label="删除智能体"
+            >
+              <template #icon><Trash2 :size="14" /></template>
             </a-button>
           </a-popconfirm>
         </div>
@@ -414,9 +436,15 @@ onMounted(() => {
     <section class="card">
       <div class="card-head">
         <div class="card-title">知识库设置</div>
-        <a-button size="small" type="primary" @click="openAddKbModal">
-          <template #icon><Plus :size="12" /></template>
-          添加
+        <a-button
+          class="icon-action-btn"
+          type="text"
+          size="small"
+          title="添加知识库"
+          aria-label="添加知识库"
+          @click="openAddKbModal"
+        >
+          <template #icon><Plus :size="14" /></template>
         </a-button>
       </div>
 
@@ -435,10 +463,36 @@ onMounted(() => {
             </div>
           </div>
           <div class="kb-item-actions">
-            <a-button size="small" @click="openEditKbModal(kb)">重命名</a-button>
-            <a-button size="small" @click="openAddDocModal(kb)">+ 文档</a-button>
-            <a-button size="small" :loading="reindexingKbIds.has(kb.id)" @click="reindexKb(kb.id)">
-              重建索引
+            <a-button
+              class="icon-action-btn"
+              type="text"
+              size="small"
+              title="重命名知识库"
+              aria-label="重命名知识库"
+              @click="openEditKbModal(kb)"
+            >
+              <template #icon><Pencil :size="14" /></template>
+            </a-button>
+            <a-button
+              class="icon-action-btn"
+              type="text"
+              size="small"
+              title="添加文档"
+              aria-label="添加文档"
+              @click="openAddDocModal(kb)"
+            >
+              <template #icon><Plus :size="14" /></template>
+            </a-button>
+            <a-button
+              class="icon-action-btn"
+              type="text"
+              size="small"
+              :loading="reindexingKbIds.has(kb.id)"
+              title="重建索引"
+              aria-label="重建索引"
+              @click="reindexKb(kb.id)"
+            >
+              <template #icon><RefreshCw :size="14" /></template>
             </a-button>
             <a-popconfirm
               title="确定删除此知识库？关联的智能体将取消关联。"
@@ -446,8 +500,15 @@ onMounted(() => {
               cancel-text="取消"
               @confirm="deleteKb(kb)"
             >
-              <a-button size="small" danger>
-                <template #icon><Trash2 :size="12" /></template>
+              <a-button
+                class="icon-action-btn danger"
+                type="text"
+                size="small"
+                danger
+                title="删除知识库"
+                aria-label="删除知识库"
+              >
+                <template #icon><Trash2 :size="14" /></template>
               </a-button>
             </a-popconfirm>
           </div>
@@ -462,15 +523,31 @@ onMounted(() => {
               </div>
             </div>
             <div class="doc-item-actions">
-              <a-button size="small" @click="openEditDocModal(kb, doc)">编辑</a-button>
+              <a-button
+                class="icon-action-btn"
+                type="text"
+                size="small"
+                title="编辑文档"
+                aria-label="编辑文档"
+                @click="openEditDocModal(kb, doc)"
+              >
+                <template #icon><Pencil :size="14" /></template>
+              </a-button>
               <a-popconfirm
                 title="确定删除此文档？"
                 ok-text="删除"
                 cancel-text="取消"
                 @confirm="deleteDoc(kb, doc)"
               >
-                <a-button size="small" danger>
-                  <template #icon><Trash2 :size="12" /></template>
+                <a-button
+                  class="icon-action-btn danger"
+                  type="text"
+                  size="small"
+                  danger
+                  title="删除文档"
+                  aria-label="删除文档"
+                >
+                  <template #icon><Trash2 :size="14" /></template>
                 </a-button>
               </a-popconfirm>
             </div>
@@ -826,5 +903,33 @@ onMounted(() => {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+}
+
+.icon-action-btn {
+  padding-inline: 4px;
+  color: rgba(255, 255, 255, 0.58);
+  border: none;
+  background: transparent;
+  box-shadow: none;
+}
+
+.icon-action-btn:hover,
+.icon-action-btn:focus-visible {
+  color: rgba(255, 255, 255, 0.92);
+  background: transparent;
+}
+
+.icon-action-btn.ant-btn-text:not(:disabled):hover,
+.icon-action-btn.ant-btn-text:not(:disabled):focus {
+  background: transparent;
+}
+
+.icon-action-btn.ant-btn-dangerous {
+  color: rgba(255, 255, 255, 0.48);
+}
+
+.icon-action-btn.ant-btn-dangerous:not(:disabled):hover,
+.icon-action-btn.ant-btn-dangerous:not(:disabled):focus-visible {
+  color: #ff6b6b;
 }
 </style>

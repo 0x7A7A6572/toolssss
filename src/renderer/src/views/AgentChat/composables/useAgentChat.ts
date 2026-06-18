@@ -44,6 +44,10 @@ export function useAgentChat(): UseAgentChatReturn {
   const streamStatus = ref<AgentStreamStatus | null>(null)
   const error = ref<string | null>(null)
   const pendingStreamId = ref<string | null>(null)
+  let offChatChunk = (): void => {}
+  let offChatDone = (): void => {}
+  let offChatError = (): void => {}
+  let offChatStatus = (): void => {}
 
   const messages = computed<AgentMessage[]>(() => {
     const msgs = currentConversation.value?.messages ?? []
@@ -102,20 +106,20 @@ export function useAgentChat(): UseAgentChatReturn {
 
   // 注册 IPC 监听
   try {
-    window.electron.ipcRenderer.on(AGENT_EVENTS.CHAT_CHUNK, onChunk)
-    window.electron.ipcRenderer.on(AGENT_EVENTS.CHAT_DONE, onDone)
-    window.electron.ipcRenderer.on(AGENT_EVENTS.CHAT_ERROR, onError)
-    window.electron.ipcRenderer.on(AGENT_EVENTS.CHAT_STATUS, onStatus)
+    offChatChunk = window.electron.ipcRenderer.on(AGENT_EVENTS.CHAT_CHUNK, onChunk)
+    offChatDone = window.electron.ipcRenderer.on(AGENT_EVENTS.CHAT_DONE, onDone)
+    offChatError = window.electron.ipcRenderer.on(AGENT_EVENTS.CHAT_ERROR, onError)
+    offChatStatus = window.electron.ipcRenderer.on(AGENT_EVENTS.CHAT_STATUS, onStatus)
   } catch {
     // preload 未就绪，忽略
   }
 
   onBeforeUnmount(() => {
     try {
-      window.electron.ipcRenderer.removeListener(AGENT_EVENTS.CHAT_CHUNK, onChunk)
-      window.electron.ipcRenderer.removeListener(AGENT_EVENTS.CHAT_DONE, onDone)
-      window.electron.ipcRenderer.removeListener(AGENT_EVENTS.CHAT_ERROR, onError)
-      window.electron.ipcRenderer.removeListener(AGENT_EVENTS.CHAT_STATUS, onStatus)
+      offChatChunk()
+      offChatDone()
+      offChatError()
+      offChatStatus()
     } catch {
       // 忽略
     }

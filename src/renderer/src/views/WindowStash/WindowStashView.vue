@@ -289,13 +289,15 @@ const onChanged = (_: unknown, payload: unknown): void => {
   items.value = Array.isArray(payload) ? (payload as StashedItem[]) : []
 }
 
+let offChanged = (): void => {}
+
 onMounted(() => {
   void refresh()
-  window.electron.ipcRenderer.on('window-stash:changed', onChanged)
+  offChanged = window.electron.ipcRenderer.on('window-stash:changed', onChanged)
 })
 
 onBeforeUnmount(() => {
-  window.electron.ipcRenderer.removeListener('window-stash:changed', onChanged)
+  offChanged()
 })
 </script>
 

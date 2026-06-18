@@ -68,11 +68,11 @@ function snooze(): void {
   window.electron.ipcRenderer.send('alarm:action', { action: 'snooze', minutes: 5 })
 }
 
-window.electron.ipcRenderer.on('alarm:show', onShow)
+const offAlarmShow = window.electron.ipcRenderer.on('alarm:show', onShow)
 window.addEventListener('keydown', onKeyDown)
 
 onBeforeUnmount(() => {
-  window.electron.ipcRenderer.removeListener('alarm:show', onShow)
+  offAlarmShow()
   window.removeEventListener('keydown', onKeyDown)
   clearTimer()
 })

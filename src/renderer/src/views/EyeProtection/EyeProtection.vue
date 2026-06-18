@@ -100,13 +100,15 @@ const onBreakStatus = (_: unknown, payload: unknown): void => {
   breakNextAt.value = typeof nextAt === 'number' ? nextAt : null
 }
 
+let offBreakStatus = (): void => {}
+
 onMounted(() => {
   refresh().catch(() => null)
   timer = window.setInterval(() => {
     nowMs.value = Date.now()
   }, 1000)
   refreshBreakStatus().catch(() => null)
-  window.electron.ipcRenderer.on('break:status', onBreakStatus)
+  offBreakStatus = window.electron.ipcRenderer.on('break:status', onBreakStatus)
 })
 
 onBeforeUnmount(() => {
@@ -114,7 +116,7 @@ onBeforeUnmount(() => {
     window.clearInterval(timer)
     timer = null
   }
-  window.electron.ipcRenderer.removeListener('break:status', onBreakStatus)
+  offBreakStatus()
 })
 </script>
 
