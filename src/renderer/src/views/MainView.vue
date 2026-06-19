@@ -477,7 +477,6 @@ onBeforeUnmount(() => {
 /* 智能体聊天页：无边距、无圆角、overflow 由子组件自行管理 */
 .page-chat {
   padding: 0;
-  border-radius: 0;
   margin-top: 35px;
   overflow: hidden;
 }

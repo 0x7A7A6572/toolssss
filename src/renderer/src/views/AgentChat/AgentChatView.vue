@@ -8,7 +8,8 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Copy,
-  RefreshCw
+  RefreshCw,
+  BookText
 } from 'lucide-vue-next'
 import { Actions, BubbleList, Sender, Conversations } from 'ant-design-x-vue'
 import type { ActionItem, Conversation } from 'ant-design-x-vue'
@@ -279,8 +280,15 @@ function handleRetry(content: string): void {
   senderValue.value = content
 }
 
+type BubbleFooterItem = {
+  key?: string | number
+  role?: string
+  content?: string
+  ragChunks?: AgentRagChunk[]
+}
+
 /** 根据气泡角色返回对应的操作项 */
-function getActionsForItem(item: { role?: string; content?: string }): ActionItem[] {
+function getActionsForItem(item: BubbleFooterItem): ActionItem[] {
   const content = typeof item.content === 'string' ? item.content : ''
   const actions: ActionItem[] = [
     {
@@ -311,21 +319,26 @@ function formatRagScore(score: number): string {
   return `${Math.round(score * 100)}%`
 }
 
-function getRagChunksForItem(item: { ragChunks?: AgentRagChunk[] }): AgentRagChunk[] {
+function getRagChunksForItem(item: BubbleFooterItem): AgentRagChunk[] {
   return Array.isArray(item.ragChunks) ? item.ragChunks : []
 }
 
-const expandedRagPanels = ref<Record<string, boolean>>({})
+const ragDrawerOpen = ref(false)
+const activeRagDrawer = ref<{ itemKey: string; chunks: AgentRagChunk[] } | null>(null)
 
-function isRagPanelExpanded(itemKey: string): boolean {
-  return Boolean(expandedRagPanels.value[itemKey])
+function openRagDrawerForItem(item: BubbleFooterItem): void {
+  const chunks = getRagChunksForItem(item)
+  if (chunks.length === 0) return
+  activeRagDrawer.value = {
+    itemKey: String(item.key ?? ''),
+    chunks
+  }
+  ragDrawerOpen.value = true
 }
 
-function toggleRagPanel(itemKey: string): void {
-  expandedRagPanels.value = {
-    ...expandedRagPanels.value,
-    [itemKey]: !expandedRagPanels.value[itemKey]
-  }
+function closeRagDrawer(): void {
+  ragDrawerOpen.value = false
+  activeRagDrawer.value = null
 }
 
 function getRagHitLabel(count: number): string {
@@ -350,14 +363,8 @@ onBeforeUnmount(() => {
     <aside class="agent-sidebar" :class="{ collapsed: sidebarCollapsed }">
       <!-- 顶部操作栏：智能体选择 + 新建对话 + 折叠 -->
       <div class="sidebar-top-row">
-        <a-select
-          v-if="!sidebarCollapsed"
-          :value="currentAgentId"
-          placeholder="选择智能体"
-          :options="agents.map((a) => ({ value: a.id, label: a.name }))"
-          class="agent-select"
-          @change="selectAgent"
-        >
+        <a-select v-if="!sidebarCollapsed" :value="currentAgentId" placeholder="选择智能体"
+          :options="agents.map((a) => ({ value: a.id, label: a.name }))" class="agent-select" @change="selectAgent">
           <template #notFoundContent>
             <div class="agent-empty-hint">
               <span>暂无智能体</span>
@@ -367,32 +374,24 @@ onBeforeUnmount(() => {
         </a-select>
 
         <a-tooltip title="新对话">
-          <a-button
-            class="icon-btn"
-            :disabled="!currentAgentId || streaming"
-            @click="handleNewConversation"
-          >
+          <a-button class="icon-btn" :border="false" :disabled="!currentAgentId || streaming" @click="handleNewConversation">
             <Plus :size="16" />
           </a-button>
         </a-tooltip>
 
         <a-tooltip :title="sidebarCollapsed ? '展开侧栏' : '收起侧栏'">
-          <a-button class="icon-btn" @click="toggleSidebar">
+          <a-button class="icon-btn"  @click="toggleSidebar">
             <PanelLeftClose v-if="!sidebarCollapsed" :size="16" />
-            <PanelLeftOpen v-else :size="16" />
+            <PanelLeftOpen v-else  :size="16" />
           </a-button>
         </a-tooltip>
       </div>
 
       <!-- 对话列表（含右键菜单） -->
       <div v-if="!sidebarCollapsed" class="conversations-wrapper">
-        <Conversations
-          v-if="conversationItems.length > 0"
-          :items="conversationItems"
-          :active-key="activeConversationKey"
-          :menu="conversationMenu as any"
-          @active-change="handleConversationSelect"
-        />
+        <Conversations v-if="conversationItems.length > 0" :items="conversationItems"
+          :active-key="activeConversationKey" :menu="conversationMenu as any"
+          @active-change="handleConversationSelect" />
         <div v-else class="no-conversations">
           {{ currentAgentId ? '暂无对话记录' : '请先选择智能体' }}
         </div>
@@ -400,8 +399,10 @@ onBeforeUnmount(() => {
 
       <div class="sidebar-bottom-actions">
         <a-tooltip :title="sidebarCollapsed ? '智能体设置' : ''">
-          <a-button class="sidebar-settings-btn" type="primary" ghost :border="false" @click="openSettingsModal">
-            <template #icon><Settings :size="16" /></template>
+          <a-button class="sidebar-settings-btn" @click="openSettingsModal">
+            <template #icon>
+              <Settings :size="16" />
+            </template>
             <!-- <span v-if="!sidebarCollapsed">设置</span> -->
           </a-button>
         </a-tooltip>
@@ -441,7 +442,9 @@ onBeforeUnmount(() => {
           <Bot :size="48" class="empty-icon" />
           <p class="empty-text">选择或创建一个智能体开始对话</p>
           <a-button type="primary" @click="openSettingsModal">
-            <template #icon><Settings2 :size="14" /></template>
+            <template #icon>
+              <Settings :size="14" />
+            </template>
             打开智能体设置
           </a-button>
         </div>
@@ -453,7 +456,9 @@ onBeforeUnmount(() => {
             开始与 <strong>{{ currentAgentName }}</strong> 对话
           </p>
           <a-button type="primary" @click="handleNewConversation">
-            <template #icon><Plus :size="14" /></template>
+            <template #icon>
+              <Plus :size="14" />
+            </template>
             新对话
           </a-button>
         </div>
@@ -461,38 +466,21 @@ onBeforeUnmount(() => {
         <!-- 消息气泡列表 -->
         <BubbleList v-else :items="bubbleItems" :roles="bubbleRoles" auto-scroll>
           <template #footer="{ item }">
-            <div class="bubble-footer">
-              <div v-if="getRagChunksForItem(item).length > 0" class="rag-context-panel">
-                <div class="rag-context-head">
-                  <div class="rag-context-title-wrap">
-                    <div class="rag-context-title">知识库命中</div>
-                    <div class="rag-context-summary">
-                      {{ getRagHitLabel(getRagChunksForItem(item).length) }}
-                    </div>
-                  </div>
-                  <button class="rag-context-toggle" @click="toggleRagPanel(String(item.key))">
-                    {{ isRagPanelExpanded(String(item.key)) ? '收起' : '展开' }}
-                  </button>
-                </div>
-                <div
-                  class="rag-context-list"
-                  :class="{ expanded: isRagPanelExpanded(String(item.key)) }"
-                >
-                  <div
-                    v-for="(chunk, chunkIndex) in getRagChunksForItem(item)"
-                    :key="`${item.key}-rag-${chunkIndex}`"
-                    class="rag-context-item"
-                  >
-                    <div class="rag-context-item-head">
-                      <span class="rag-context-doc">{{ chunk.docTitle }}</span>
-                      <span class="rag-context-score">匹配度 {{ formatRagScore(chunk.score) }}</span>
-                    </div>
-                    <div class="rag-context-text">{{ formatRagChunkText(chunk.text) }}</div>
-                  </div>
-                </div>
-              </div>
+            <div :class="['bubble-footer', `bubble-footer--${item.role ?? 'assistant'}`]">
               <div class="bubble-actions">
                 <Actions :items="getActionsForItem(item)" variant="borderless" />
+                <button
+                  v-if="getRagChunksForItem(item).length > 0"
+                  type="button"
+                  class="rag-hit-trigger"
+                  @click="openRagDrawerForItem(item)"
+                >
+                  <BookText :size="14" />
+                  <span class="rag-hit-trigger-label">知识库</span>
+                  <span class="rag-hit-trigger-summary">
+                    {{ getRagHitLabel(getRagChunksForItem(item).length) }}
+                  </span>
+                </button>
               </div>
             </div>
           </template>
@@ -501,29 +489,14 @@ onBeforeUnmount(() => {
 
       <!-- 输入区域 -->
       <div class="sender-area">
-        <Sender
-          :value="senderValue"
-          :loading="streaming"
-          :disabled="!currentAgentId"
-          :allow-speech="speechSupported ? allowSpeechConfig : false"
-          :placeholder="
-            currentAgentId ? '输入消息，Enter 发送，Shift+Enter 换行...' : '请先选择智能体'
-          "
-          @change="(val: string) => (senderValue = val)"
-          @submit="handleSend"
-          @cancel="handleCancel"
-        />
+        <Sender :value="senderValue" :loading="streaming" :disabled="!currentAgentId"
+          :allow-speech="speechSupported ? allowSpeechConfig : false" :placeholder="currentAgentId ? '输入消息，Enter 发送，Shift+Enter 换行...' : '请先选择智能体'
+            " @change="(val: string) => (senderValue = val)" @submit="handleSend" @cancel="handleCancel" />
       </div>
     </main>
 
-    <a-modal
-      :open="settingsModalOpen"
-      :footer="null"
-      width="900px"
-      centered
-      destroy-on-close
-      @cancel="closeSettingsModal"
-    >
+    <a-modal :open="settingsModalOpen" :footer="null" width="700px" centered destroy-on-close
+      @cancel="closeSettingsModal">
       <div class="agent-settings-modal">
         <div class="agent-settings-modal-head">
           <div class="agent-settings-modal-title">智能体设置</div>
@@ -532,6 +505,35 @@ onBeforeUnmount(() => {
         <AgentSettingsPanel />
       </div>
     </a-modal>
+
+    <a-drawer
+      :open="ragDrawerOpen"
+      placement="right"
+      :closable="false"
+      :width="440"
+      @close="closeRagDrawer"
+    >
+      <div v-if="activeRagDrawer" class="rag-drawer">
+        <div class="rag-drawer-meta">
+          <span>{{ getRagHitLabel(activeRagDrawer.chunks.length) }}</span>
+        </div>
+        <div class="rag-context-panel">
+          <div class="rag-context-list">
+            <div
+              v-for="(chunk, chunkIndex) in activeRagDrawer.chunks"
+              :key="`${activeRagDrawer.itemKey}-rag-${chunkIndex}`"
+              class="rag-context-item"
+            >
+              <div class="rag-context-item-head">
+                <span class="rag-context-doc">{{ chunk.docTitle }}</span>
+                <span class="rag-context-score">匹配度 {{ formatRagScore(chunk.score) }}</span>
+              </div>
+              <div class="rag-context-text">{{ formatRagChunkText(chunk.text) }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </a-drawer>
   </div>
 </template>
 
@@ -589,6 +591,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   padding: 0;
+  border: none;
 }
 
 .conversations-wrapper {
@@ -761,9 +764,11 @@ onBeforeUnmount(() => {
 :deep(.bubble-content h1) {
   font-size: 20px;
 }
+
 :deep(.bubble-content h2) {
   font-size: 17px;
 }
+
 :deep(.bubble-content h3) {
   font-size: 15px;
 }
@@ -859,90 +864,47 @@ onBeforeUnmount(() => {
 
 .bubble-footer {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  transition:
+    opacity 0.2s ease,
+    max-height 0.2s ease,
+    margin-top 0.2s ease;
+}
+
+.bubble-footer--assistant {
+  opacity: 1;
+  max-height: 72px;
+}
+
+.bubble-footer--user {
+  opacity: 0;
+  max-height: 0;
+  overflow: hidden;
+  pointer-events: none;
 }
 
 .rag-context-panel {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px 12px;
+  gap: 10px;
+  padding: 12px;
   border: 1px solid rgba(59, 130, 246, 0.18);
   border-radius: 10px;
-  background: rgba(59, 130, 246, 0.08);
-}
-
-.rag-context-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.rag-context-title-wrap {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.rag-context-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: rgba(191, 219, 254, 0.95);
-}
-
-.rag-context-summary {
-  font-size: 12px;
-  color: rgba(191, 219, 254, 0.7);
-  white-space: nowrap;
-}
-
-.rag-context-toggle {
-  border: none;
-  background: transparent;
-  padding: 0;
-  font-size: 12px;
-  font-weight: 600;
-  color: rgba(147, 197, 253, 0.95);
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.rag-context-toggle:hover {
-  color: rgba(191, 219, 254, 1);
+  background: rgba(59, 130, 246, 0.06);
 }
 
 .rag-context-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  max-height: 40px;
-  overflow: hidden;
-  position: relative;
-  transition: max-height 0.2s ease;
-}
-
-.rag-context-list:not(.expanded)::after {
-  content: '';
-  position: absolute;
-  inset: auto 0 0;
-  height: 18px;
-  background: linear-gradient(180deg, rgba(59, 130, 246, 0), rgba(59, 130, 246, 0.14));
-  pointer-events: none;
-}
-
-.rag-context-list.expanded {
-  max-height: 480px;
-  overflow: auto;
-  padding-right: 4px;
+  gap: 10px;
 }
 
 .rag-context-item {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .rag-context-item-head {
@@ -973,12 +935,60 @@ onBeforeUnmount(() => {
 }
 
 .bubble-actions {
-  opacity: 0;
-  transition: opacity 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
-:deep(.ant-bubble):hover .bubble-actions {
+.rag-hit-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  cursor: pointer;
+  border: none;
+  background: none;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease,
+    color 0.2s ease;
+}
+
+.rag-hit-trigger:hover {
+  color: rgba(219, 234, 254, 0.98);
+}
+
+.rag-hit-trigger-label,
+.rag-hit-trigger-summary {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.rag-hit-trigger-summary {
+  color: rgba(100, 170, 255, 0.72);
+}
+
+.rag-drawer {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.rag-drawer-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.52);
+}
+
+:deep(.ant-bubble):hover .bubble-footer--user {
   opacity: 1;
+  max-height: 72px;
+  margin-top: 6px;
+  pointer-events: auto;
 }
 
 /* ===== 输入区域 ===== */

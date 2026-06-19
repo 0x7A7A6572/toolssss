@@ -77,13 +77,13 @@ export function createAgentDomain(deps: Deps) {
         embeddings: model
       })
       saveKnowledgeBaseIndex(index)
+      knowledgeBaseStore.updateKnowledgeBase(kbId, {
+        docCount: docs.length,
+        indexedAt: index.indexedAt
+      })
 
-      syncKnowledgeBaseSummaries((current) => ({
-        knowledgeBases: current.agents.knowledgeBases.map((item) =>
-          item.id === kbId
-            ? { ...item, docCount: docs.length, indexedAt: index.indexedAt }
-            : item
-        )
+      syncKnowledgeBaseSummaries(() => ({
+        knowledgeBases: knowledgeBaseStore.listKnowledgeBases()
       }))
     } catch (error) {
       throw new Error(formatEmbeddingChainError(error))

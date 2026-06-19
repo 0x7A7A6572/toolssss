@@ -6,11 +6,14 @@ import type { AgentKnowledgeDoc, KnowledgeBaseConfig } from '@shared/agents'
 type KnowledgeBaseSeed = Pick<KnowledgeBaseConfig, 'id' | 'name'> &
   Partial<Pick<KnowledgeBaseConfig, 'docCount' | 'indexedAt'>>
 
+type KnowledgeBasePatch = Partial<Pick<KnowledgeBaseConfig, 'name' | 'docCount' | 'indexedAt'>>
+
 type DocumentSeed = Omit<AgentKnowledgeDoc, 'kbId'> & Partial<Pick<AgentKnowledgeDoc, 'kbId'>>
 
 export interface KnowledgeBaseStore {
   listKnowledgeBases(): KnowledgeBaseConfig[]
   saveKnowledgeBase(input: KnowledgeBaseSeed): KnowledgeBaseConfig
+  updateKnowledgeBase(id: string, patch: KnowledgeBasePatch): KnowledgeBaseConfig
   deleteKnowledgeBase(id: string): void
   listDocuments(kbId: string): AgentKnowledgeDoc[]
   saveDocument(kbId: string, input: DocumentSeed): AgentKnowledgeDoc
@@ -138,6 +141,17 @@ export function createKnowledgeBaseStore(baseDir?: string): KnowledgeBaseStore {
     return next
   }
 
+  function updateKnowledgeBase(id: string, patch: KnowledgeBasePatch): KnowledgeBaseConfig {
+    return updateKnowledgeBaseSummary(rootDir, id, (current) => ({
+      ...current,
+      ...(typeof patch.name === 'string' ? { name: patch.name.trim() } : {}),
+      ...(typeof patch.docCount === 'number' ? { docCount: patch.docCount } : {}),
+      ...(Object.prototype.hasOwnProperty.call(patch, 'indexedAt')
+        ? { indexedAt: patch.indexedAt ?? null }
+        : {})
+    }))
+  }
+
   function deleteKnowledgeBase(id: string): void {
     const knowledgeBases = readKnowledgeBaseIndex(rootDir).filter((item) => item.id !== id)
     writeKnowledgeBaseIndex(rootDir, knowledgeBases)
@@ -192,6 +206,7 @@ export function createKnowledgeBaseStore(baseDir?: string): KnowledgeBaseStore {
   return {
     listKnowledgeBases,
     saveKnowledgeBase,
+    updateKnowledgeBase,
     deleteKnowledgeBase,
     listDocuments,
     saveDocument,

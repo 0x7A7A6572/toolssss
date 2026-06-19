@@ -522,17 +522,17 @@ function showStickerContextMenu(win: BrowserWindow, payload: StickerPayload | nu
   }
 
   template.push({ type: 'separator' })
-  template.push({
-    label: '关闭',
-    click: () => {
-      try {
-        win.hide()
-        win.close()
-      } catch {
-        void 0
-      }
-    }
-  })
+  // template.push({
+  //   label: '关闭',
+  //   click: () => {
+  //     try {
+  //       win.hide()
+  //       win.close()
+  //     } catch {
+  //       void 0
+  //     }
+  //   }
+  // })
 
   const menu = Menu.buildFromTemplate(template)
 
