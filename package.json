@@ -88,8 +88,12 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
+      "@parcel/watcher",
+      "core-js",
       "electron",
-      "esbuild"
+      "electron-winstaller",
+      "esbuild",
+      "tesseract.js"
     ]
   }
 }
