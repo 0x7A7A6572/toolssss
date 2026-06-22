@@ -9,10 +9,11 @@ import {
   PanelLeftOpen,
   Copy,
   RefreshCw,
-  BookText
+  BookText,
+  MoreHorizontal
 } from 'lucide-vue-next'
-import { Actions, BubbleList, Sender, Conversations } from 'ant-design-x-vue'
-import type { ActionItem, Conversation } from 'ant-design-x-vue'
+import { Actions, BubbleList, Sender } from 'ant-design-x-vue'
+import type { ActionItem } from 'ant-design-x-vue'
 import { useSettingsStore } from '@renderer/state/settings'
 import { useAgentChat } from './composables/useAgentChat'
 import type { AgentMessage, AgentRagChunk } from '@shared/agents'
@@ -190,8 +191,8 @@ const bubbleItems = computed(() => {
 
 // ===== Conversations 配置 ==========================================
 
-/** 对话 → Conversations items */
-const conversationItems = computed<Conversation[]>(() => {
+/** 对话列表项 */
+const conversationItems = computed(() => {
   return conversations.value.map((c) => ({
     key: c.id,
     label: c.title,
@@ -208,40 +209,45 @@ watch(
   }
 )
 
-/** 对话右键菜单 */
-function conversationMenu(conv: Conversation): {
-  items: ({ key: string; label: string } | { key: string; label: string; danger: boolean })[]
-  onClick: (info: { key: string }) => void
-} {
-  const handleMenuClick = (key: string): void => {
-    switch (key) {
-      case 'rename': {
-        const title = window.prompt('新名称', (conv.label as string) ?? '')
-        if (title && title.trim()) {
-          void renameConversation(conv.key as string, title.trim())
-        }
-        break
+function handleConversationMenu(key: string, title: string, action: string): void {
+  switch (action) {
+    case 'rename': {
+      const nextTitle = window.prompt('新名称', title)
+      if (nextTitle && nextTitle.trim()) {
+        void renameConversation(key, nextTitle.trim())
       }
-      case 'clear':
-        void clearConversation(conv.key as string)
-        break
-      case 'delete':
-        void deleteConversation(conv.key as string)
-        if (activeConversationKey.value === conv.key) {
-          activeConversationKey.value = ''
-        }
-        break
+      break
     }
+    case 'clear':
+      void clearConversation(key)
+      break
+    case 'delete':
+      void deleteConversation(key)
+      if (activeConversationKey.value === key) {
+        activeConversationKey.value = ''
+      }
+      break
   }
+}
 
-  return {
-    items: [
-      { key: 'rename', label: '重命名' },
-      { key: 'clear', label: '清空消息' },
-      { key: 'delete', label: '删除', danger: true }
-    ],
-    onClick: (info: { key: string }) => handleMenuClick(info.key)
+function formatConversationTime(timestamp: number): string {
+  const date = new Date(timestamp)
+  if (Number.isNaN(date.getTime())) return ''
+  const now = new Date()
+  const isSameDay =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate()
+  if (isSameDay) {
+    return date.toLocaleTimeString('zh-CN', {
+      hour: '2-digit',
+      minute: '2-digit'
+    })
   }
+  return date.toLocaleDateString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit'
+  })
 }
 
 // ===== 事件处理 ============================================
@@ -389,9 +395,52 @@ onBeforeUnmount(() => {
 
       <!-- 对话列表（含右键菜单） -->
       <div v-if="!sidebarCollapsed" class="conversations-wrapper">
-        <Conversations v-if="conversationItems.length > 0" :items="conversationItems"
-          :active-key="activeConversationKey" :menu="conversationMenu as any"
-          @active-change="handleConversationSelect" />
+        <div v-if="conversationItems.length > 0" class="conversation-list">
+          <div
+            v-for="conv in conversationItems"
+            :key="conv.key"
+            :class="[
+              'conversation-list-item',
+              { active: activeConversationKey === conv.key }
+            ]"
+            @click="handleConversationSelect(String(conv.key))"
+          >
+            <div class="conversation-list-main">
+              <div class="conversation-list-title">{{ conv.label }}</div>
+              <div class="conversation-list-time">
+                {{ formatConversationTime(conv.timestamp) }}
+              </div>
+            </div>
+            <a-dropdown :trigger="['click']">
+              <a-button
+                class="conversation-list-more"
+                type="text"
+                size="small"
+                @click.stop
+              >
+                <template #icon>
+                  <MoreHorizontal :size="14" />
+                </template>
+              </a-button>
+              <template #overlay>
+                <a-menu
+                  @click="
+                    ({ key }) =>
+                      handleConversationMenu(
+                        String(conv.key),
+                        String(conv.label ?? ''),
+                        String(key)
+                      )
+                  "
+                >
+                  <a-menu-item key="rename">重命名</a-menu-item>
+                  <a-menu-item key="clear">清空消息</a-menu-item>
+                  <a-menu-item key="delete" danger>删除</a-menu-item>
+                </a-menu>
+              </template>
+            </a-dropdown>
+          </div>
+        </div>
         <div v-else class="no-conversations">
           {{ currentAgentId ? '暂无对话记录' : '请先选择智能体' }}
         </div>
@@ -598,6 +647,65 @@ onBeforeUnmount(() => {
   flex: 1;
   overflow-y: auto;
   min-height: 0;
+}
+
+.conversation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.conversation-list-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease;
+}
+
+.conversation-list-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.conversation-list-item.active {
+  background: rgba(59, 130, 246, 0.14);
+}
+
+.conversation-list-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.conversation-list-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.conversation-list-time {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.conversation-list-more {
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.56);
+}
+
+.conversation-list-more:hover,
+.conversation-list-more:focus-visible {
+  color: rgba(255, 255, 255, 0.9);
+  background: transparent;
 }
 
 .sidebar-bottom-actions {

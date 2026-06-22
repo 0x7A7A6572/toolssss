@@ -3,7 +3,6 @@ import { computed, onMounted, ref } from 'vue'
 import { message } from 'ant-design-vue'
 import type { AppSettings, SettingsPatch } from '@shared/settings'
 import {
-  AGENT_EVENTS,
   type AgentConfig,
   type AgentKnowledgeDoc,
   type KnowledgeBaseConfig
@@ -11,9 +10,11 @@ import {
 import AppSwitch from './AppSwitch.vue'
 import { Pencil, Plus, RefreshCw, Trash2 } from 'lucide-vue-next'
 import { useSettingsStore } from '@renderer/state/settings'
+import { useAgentBackend } from '@renderer/composables/useAgentBackend'
 
 const settingsStore = useSettingsStore()
 const settings = settingsStore.settings
+const backend = useAgentBackend()
 
 const knowledgeBases = ref<KnowledgeBaseConfig[]>([])
 const reindexingKbIds = ref<Set<string>>(new Set())
@@ -35,15 +36,12 @@ async function update(patch: SettingsPatch): Promise<void> {
 }
 
 async function loadKnowledgeBases(): Promise<void> {
-  const list = await window.electron.ipcRenderer.invoke(AGENT_EVENTS.KB_LIST)
-  knowledgeBases.value = Array.isArray(list) ? (list as KnowledgeBaseConfig[]) : []
+  knowledgeBases.value = await backend.listKnowledgeBases()
 
   const entries = await Promise.all(
     knowledgeBases.value.map(async (kb) => {
-      const docs = await window.electron.ipcRenderer.invoke(AGENT_EVENTS.KB_DOC_LIST, {
-        kbId: kb.id
-      })
-      return [kb.id, Array.isArray(docs) ? (docs as AgentKnowledgeDoc[]) : []] as const
+      const docs = await backend.listDocuments(kb.id)
+      return [kb.id, docs] as const
     })
   )
 
@@ -94,7 +92,7 @@ async function updateRag(patch: Partial<AppSettings['agents']['rag']>): Promise<
 async function reindexKb(kbId: string): Promise<void> {
   reindexingKbIds.value = new Set(reindexingKbIds.value).add(kbId)
   try {
-    await window.electron.ipcRenderer.invoke(AGENT_EVENTS.KB_REINDEX, { kbId })
+    await backend.reindexKnowledgeBase(kbId)
     await refreshKnowledgeBases()
     message.success('索引重建成功')
   } catch (error) {
@@ -211,16 +209,13 @@ async function saveKb(): Promise<void> {
   const name = kbDraftName.value.trim()
   if (!name) return
 
-  await window.electron.ipcRenderer.invoke(AGENT_EVENTS.KB_SAVE, {
-    id: kbEditing.value?.id ?? generateKbId(),
-    name
-  })
+  await backend.saveKnowledgeBase(kbEditing.value?.id ?? generateKbId(), name)
   await refreshKnowledgeBases()
   closeKbModal()
 }
 
 async function deleteKb(kb: KnowledgeBaseConfig): Promise<void> {
-  await window.electron.ipcRenderer.invoke(AGENT_EVENTS.KB_DELETE, { id: kb.id })
+  await backend.deleteKnowledgeBase(kb.id)
   await refreshKnowledgeBases()
 }
 
@@ -251,9 +246,9 @@ async function saveDoc(): Promise<void> {
   if (!title || !docEditingKb.value) return
 
   const now = Date.now()
-  await window.electron.ipcRenderer.invoke(AGENT_EVENTS.KB_DOC_SAVE, {
-    kbId: docEditingKb.value.id,
-    doc: docEditing.value
+  await backend.saveDocument(
+    docEditingKb.value.id,
+    docEditing.value
       ? {
           ...docEditing.value,
           title,
@@ -267,16 +262,13 @@ async function saveDoc(): Promise<void> {
           createdAt: now,
           updatedAt: now
         }
-  })
+  )
   await refreshKnowledgeBases()
   closeDocModal()
 }
 
 async function deleteDoc(kb: KnowledgeBaseConfig, doc: AgentKnowledgeDoc): Promise<void> {
-  await window.electron.ipcRenderer.invoke(AGENT_EVENTS.KB_DOC_DELETE, {
-    kbId: kb.id,
-    docId: doc.id
-  })
+  await backend.deleteDocument(kb.id, doc.id)
   await refreshKnowledgeBases()
 }
 

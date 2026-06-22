@@ -51,7 +51,7 @@ import {
 } from './domains/window-stash'
 import { createEyeOverlayDomain } from './domains/eye-overlay'
 import { createRemindersDomain } from './domains/reminders'
-import { createAgentDomain } from './domains/agents'
+import { startPythonServer, stopPythonServer, getPythonPort, pushConfigToPython } from './core/python-server'
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
@@ -114,6 +114,8 @@ function commitSettings(next: AppSettings, opts?: { applyRuntime?: boolean }): v
   saveSettingsToDisk(settings)
   if (opts?.applyRuntime) applySettingsToRuntime()
   broadcastSettingsChanged(settings)
+  // 同步配置到 Python 后端（异步推送，不阻塞设置流程）
+  pushConfigToPython().catch(() => null)
 }
 
 async function loadWindow(win: BrowserWindow, query: Record<string, string>): Promise<void> {
@@ -318,6 +320,7 @@ app.whenReady().then(async () => {
       .finally(() => {
         disposeAllWindowStash()
         disposeExternalWindowPowerShell()
+        stopPythonServer().catch(() => null)
         markWindowStashSessionClean()
           .catch(() => null)
           .finally(() => {
@@ -335,6 +338,21 @@ app.whenReady().then(async () => {
 
   settings = loadSettingsFromDisk()
   applySettingsToRuntime()
+
+  // 启动 Python 后端服务（异步，不阻塞 UI）
+  startPythonServer(
+    { getSettings: () => settings, getUserDataPath: () => app.getPath('userData') },
+    (next) => commitSettings(next)
+  ).then((port) => {
+    if (port) {
+      console.log('[Main] Python 服务已启动，端口:', port)
+    } else {
+      console.log('[Main] Python 服务未启动（环境不满足或启动失败）')
+    }
+  }).catch((e) => {
+    console.error('[Main] Python 服务启动异常:', e)
+  })
+
   setTimeout(() => {
     warmupExternalWindowPowerShell().catch(() => null)
   }, 800)
@@ -373,6 +391,10 @@ app.whenReady().then(async () => {
   })
   ipcMain.handle('app:version', () => {
     return app.getVersion()
+  })
+  // Python 服务端口查询（渲染进程用此端口直接 HTTP 请求 Python）
+  ipcMain.handle('python:port', () => {
+    return getPythonPort()
   })
   ipcMain.handle('update:status:get', () => updates.getState())
   ipcMain.handle('update:check', async () => {
@@ -426,10 +448,6 @@ app.whenReady().then(async () => {
   })
   registerFunFactHandlers({ getSettings: () => settings })
   registerCustomModuleHandlers({ getSettings: () => settings })
-  createAgentDomain({
-    getSettings: () => settings,
-    commitSettings: (next) => commitSettings(next)
-  }).registerIpcHandlers()
   ipcMain.handle('sticky-notes:saveDir:choose', async () => {
     const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
     const options: OpenDialogOptions = { properties: ['openDirectory', 'createDirectory'] }

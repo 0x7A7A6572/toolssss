@@ -19,7 +19,7 @@ import {
   getLegacyAiApiKeyFromSecrets,
   setAiApiKeyToSecrets
 } from './secrets'
-import { createKnowledgeBaseStore, migrateLegacyKnowledgeBases } from '@main/domains/agents/knowledge-base-store'
+import { migrateLegacyKnowledgeBases } from './legacy-agent-kb-migration'
 
 function isAiProvider(value: unknown): value is AiProvider {
   return value === 'custom' || (typeof value === 'string' && value in AI_PROVIDERS)
@@ -734,8 +734,10 @@ export function loadSettingsFromDisk(): AppSettings {
   const normalized = normalizeSettings(parsed)
   const legacyKnowledgeBases = extractLegacyKnowledgeBases(parsed)
   if (legacyKnowledgeBases.length) {
-    const store = createKnowledgeBaseStore()
-    normalized.agents.knowledgeBases = migrateLegacyKnowledgeBases(legacyKnowledgeBases, store)
+    normalized.agents.knowledgeBases = migrateLegacyKnowledgeBases(
+      legacyKnowledgeBases,
+      join(app.getPath('userData'), 'agents', 'knowledge-bases')
+    )
     saveSettingsToDisk(normalized)
   }
   normalized.ai.profiles = normalized.ai.profiles.map((item) => ({

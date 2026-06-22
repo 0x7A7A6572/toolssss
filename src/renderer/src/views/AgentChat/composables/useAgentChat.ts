@@ -6,12 +6,13 @@ import type {
   AgentConversation,
   AgentMessage,
   AgentStreamStatus,
-  AgentChatChunkPayload,
   AgentChatDonePayload,
+  AgentChatChunkPayload,
   AgentChatErrorPayload,
   AgentChatStatusPayload
 } from '@shared/agents'
-import { AGENT_EVENTS } from '@shared/agents'
+import { useAgentBackend } from '@renderer/composables/useAgentBackend'
+import type { CustomEventSource, ConversationListItem } from '@renderer/utils/python-api'
 
 /** 流式消息的临时 ID，用于在流式过程中显示占位消息 */
 const STREAMING_TEMP_ID = '__streaming__'
@@ -37,17 +38,96 @@ export interface UseAgentChatReturn {
 }
 
 export function useAgentChat(): UseAgentChatReturn {
+  const backend = useAgentBackend()
   const conversations = ref<AgentConversation[]>([])
   const currentConversation = ref<AgentConversation | null>(null)
   const currentAgentId = ref<string>('')
   const streamingContent = ref<string>('')
   const streamStatus = ref<AgentStreamStatus | null>(null)
   const error = ref<string | null>(null)
-  const pendingStreamId = ref<string | null>(null)
-  let offChatChunk = (): void => {}
-  let offChatDone = (): void => {}
-  let offChatError = (): void => {}
-  let offChatStatus = (): void => {}
+  let activePythonStream: CustomEventSource | null = null
+  let pythonStreamCancelled = false
+
+  function toConversationState(
+    input: AgentConversation | ConversationListItem
+  ): AgentConversation {
+    return {
+      id: input.id,
+      agentId: input.agentId,
+      title: input.title,
+      messages: 'messages' in input && Array.isArray(input.messages) ? input.messages : [],
+      createdAt: input.createdAt,
+      updatedAt: input.updatedAt
+    }
+  }
+
+  function upsertConversationSummary(input: AgentConversation | ConversationListItem): void {
+    const summary = toConversationState(input)
+    const idx = conversations.value.findIndex((item) => item.id === summary.id)
+    if (idx === -1) {
+      conversations.value.unshift(summary)
+      return
+    }
+    conversations.value[idx] = {
+      ...conversations.value[idx],
+      ...summary,
+      messages: conversations.value[idx]?.messages ?? summary.messages
+    }
+  }
+
+  function clearStreamingState(): void {
+    streamingContent.value = ''
+    streamStatus.value = null
+  }
+
+  function closePythonStream(): void {
+    if (!activePythonStream) return
+    activePythonStream.close()
+    activePythonStream = null
+  }
+
+  function bindPythonStream(eventSource: CustomEventSource, conversationId: string): void {
+    pythonStreamCancelled = false
+    activePythonStream = eventSource
+
+    eventSource.addEventListener('status', ({ data }) => {
+      const payload = JSON.parse(data) as AgentChatStatusPayload
+      if (payload?.conversationId === currentConversation.value?.id) {
+        streamStatus.value = payload.status
+      }
+    })
+
+    eventSource.addEventListener('delta', ({ data }) => {
+      const payload = JSON.parse(data) as AgentChatChunkPayload
+      if (payload?.conversationId === currentConversation.value?.id) {
+        streamingContent.value += payload.delta
+      }
+    })
+
+    eventSource.addEventListener('completed', ({ data }) => {
+      const payload = JSON.parse(data) as AgentChatDonePayload
+      if (payload?.conversationId !== currentConversation.value?.id || !currentConversation.value) {
+        return
+      }
+      currentConversation.value.messages.push(payload.assistantMessage)
+      if (currentConversation.value.messages.length === 2) {
+        currentConversation.value.title = payload.fullText.slice(0, 50)
+      }
+      upsertConversationSummary(currentConversation.value)
+      clearStreamingState()
+      activePythonStream = null
+    })
+
+    eventSource.addEventListener('error', ({ data }) => {
+      if (pythonStreamCancelled) return
+      const payload = JSON.parse(data) as AgentChatErrorPayload
+      if (payload?.conversationId === conversationId) {
+        error.value = payload.message || '聊天请求失败'
+      }
+      clearStreamingState()
+      activePythonStream = null
+    })
+  }
 
   const messages = computed<AgentMessage[]>(() => {
     const msgs = currentConversation.value?.messages ?? []
@@ -67,59 +147,9 @@ export function useAgentChat(): UseAgentChatReturn {
 
   const streaming = computed<boolean>(() => streamStatus.value !== null)
 
-  // ===== IPC 事件监听 ===============================================
-
-  function onChunk(_event: unknown, payload: unknown): void {
-    const data = payload as AgentChatChunkPayload
-    if (data?.conversationId === currentConversation.value?.id) {
-      streamingContent.value += data.delta
-    }
-  }
-
-  function onDone(_event: unknown, payload: unknown): void {
-    const data = payload as AgentChatDonePayload
-    if (data?.conversationId === currentConversation.value?.id && currentConversation.value) {
-      // 用正式消息替换流式内容
-      currentConversation.value.messages.push(data.assistantMessage)
-      streamingContent.value = ''
-      streamStatus.value = null
-      pendingStreamId.value = null
-    }
-  }
-
-  function onError(_event: unknown, payload: unknown): void {
-    const data = payload as AgentChatErrorPayload
-    if (data?.conversationId === currentConversation.value?.id) {
-      error.value = data.message || '聊天请求失败'
-      streamingContent.value = ''
-      streamStatus.value = null
-      pendingStreamId.value = null
-    }
-  }
-
-  function onStatus(_event: unknown, payload: unknown): void {
-    const data = payload as AgentChatStatusPayload
-    if (data?.conversationId === currentConversation.value?.id) {
-      streamStatus.value = data.status
-    }
-  }
-
-  // 注册 IPC 监听
-  try {
-    offChatChunk = window.electron.ipcRenderer.on(AGENT_EVENTS.CHAT_CHUNK, onChunk)
-    offChatDone = window.electron.ipcRenderer.on(AGENT_EVENTS.CHAT_DONE, onDone)
-    offChatError = window.electron.ipcRenderer.on(AGENT_EVENTS.CHAT_ERROR, onError)
-    offChatStatus = window.electron.ipcRenderer.on(AGENT_EVENTS.CHAT_STATUS, onStatus)
-  } catch {
-    // preload 未就绪，忽略
-  }
-
   onBeforeUnmount(() => {
     try {
-      offChatChunk()
-      offChatDone()
-      offChatError()
-      offChatStatus()
+      closePythonStream()
     } catch {
       // 忽略
     }
@@ -129,10 +159,8 @@ export function useAgentChat(): UseAgentChatReturn {
 
   async function loadConversations(): Promise<void> {
     try {
-      const list = await window.electron.ipcRenderer.invoke(AGENT_EVENTS.CONVERSATION_LIST)
-      if (Array.isArray(list)) {
-        conversations.value = list as AgentConversation[]
-      }
+      const list = await backend.listConversations()
+      conversations.value = Array.isArray(list) ? list.map((item) => toConversationState(item)) : []
     } catch {
       conversations.value = []
     }
@@ -140,10 +168,11 @@ export function useAgentChat(): UseAgentChatReturn {
 
   async function selectConversation(id: string): Promise<void> {
     try {
-      const conv = await window.electron.ipcRenderer.invoke(AGENT_EVENTS.CONVERSATION_GET, { id })
+      const conv = await backend.getConversation(id)
       if (conv) {
-        currentConversation.value = conv as AgentConversation
-        currentAgentId.value = (conv as AgentConversation).agentId
+        currentConversation.value = conv
+        currentAgentId.value = conv.agentId
+        upsertConversationSummary(conv)
       }
     } catch {
       // 对话不存在
@@ -157,11 +186,8 @@ export function useAgentChat(): UseAgentChatReturn {
   async function createConversation(title?: string): Promise<AgentConversation | null> {
     if (!currentAgentId.value) return null
     try {
-      const conv = (await window.electron.ipcRenderer.invoke(
-        AGENT_EVENTS.CONVERSATION_CREATE,
-        { agentId: currentAgentId.value, title }
-      )) as AgentConversation
-      conversations.value.unshift(conv)
+      const conv = await backend.createConversation(currentAgentId.value, title)
+      upsertConversationSummary(conv)
       currentConversation.value = conv
       return conv
     } catch {
@@ -171,7 +197,7 @@ export function useAgentChat(): UseAgentChatReturn {
 
   async function deleteConversation(id: string): Promise<void> {
     try {
-      await window.electron.ipcRenderer.invoke(AGENT_EVENTS.CONVERSATION_DELETE, { id })
+      await backend.deleteConversation(id)
       conversations.value = conversations.value.filter((c) => c.id !== id)
       if (currentConversation.value?.id === id) {
         currentConversation.value = null
@@ -183,12 +209,8 @@ export function useAgentChat(): UseAgentChatReturn {
 
   async function renameConversation(id: string, title: string): Promise<void> {
     try {
-      const updated = (await window.electron.ipcRenderer.invoke(
-        AGENT_EVENTS.CONVERSATION_RENAME,
-        { id, title }
-      )) as AgentConversation
-      const idx = conversations.value.findIndex((c) => c.id === id)
-      if (idx !== -1) conversations.value[idx] = updated
+      const updated = await backend.renameConversation(id, title)
+      upsertConversationSummary(updated)
       if (currentConversation.value?.id === id) {
         currentConversation.value = updated
       }
@@ -199,12 +221,8 @@ export function useAgentChat(): UseAgentChatReturn {
 
   async function clearConversation(id: string): Promise<void> {
     try {
-      const updated = (await window.electron.ipcRenderer.invoke(
-        AGENT_EVENTS.CONVERSATION_CLEAR,
-        { id }
-      )) as AgentConversation
-      const idx = conversations.value.findIndex((c) => c.id === id)
-      if (idx !== -1) conversations.value[idx] = updated
+      const updated = await backend.clearConversation(id)
+      upsertConversationSummary(updated)
       if (currentConversation.value?.id === id) {
         currentConversation.value = updated
       }
@@ -245,18 +263,11 @@ export function useAgentChat(): UseAgentChatReturn {
 
     try {
       // 发送前清空流式状态
-      streamingContent.value = ''
-      streamStatus.value = null
+      clearStreamingState()
+      streamStatus.value = 'thinking'
 
-      const result = await window.electron.ipcRenderer.invoke(AGENT_EVENTS.CHAT_STREAM, {
-        conversationId,
-        agentId: currentAgentId.value,
-        message
-      })
-
-      if (result && typeof result === 'object') {
-        pendingStreamId.value = (result as { streamId?: string }).streamId ?? null
-      }
+      const stream = await backend.chatStream(conversationId, currentAgentId.value, message)
+      bindPythonStream(stream, conversationId)
     } catch (e: unknown) {
       // 发送失败时移除本地用户消息
       const idx = currentConversation.value.messages.findIndex((m) => m.id === userMsg.id)
@@ -266,17 +277,13 @@ export function useAgentChat(): UseAgentChatReturn {
   }
 
   async function cancelStream(): Promise<void> {
-    if (!pendingStreamId.value) return
-    try {
-      await window.electron.ipcRenderer.invoke(AGENT_EVENTS.CHAT_CANCEL, {
-        streamId: pendingStreamId.value
-      })
-    } catch {
-      // 忽略
+    if (!activePythonStream) return
+    pythonStreamCancelled = true
+    if (currentConversation.value?.id) {
+      await backend.cancelChatStream(currentConversation.value.id).catch(() => null)
     }
-    streamingContent.value = ''
-    streamStatus.value = null
-    pendingStreamId.value = null
+    closePythonStream()
+    clearStreamingState()
   }
 
   return {
