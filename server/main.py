@@ -11,6 +11,7 @@ Electron 主进程通过子进程方式启动此服务，传递端口和用户�
 import argparse
 import sys
 from pathlib import Path
+from contextlib import asynccontextmanager
 
 # 将 server 目录加入 sys.path，确保 app 包可导入
 _SERVER_DIR = Path(__file__).resolve().parent
@@ -25,17 +26,27 @@ def create_app() -> "fastapi.FastAPI":
     from app.core.middleware import register_middleware
     from app.domains.agents.router import router as agents_router
     from app.domains.custom_modules.router import router as custom_modules_router
+    from app.domains.windows.router import router as windows_router
+    from app.domains.windows.service import shutdown_windows_runtime
 
     from fastapi import FastAPI
 
     # 从命令行参数或环境变量解析配置
     config = AppConfig.from_args()
 
+    @asynccontextmanager
+    async def lifespan(_app: "FastAPI"):
+        try:
+            yield
+        finally:
+            shutdown_windows_runtime()
+
     app = FastAPI(
         title="Forge Studio Server",
         version="0.1.0",
         docs_url="/docs" if config.debug else None,
         redoc_url=None,
+        lifespan=lifespan,
     )
 
     # 将配置挂载到 app.state，供各 domain 通过 request.app.state 访问
@@ -48,6 +59,7 @@ def create_app() -> "fastapi.FastAPI":
     # 注册 domain 路由
     app.include_router(agents_router, prefix="/api/agents", tags=["智能体对话"])
     app.include_router(custom_modules_router, prefix="/api/modules", tags=["自定义模块"])
+    app.include_router(windows_router, prefix="/api/windows", tags=["Windows 窗口"])
 
     # 系统端点
     @app.get("/health")

@@ -398,14 +398,8 @@ function createStickerWindow(deps: Deps, payload: StickerPayload): BrowserWindow
   })
 
   win.webContents.once('did-finish-load', () => {
-    win.showInactive()
-    try {
-      app.focus()
-    } catch {
-      void 0
-    }
+    win.show()
     win.moveTop()
-    win.focus()
   })
 
   win.on('closed', () => {
