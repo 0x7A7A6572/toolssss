@@ -1,0 +1,12 @@
+{
+  "id": "cm-demo-text",
+  "name": "每日编程小知识",
+  "type": "text",
+  "prompt": "分享一个实用的编程小技巧，控制在100字以内",
+  "created_at": 1782376375499.4597,
+  "web_search": false,
+  "min_height": 180,
+  "max_height": 400,
+  "enable_markdown": true,
+  "update_frequency": "daily"
+}

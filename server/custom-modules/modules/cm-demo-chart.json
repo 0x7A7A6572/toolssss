@@ -1,0 +1,12 @@
+{
+  "id": "cm-demo-chart",
+  "name": "技术趋势数据",
+  "type": "chart",
+  "prompt": "展示当前主流前端框架的使用率数据和语言趋势，以JSON格式输出",
+  "created_at": 1782376375499.4597,
+  "web_search": false,
+  "min_height": 200,
+  "max_height": 400,
+  "enable_markdown": false,
+  "update_frequency": "monthly"
+}

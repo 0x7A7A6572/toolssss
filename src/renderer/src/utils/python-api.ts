@@ -18,6 +18,7 @@ import type {
   AgentRagChunk,
   KnowledgeBaseConfig
 } from '@shared/agents'
+import type { CustomModuleConfig } from '@shared/custom-modules'
 
 // =============================================================================
 // 类型定义
@@ -236,6 +237,75 @@ export const moduleApi = {
   /** Prompt 增强 */
   enhance(title: string, prompt: string, type: string = 'text'): Promise<{ enhanced: string }> {
     return post('/api/modules/enhance', { title, prompt, type })
+  },
+
+  /** 获取模块列表 */
+  list(): Promise<CustomModuleConfig[]> {
+    return get<unknown[]>('/api/modules').then((rows) =>
+      Array.isArray(rows) ? rows.map(normalizeModuleConfig) : []
+    )
+  },
+
+  /** 获取单个模块 */
+  get(id: string): Promise<CustomModuleConfig> {
+    return get<unknown>(`/api/modules/${id}`).then(normalizeModuleConfig)
+  },
+
+  /** 创建模块 */
+  create(
+    data: Pick<CustomModuleConfig, 'name' | 'type' | 'prompt'> &
+      Partial<Pick<CustomModuleConfig, 'webSearch' | 'minHeight' | 'maxHeight' | 'enableMarkdown' | 'updateFrequency'>>
+  ): Promise<CustomModuleConfig> {
+    return post<unknown>('/api/modules', denormalizeModuleConfig(data)).then(normalizeModuleConfig)
+  },
+
+  /** 更新模块（PATCH 语义） */
+  update(
+    id: string,
+    data: Partial<Pick<CustomModuleConfig, 'name' | 'type' | 'prompt' | 'webSearch' | 'minHeight' | 'maxHeight' | 'enableMarkdown' | 'updateFrequency'>>
+  ): Promise<CustomModuleConfig> {
+    return requestJson<unknown>(`/api/modules/${id}`, {
+      method: 'PUT',
+      body: denormalizeModuleConfig(data)
+    }).then(normalizeModuleConfig)
+  },
+
+  /** 删除模块 */
+  async delete(id: string): Promise<void> {
+    await requestVoid(`/api/modules/${id}`, { method: 'DELETE' })
+  },
+
+  /**
+   * 流式刷新模块 —— 调用 Python SSE 端点，返回事件源
+   *
+   * 监听 'delta' 获取增量文本，'done' 获取最终结果，'error' 获取错误。
+   */
+  async refreshStream(
+    moduleId: string,
+    type: string,
+    prompt: string,
+    webSearch: boolean = false,
+    enableMarkdown: boolean = false
+  ): Promise<CustomEventSource> {
+    const controller = new AbortController()
+    const res = await request('/api/modules/stream', {
+      method: 'POST',
+      body: {
+        module_id: moduleId,
+        type,
+        prompt,
+        web_search: webSearch,
+        enable_markdown: enableMarkdown
+      },
+      signal: controller.signal
+    })
+    if (!res.ok) {
+      throw new Error(await readErrorMessage(res))
+    }
+    const reader = res.body?.getReader()
+    if (!reader) throw new Error('无法读取流式响应')
+
+    return createEventSourceFromReader(reader, { controller })
   }
 }
 
@@ -348,6 +418,46 @@ function normalizeKnowledgeDoc(raw: unknown): AgentKnowledgeDoc {
     createdAt: asNumber(item.createdAt ?? item.created_at, Date.now()),
     updatedAt: asNumber(item.updatedAt ?? item.updated_at, Date.now())
   }
+}
+
+function normalizeMaxHeight(raw: unknown): number | 'auto' | undefined {
+  if (raw === null || raw === undefined) return undefined
+  if (raw === 'auto') return 'auto'
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw
+  return undefined
+}
+
+function normalizeModuleConfig(raw: unknown): CustomModuleConfig {
+  const item = asRecord(raw)
+  return {
+    id: asString(item.id),
+    name: asString(item.name),
+    type: (asString(item.type) || 'text') as CustomModuleConfig['type'],
+    prompt: asString(item.prompt),
+    createdAt: asNumber(item.createdAt ?? item.created_at, Date.now()),
+    webSearch: item.webSearch !== undefined ? Boolean(item.webSearch) : Boolean(item.web_search),
+    minHeight: item.minHeight != null ? asNumber(item.minHeight ?? item.min_height, 0) || undefined : undefined,
+    maxHeight: normalizeMaxHeight(item.maxHeight ?? item.max_height),
+    enableMarkdown:
+      item.enableMarkdown !== undefined ? Boolean(item.enableMarkdown) : Boolean(item.enable_markdown),
+    updateFrequency:
+      (asString(item.updateFrequency ?? item.update_frequency) || 'realtime') as CustomModuleConfig['updateFrequency']
+  }
+}
+
+function denormalizeModuleConfig(
+  data: Partial<CustomModuleConfig>
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  if (data.name !== undefined) out.name = data.name
+  if (data.type !== undefined) out.type = data.type
+  if (data.prompt !== undefined) out.prompt = data.prompt
+  if (data.webSearch !== undefined) out.web_search = data.webSearch
+  if (data.minHeight !== undefined) out.min_height = data.minHeight
+  if (data.maxHeight !== undefined) out.max_height = data.maxHeight
+  if (data.enableMarkdown !== undefined) out.enable_markdown = data.enableMarkdown
+  if (data.updateFrequency !== undefined) out.update_frequency = data.updateFrequency
+  return out
 }
 
 async function readErrorMessage(res: Response): Promise<string> {

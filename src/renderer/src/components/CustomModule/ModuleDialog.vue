@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { CUSTOM_MODULES_EVENTS } from '@shared/custom-modules'
 import type { UpdateFrequency } from '@shared/custom-modules'
 import AppSwitch from '@renderer/components/AppSwitch.vue'
-
+import { useAgentBackend } from '@renderer/composables/useAgentBackend'
+import { Save, X } from 'lucide-vue-next'
 export interface ModuleDialogData {
   name: string
   type: 'text' | 'ranking' | 'link' | 'chart'
@@ -109,13 +109,10 @@ async function aiEnhancePrompt(): Promise<void> {
   draftAiEnhancing.value = true
   draftError.value = ''
   try {
-    const result = (await window.electron.ipcRenderer.invoke(CUSTOM_MODULES_EVENTS.ENHANCE_PROMPT, {
-      title,
-      prompt,
-      type: draftType.value
-    })) as string
-    if (result && result.trim()) {
-      draftPrompt.value = result.trim()
+    const backend = useAgentBackend()
+    const result = await backend.enhance(title, prompt, draftType.value)
+    if (result && result.enhanced.trim()) {
+      draftPrompt.value = result.enhanced.trim()
     }
   } catch (e) {
     draftError.value = e instanceof Error ? e.message : 'AI 补充失败'
@@ -150,27 +147,51 @@ function save(): void {
 </script>
 
 <template>
-  <a-drawer
+  <a-modal
     :open="open"
-    :width="560"
-    :title="mode === 'add' ? '添加模块' : '编辑模块'"
     centered
-    @close="close"
+    :closable="false"
+    :footer="null"
+    wrap-class-name="module-dialog-modal"
+    @cancel="close"
   >
+    <template #title>
+      <div class="modal-header">
+        <div class="flex items-center gap-[10px]">
+          <div class="bg-[#a0c5f3] w-[4px] h-[15px]"></div>
+          <span class="modal-title">{{ mode === 'add' ? '添加模块' : '编辑模块' }}</span>
+        </div>
+
+        <div class="modal-header-actions">
+          <div class="btn-style" @click="save">
+            <Save :size="16" />
+          </div>
+          <div class="btn-style" @click="close">
+            <X :size="16" />
+          </div>
+
+          <!-- <a-button size="small" :disabled="draftSaving" >取消</a-button>
+          <a-button size="small" type="primary" :loading="draftSaving"">
+            {{ mode === 'add' ? '添加' : '保存' }}
+          </a-button> -->
+        </div>
+      </div>
+      <div v-if="draftError" class="error">{{ draftError }}</div>
+    </template>
     <div class="module-dialog-form">
       <div class="flex gap-[10px]">
         <div
           v-for="item in optionsModelTypes"
           :key="item.value"
-          class="overflow-hidden border-solid relative w-[130px] h-[60px] p-[10px] rounded-[4px]"
+          class="overflow-hidden border-solid relative p-[10px] rounded-[4px]"
           :style="{
             backgroundColor: draftType === item.value ? '#a0c5f366' : '#ffffff22',
             borderColor: draftType === item.value ? '#a0c5f3' : 'transparent'
           }"
           @click="draftType = item.value"
         >
-          <div class="module-dialog-label">
-            <div class="bg-[#a0c5f3] w-[4px] h-[15px]"></div>
+          <div class="module-dialog-label flex items-center gap-[10px]">
+            <!-- <div class="bg-[#a0c5f3] w-[4px] h-[15px] rounded-md"></div> -->
             <span
               class="font-bold font-italic"
               :style="{
@@ -178,11 +199,6 @@ function save(): void {
               }"
               >{{ item.label }}</span
             >
-          </div>
-          <div
-            class="absolute bottom-[-10%] right-[10%] text-[32px] font-bold text-[#fff] opacity-10"
-          >
-            {{ item.value }}
           </div>
         </div>
       </div>
@@ -195,8 +211,10 @@ function save(): void {
       <div class="module-dialog-field">
         <div class="module-dialog-row">
           <div class="module-dialog-label">提示词</div>
+        </div>
+        <div class="relative">
           <button
-            class="ai-enhance-btn"
+            class="ai-enhance-btn absolute right-[10px] top-[10px]"
             type="button"
             :disabled="draftAiEnhancing"
             @click="aiEnhancePrompt"
@@ -204,21 +222,22 @@ function save(): void {
             <span v-if="draftAiEnhancing" class="ai-enhance-spinner"></span>
             {{ draftAiEnhancing ? '补充中…' : 'AI补充' }}
           </button>
+          <a-textarea
+            v-model:value="draftPrompt"
+            class="module-dialog-textarea"
+            :rows="6"
+            :placeholder="
+              draftType === 'ranking'
+                ? '输入你希望AI生成排行榜的主题，如：2025年最流行的前端框架'
+                : draftType === 'link'
+                  ? '输入你希望AI收集的资讯主题，如：近期AI行业重大新闻'
+                  : draftType === 'chart'
+                    ? '输入你希望AI生成图表的数据主题，如：2025年主流前端框架使用率对比'
+                    : '输入你希望AI生成的内容主题'
+            "
+          >
+          </a-textarea>
         </div>
-        <a-textarea
-          v-model:value="draftPrompt"
-          class="module-dialog-textarea"
-          :rows="6"
-          :placeholder="
-            draftType === 'ranking'
-              ? '输入你希望AI生成排行榜的主题，如：2025年最流行的前端框架'
-              : draftType === 'link'
-                ? '输入你希望AI收集的资讯主题，如：近期AI行业重大新闻'
-                : draftType === 'chart'
-                  ? '输入你希望AI生成图表的数据主题，如：2025年主流前端框架使用率对比'
-                  : '输入你希望AI生成的内容主题'
-          "
-        />
       </div>
       <div class="module-dialog-field">
         <div class="module-dialog-row">
@@ -242,7 +261,7 @@ function save(): void {
         </div>
       </div>
 
-      <a-collapse ghost :style="{ background: 'transparent' }">
+      <!-- <a-collapse ghost :style="{ background: 'transparent', padding: 0 }">
         <a-collapse-panel key="advanced" header="高级设置">
           <div class="advanced-body">
             <div class="module-dialog-field">
@@ -287,17 +306,52 @@ function save(): void {
             </div>
           </div>
         </a-collapse-panel>
-      </a-collapse>
+      </a-collapse> -->
+      <div class="advanced-body">
+        <div class="module-dialog-field">
+          <div class="module-dialog-row">
+            <label class="module-dialog-label">模块最低高度 (px)</label>
+            <a-input-number
+              v-model:value="draftMinHeight"
+              :min="120"
+              :max="600"
+              :step="20"
+              size="small"
+              style="width: 100px"
+            />
+          </div>
+        </div>
 
-      <div v-if="draftError" class="error">{{ draftError }}</div>
+        <div class="module-dialog-field">
+          <div class="module-dialog-row">
+            <label class="module-dialog-label">模块最大高度</label>
+            <div class="max-height-row flex items-center bg-[#43434344] rounded-sm p-[5px]">
+              <a-input-number
+                v-model:value="draftMaxHeightValue"
+                :min="100"
+                :max="1200"
+                :step="50"
+                :disabled="draftMaxHeightUnlimited"
+                size="small"
+                style="width: 90px; border: none"
+              />
+              <span class="max-height-unit">PX</span>
+              <span>|</span>
+              <span class="max-height-label">不限制</span>
+              <AppSwitch v-model="draftMaxHeightUnlimited" :checked-value="true" />
+            </div>
+          </div>
+        </div>
+
+        <div v-if="draftType === 'text'" class="module-dialog-field">
+          <div class="module-dialog-row">
+            <label class="module-dialog-label">启用 Markdown 渲染</label>
+            <AppSwitch v-model="draftEnableMarkdown" :checked-value="true" />
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="picker-actions mt-[10px]">
-      <a-button :disabled="draftSaving" @click="close">取消</a-button>
-      <a-button type="primary" :loading="draftSaving" @click="save">{{
-        mode === 'add' ? '添加' : '保存'
-      }}</a-button>
-    </div>
-  </a-drawer>
+  </a-modal>
 </template>
 
 <style lang="scss" scoped>
@@ -306,10 +360,24 @@ function save(): void {
   font-weight: 700;
 }
 
-.picker-actions {
+.modal-header {
   display: flex;
-  justify-content: flex-end;
-  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  position: sticky;
+  top: 0;
+}
+
+.modal-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.modal-header-actions {
+  display: flex;
+  gap: 8px;
+  font-size: 14px;
 }
 
 .module-dialog-form {
@@ -317,6 +385,19 @@ function save(): void {
   flex-direction: column;
   gap: 14px;
   margin-top: 10px;
+  height: 500px;
+  display: flex;
+  flex-direction: column;
+  height: 500px;
+  overflow-y: auto;
+  /* Chrome / Safari / Edge */
+  &::-webkit-scrollbar {
+    display: none;
+  }
+  /* Firefox */
+  scrollbar-width: none;
+  /* IE / 旧 Edge */
+  -ms-overflow-style: none;
 }
 
 .module-dialog-field {
@@ -383,7 +464,7 @@ function save(): void {
   align-items: center;
   gap: 4px;
   padding: 3px 10px;
-  border: 1px solid rgba(99, 102, 241, 0.4);
+  border: none;
   border-radius: 6px;
   background: rgba(99, 102, 241, 0.1);
   color: rgba(99, 102, 241, 0.85);
@@ -391,6 +472,7 @@ function save(): void {
   font-weight: 700;
   cursor: pointer;
   transition: all 0.15s ease;
+  z-index: 1;
 }
 
 .ai-enhance-btn:hover:not(:disabled) {
@@ -422,5 +504,27 @@ function save(): void {
   to {
     transform: rotate(360deg);
   }
+}
+</style>
+
+<style lang="scss">
+.module-dialog-modal {
+  .ant-modal {
+    border-radius: 8px;
+    padding-bottom: 0;
+    overflow: hidden;
+  }
+
+  // .ant-modal-content {
+  //   height: 600px;
+  //   display: flex;
+  //   flex-direction: column;
+  //   overflow-y: scroll;
+  // }
+
+  // .ant-modal-body {
+  //   flex: 1;
+  //   overflow-y: auto;
+  // }
 }
 </style>

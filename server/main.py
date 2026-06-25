@@ -23,10 +23,11 @@ if str(_SERVER_DIR) not in sys.path:
 
 def create_app() -> "fastapi.FastAPI":
     """工厂函数：创建 FastAPI 应用实例（供 uvicorn --factory 使用）"""
-    from fastapi import FastAPI
 
     # from app.config import AppConfig
-    from app.configs.main import AppConfig as AppConfigV
+    
+    from fastapi import FastAPI
+    from app.configs.main import AppConfig
 
     from app.core.exceptions import register_exception_handlers
     from app.core.middleware import register_middleware
@@ -37,8 +38,7 @@ def create_app() -> "fastapi.FastAPI":
 
     # 从命令行参数或环境变量解析配置
     # config = AppConfig.from_args()
-    config = AppConfigV.load_from_file()
-    print(f"AppConfig 已加载: {config}")
+    config = AppConfig.load_from_file()
 
     @asynccontextmanager
     async def lifespan(_app: "FastAPI"):
@@ -72,6 +72,8 @@ def create_app() -> "fastapi.FastAPI":
     async def health():
         """健康检查 —— Electron 用它判断 Python 服务是否就绪"""
         return {"status": "ok"}
+
+    return app
 
 
 def main():

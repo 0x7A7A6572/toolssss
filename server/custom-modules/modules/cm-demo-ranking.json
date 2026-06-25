@@ -1,0 +1,12 @@
+{
+  "id": "cm-demo-ranking",
+  "name": "前端技术栈排行",
+  "type": "ranking",
+  "prompt": "获取当前前端开发技术栈的流行度排行，要求以JSON格式输出，包含多个维度的排行榜",
+  "created_at": 1782376375499.4597,
+  "web_search": false,
+  "min_height": 180,
+  "max_height": 300,
+  "enable_markdown": false,
+  "update_frequency": "weekly"
+}

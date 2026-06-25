@@ -13,12 +13,15 @@ import time
 
 from fastapi import APIRouter, Request
 
-from app.core.exceptions import ValidationError
-from app.domains.custom_modules.service import enhance_prompt, run_module_stream
+from app.core.exceptions import NotFoundError, ValidationError
+from app.domains.custom_modules.service import ModuleService, enhance_prompt, run_module_stream
 from app.models.custom_modules import (
+    ModuleCacheUpdateRequest,
     ModuleCancelRequest,
+    ModuleCreateRequest,
     ModuleEnhanceRequest,
     ModuleStreamRequest,
+    ModuleUpdateRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -32,6 +35,89 @@ _active_module_streams: dict[str, asyncio.Event] = {}
 def _generate_id() -> str:
     """生成唯一流 ID"""
     return f"stream-{int(time.time() * 1000)}-{id(object()) & 0xFFFF:04x}"
+
+
+# =============================================================================
+# 依赖获取
+# =============================================================================
+
+
+def _get_module_service(request: Request) -> ModuleService:
+    """从 app.state 获取 ModuleService 单例"""
+    if not hasattr(request.app.state, "module_service"):
+        user_data_path = request.app.state.config.base_config.user_data_path
+        request.app.state.module_service = ModuleService(user_data_path)
+    return request.app.state.module_service
+
+
+# =============================================================================
+# 模块 CRUD
+# =============================================================================
+
+
+@router.get("")
+async def list_modules(request: Request):
+    """获取所有模块列表"""
+    svc = _get_module_service(request)
+    modules = svc.list_modules()
+    return [m.model_dump() for m in modules]
+
+
+@router.get("/{module_id}")
+async def get_module(module_id: str, request: Request):
+    """获取单个模块"""
+    svc = _get_module_service(request)
+    mod = svc.get_module(module_id)
+    return mod.model_dump()
+
+
+@router.post("")
+async def create_module(body: ModuleCreateRequest, request: Request):
+    """创建模块"""
+    if not body.name.strip():
+        raise ValidationError("模块名称不能为空")
+    if not body.prompt.strip():
+        raise ValidationError("提示词不能为空")
+    svc = _get_module_service(request)
+    mod = svc.create_module(body)
+    return mod.model_dump()
+
+
+@router.put("/{module_id}")
+async def update_module(module_id: str, body: ModuleUpdateRequest, request: Request):
+    """更新模块（PATCH 语义，只更新提供的字段）"""
+    svc = _get_module_service(request)
+    mod = svc.update_module(module_id, body)
+    return mod.model_dump()
+
+
+@router.delete("/{module_id}")
+async def delete_module(module_id: str, request: Request):
+    """删除模块及其缓存"""
+    svc = _get_module_service(request)
+    svc.delete_module(module_id)
+    return {"deleted": True}
+
+
+# =============================================================================
+# 模块缓存
+# =============================================================================
+
+
+@router.get("/{module_id}/cache")
+async def get_module_cache(module_id: str, request: Request):
+    """获取模块缓存内容"""
+    svc = _get_module_service(request)
+    cache = svc.get_cache(module_id)
+    return cache.model_dump() if cache else None
+
+
+@router.put("/{module_id}/cache")
+async def update_module_cache(module_id: str, body: ModuleCacheUpdateRequest, request: Request):
+    """更新模块缓存内容"""
+    svc = _get_module_service(request)
+    cache = svc.update_cache(module_id, body)
+    return cache.model_dump()
 
 
 # =============================================================================
@@ -62,11 +148,15 @@ async def module_stream(body: ModuleStreamRequest, request: Request):
     if not api_key:
         raise ValidationError("未配置 AI API Key")
 
+    svc = _get_module_service(request)
+
     stream_id = _generate_id()
     cancel_event = asyncio.Event()
     _active_module_streams[stream_id] = cancel_event
 
     async def event_generator():
+        done_text = None
+        done_search_meta = None
         try:
             async for event in run_module_stream(
                 config=config,
@@ -109,13 +199,15 @@ async def module_stream(body: ModuleStreamRequest, request: Request):
                         }, ensure_ascii=False),
                     }
                 elif event_type == "done":
+                    done_text = event["text"]
+                    done_search_meta = event.get("search_meta")
                     yield {
                         "event": "done",
                         "data": json.dumps({
                             "id": stream_id,
                             "module_id": body.module_id,
-                            "text": event["text"],
-                            "search_meta": event.get("search_meta"),
+                            "text": done_text,
+                            "search_meta": done_search_meta,
                         }, ensure_ascii=False),
                     }
                 elif event_type == "error":
@@ -140,6 +232,24 @@ async def module_stream(body: ModuleStreamRequest, request: Request):
                 }, ensure_ascii=False),
             }
         finally:
+            # 流式完成后自动保存缓存
+            if done_text:
+                try:
+                    from app.models.custom_modules import ModuleCacheUpdateRequest, SearchMeta
+                    sm = None
+                    if done_search_meta:
+                        sm = SearchMeta(
+                            result_count=done_search_meta.get("result_count", 0),
+                            sources=done_search_meta.get("sources", []),
+                        )
+                    cache = ModuleCacheUpdateRequest(
+                        raw_text=done_text,
+                        text=done_text if body.type == "text" else None,
+                        search_meta=sm,
+                    )
+                    svc.update_cache(body.module_id, cache)
+                except Exception:
+                    logger.exception("自动保存模块缓存失败")
             _active_module_streams.pop(stream_id, None)
 
     return EventSourceResponse(event_generator())

@@ -9,3 +9,6 @@ __pycache__/
 agents/
 .venv/
 *.egg-info
+
+# catch or local
+custom-modules/cache

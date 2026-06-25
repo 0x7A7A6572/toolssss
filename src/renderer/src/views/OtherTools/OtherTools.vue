@@ -25,19 +25,8 @@ import {
   CloudSun,
   LucideProps
 } from 'lucide-vue-next'
-import type {
-  CustomModuleConfig,
-  CustomModuleCachedContent,
-  CustomModuleRankingItem,
-  CustomModuleLinkItem,
-  CustomModuleChartItem,
-  CustomModuleSearchMeta
-} from '@shared/custom-modules'
-import {
-  CUSTOM_MODULES_EVENTS,
-  CUSTOM_MODULES_STORAGE_KEY,
-  CUSTOM_MODULES_CACHE_KEY
-} from '@shared/custom-modules'
+import type { CustomModuleConfig } from '@shared/custom-modules'
+import type { CustomModuleCachedContent } from '@shared/custom-modules'
 import CustomModuleCard from '../../components/CustomModule/CustomModuleCard.vue'
 import ModuleDialog from '../../components/CustomModule/ModuleDialog.vue'
 import type { ModuleDialogData } from '../../components/CustomModule/ModuleDialog.vue'
@@ -49,6 +38,7 @@ import { LegalHoliday, SolarDay } from 'tyme4ts'
 import answerBookData from '../../../../libs/book-of-answers.json'
 import AppSwitch from '@renderer/components/AppSwitch.vue'
 import { useSortableGrid } from '@renderer/composables/useSortableGrid'
+import { useAgentBackend } from '@renderer/composables/useAgentBackend'
 
 const DEFAULT_STATION_ID = '59431'
 const stationId = ref<string>(localStorage.getItem('weather.stationId') ?? DEFAULT_STATION_ID)
@@ -150,6 +140,7 @@ const answerSpotlightStyle = computed<Record<string, string>>(() => ({
 
 const settingsStore = useSettingsStore()
 const settings = computed(() => settingsStore.settings.value)
+const backend = useAgentBackend()
 
 const FUN_FACT_YMD_KEY = 'ai.funFact.ymd'
 const FUN_FACT_TEXT_KEY = 'ai.funFact.text'
@@ -196,11 +187,10 @@ const funFactTitle = computed(() => {
 })
 
 const customModules = ref<CustomModuleConfig[]>([])
-const customModulesCache = ref<Record<string, CustomModuleCachedContent>>({})
+const customModulesContent = ref<Record<string, CustomModuleCachedContent>>({})
 const customModulesLoading = ref<Record<string, boolean>>({})
 const customModulesSearching = ref<Record<string, boolean>>({})
 const customModulesError = ref<Record<string, string>>({})
-const customModulesStreamId = ref<Record<string, string>>({})
 
 const BUILTIN_MODULE_IDS = [
   'weather-today',
@@ -373,173 +363,10 @@ const moduleDialogInitial = ref<ModuleDialogData>({
   updateFrequency: 'daily'
 })
 
-function generateModuleId(): string {
-  return `cm-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-}
-
-const DEFAULT_CUSTOM_MODULES: CustomModuleConfig[] = [
-  {
-    id: 'cm-demo-text',
-    name: '每日编程小知识',
-    type: 'text',
-    prompt: '分享一个实用的编程小技巧，控制在100字以内',
-    createdAt: Date.now(),
-    minHeight: 180,
-    maxHeight: 300,
-    enableMarkdown: true,
-    updateFrequency: 'daily'
-  },
-  {
-    id: 'cm-demo-ranking',
-    name: '前端技术栈排行',
-    type: 'ranking',
-    prompt: '获取当前前端开发技术栈的流行度排行，要求以JSON格式输出，包含多个维度的排行榜',
-    createdAt: Date.now(),
-    minHeight: 180,
-    maxHeight: 300,
-    enableMarkdown: false,
-    updateFrequency: 'weekly'
-  },
-  {
-    id: 'cm-demo-link',
-    name: '开发者资讯简报',
-    type: 'link',
-    prompt: '推荐当前热门的开发者工具、技术网站和学习资源，以JSON格式输出',
-    createdAt: Date.now(),
-    minHeight: 180,
-    maxHeight: 300,
-    enableMarkdown: false,
-    updateFrequency: 'daily'
-  },
-  {
-    id: 'cm-demo-chart',
-    name: '技术趋势数据',
-    type: 'chart',
-    prompt: '展示当前主流前端框架的使用率数据和语言趋势，以JSON格式输出',
-    createdAt: Date.now(),
-    minHeight: 200,
-    maxHeight: 400,
-    enableMarkdown: false,
-    updateFrequency: 'monthly'
-  }
-]
-
-const DEFAULT_CUSTOM_MODULES_CACHE: Record<string, CustomModuleCachedContent> = {
-  'cm-demo-text': {
-    text: '### 🔧 解构赋值让代码更简洁\n\nJavaScript 的解构赋值可以从数组或对象中提取值并赋给变量：\n\n```js\n// 对象解构\nconst { name, age } = user;\n// 数组解构\nconst [first, ...rest] = arr;\n```\n\n让代码更简洁、可读性更强！',
-    rawText:
-      '### 🔧 解构赋值让代码更简洁\n\nJavaScript 的解构赋值可以从数组或对象中提取值并赋给变量：\n\n```js\n// 对象解构\nconst { name, age } = user;\n// 数组解构\nconst [first, ...rest] = arr;\n```\n\n让代码更简洁、可读性更强！',
-    updatedAt: Date.now()
-  },
-  'cm-demo-ranking': {
-    rankings: [
-      { title: '前端框架', items: ['React', 'Vue', 'Angular', 'Svelte', 'Solid'] },
-      {
-        title: 'CSS 方案',
-        items: ['Tailwind CSS', 'CSS Modules', 'Styled Components', 'Sass/SCSS']
-      },
-      { title: '构建工具', items: ['Vite', 'Webpack', 'Turbopack', 'esbuild'] }
-    ],
-    rawText:
-      '{"rankings":[{"title":"前端框架","items":["React","Vue","Angular","Svelte","Solid"]},{"title":"CSS 方案","items":["Tailwind CSS","CSS Modules","Styled Components","Sass/SCSS"]},{"title":"构建工具","items":["Vite","Webpack","Turbopack","esbuild"]}]}',
-    updatedAt: Date.now()
-  },
-  'cm-demo-link': {
-    links: [
-      {
-        title: 'GitHub Trending',
-        link: 'https://github.com/trending',
-        description: '每日热门开源项目'
-      },
-      { title: 'Hacker News', link: 'https://news.ycombinator.com', description: '科技新闻社区' },
-      { title: 'Dev.to', link: 'https://dev.to', description: '开发者技术社区' },
-      {
-        title: 'MDN Web Docs',
-        link: 'https://developer.mozilla.org/zh-CN/',
-        description: 'Web 技术权威文档'
-      }
-    ],
-    rawText:
-      '{"items":[{"title":"GitHub Trending","link":"https://github.com/trending","description":"每日热门开源项目"},{"title":"Hacker News","link":"https://news.ycombinator.com","description":"科技新闻社区"},{"title":"Dev.to","link":"https://dev.to","description":"开发者技术社区"},{"title":"MDN Web Docs","link":"https://developer.mozilla.org/zh-CN/","description":"Web 技术权威文档"}]}',
-    updatedAt: Date.now()
-  },
-  'cm-demo-chart': {
-    charts: [
-      {
-        title: '前端框架使用率',
-        type: 'bar',
-        labels: ['React', 'Vue', 'Angular', 'Svelte', 'Solid'],
-        series: [
-          { name: '使用率', type: 'bar', data: [42, 28, 16, 8, 6], color: 'rgba(0, 220, 255, 0.9)' }
-        ]
-      },
-      {
-        title: 'JavaScript 生态',
-        type: 'line',
-        labels: ['2019', '2020', '2021', '2022', '2023', '2024'],
-        series: [
-          {
-            name: 'React',
-            type: 'line',
-            data: [38, 40, 42, 43, 42, 42],
-            color: 'rgba(0, 220, 255, 0.9)'
-          },
-          {
-            name: 'Vue',
-            type: 'line',
-            data: [22, 25, 28, 30, 29, 28],
-            color: 'rgba(60, 180, 120, 0.9)'
-          }
-        ]
-      }
-    ],
-    rawText:
-      '{"charts":[{"title":"前端框架使用率","type":"bar","labels":["React","Vue","Angular","Svelte","Solid"],"series":[{"name":"使用率","type":"bar","data":[42,28,16,8,6]}]},{"title":"JavaScript 生态","type":"line","labels":["2019","2020","2021","2022","2023","2024"],"series":[{"name":"React","type":"line","data":[38,40,42,43,42,42]},{"name":"Vue","type":"line","data":[22,25,28,30,29,28]}]}]}',
-    updatedAt: Date.now()
-  }
-}
-
-function loadCustomModules(): void {
-  try {
-    const raw = localStorage.getItem(CUSTOM_MODULES_STORAGE_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw) as unknown
-      if (Array.isArray(parsed)) {
-        customModules.value = parsed.filter(
-          (item): item is CustomModuleConfig =>
-            item &&
-            typeof item === 'object' &&
-            typeof (item as Record<string, unknown>).id === 'string' &&
-            typeof (item as Record<string, unknown>).name === 'string' &&
-            ((item as Record<string, unknown>).type === 'text' ||
-              (item as Record<string, unknown>).type === 'ranking' ||
-              (item as Record<string, unknown>).type === 'link' ||
-              (item as Record<string, unknown>).type === 'chart') &&
-            typeof (item as Record<string, unknown>).prompt === 'string'
-        )
-        return
-      }
-    }
-    customModules.value = DEFAULT_CUSTOM_MODULES.map((m) => ({ ...m, createdAt: Date.now() }))
-    saveCustomModules()
-  } catch {
-    customModules.value = DEFAULT_CUSTOM_MODULES.map((m) => ({ ...m, createdAt: Date.now() }))
-    saveCustomModules()
-  }
-}
-
-function saveCustomModules(): void {
-  try {
-    localStorage.setItem(CUSTOM_MODULES_STORAGE_KEY, JSON.stringify(customModules.value))
-  } catch {
-    return
-  }
-}
-
 const modulesGridRef = ref<HTMLElement | null>(null)
 const anyModuleExpanded = ref(false)
 
-function onModuleExpandChange(moduleId: string, expanded: boolean): void {
+function onModuleExpandChange(_moduleId: string, expanded: boolean): void {
   if (expanded) {
     anyModuleExpanded.value = true
   } else {
@@ -557,39 +384,11 @@ useSortableGrid(modulesGridRef, {
   }
 })
 
-function loadCustomModulesCache(): void {
+async function loadCustomModules(): Promise<void> {
   try {
-    const raw = localStorage.getItem(CUSTOM_MODULES_CACHE_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw) as Record<string, unknown>
-      if (parsed && typeof parsed === 'object') {
-        customModulesCache.value = parsed as Record<string, CustomModuleCachedContent>
-        return
-      }
-    }
-    customModulesCache.value = Object.fromEntries(
-      Object.entries(DEFAULT_CUSTOM_MODULES_CACHE).map(([id, content]) => [
-        id,
-        { ...content, updatedAt: Date.now() }
-      ])
-    )
-    saveCustomModulesCache()
+    customModules.value = await backend.list()
   } catch {
-    customModulesCache.value = Object.fromEntries(
-      Object.entries(DEFAULT_CUSTOM_MODULES_CACHE).map(([id, content]) => [
-        id,
-        { ...content, updatedAt: Date.now() }
-      ])
-    )
-    saveCustomModulesCache()
-  }
-}
-
-function saveCustomModulesCache(): void {
-  try {
-    localStorage.setItem(CUSTOM_MODULES_CACHE_KEY, JSON.stringify(customModulesCache.value))
-  } catch {
-    return
+    customModules.value = []
   }
 }
 
@@ -625,500 +424,93 @@ function openEditModuleDialog(module: CustomModuleConfig): void {
   moduleDialogOpen.value = true
 }
 
-function handleModuleSaved(data: ModuleDialogData): void {
+async function handleModuleSaved(data: ModuleDialogData): Promise<void> {
   if (moduleDialogMode.value === 'add') {
-    const newModule: CustomModuleConfig = {
-      id: generateModuleId(),
+    const mod = await backend.create({
       name: data.name,
       type: data.type,
       prompt: data.prompt,
-      createdAt: Date.now(),
       webSearch: data.webSearch,
       minHeight: data.minHeight,
       maxHeight: data.maxHeight,
       enableMarkdown: data.enableMarkdown,
       updateFrequency: data.updateFrequency
-    }
-    customModules.value.push(newModule)
+    })
+    customModules.value.push(mod)
     const addIdx = gridOrder.value.indexOf(ADD_MODULE_ID)
     if (addIdx >= 0) {
-      gridOrder.value.splice(addIdx, 0, newModule.id)
+      gridOrder.value.splice(addIdx, 0, mod.id)
     } else {
-      gridOrder.value.push(newModule.id)
+      gridOrder.value.push(mod.id)
     }
   } else {
+    const mod = await backend.update(editingModuleId.value, {
+      name: data.name,
+      type: data.type,
+      prompt: data.prompt,
+      webSearch: data.webSearch,
+      minHeight: data.minHeight,
+      maxHeight: data.maxHeight,
+      enableMarkdown: data.enableMarkdown,
+      updateFrequency: data.updateFrequency
+    })
     const idx = customModules.value.findIndex((m) => m.id === editingModuleId.value)
     if (idx >= 0) {
-      customModules.value[idx] = {
-        ...customModules.value[idx],
-        name: data.name,
-        type: data.type,
-        prompt: data.prompt,
-        webSearch: data.webSearch,
-        minHeight: data.minHeight,
-        maxHeight: data.maxHeight,
-        enableMarkdown: data.enableMarkdown,
-        updateFrequency: data.updateFrequency
-      }
+      customModules.value[idx] = mod
     }
   }
-  saveCustomModules()
   saveGridOrder()
   moduleDialogOpen.value = false
 }
 
-function deleteModule(moduleId: string): void {
+async function deleteModule(moduleId: string): Promise<void> {
+  try {
+    await backend.delete(moduleId)
+  } catch {
+    // 即使 API 失败也继续清理本地状态
+  }
   customModules.value = customModules.value.filter((m) => m.id !== moduleId)
   gridOrder.value = gridOrder.value.filter((id) => id !== moduleId)
-  saveCustomModules()
   saveGridOrder()
-  delete customModulesCache.value[moduleId]
-  saveCustomModulesCache()
+  delete customModulesContent.value[moduleId]
 }
 
-function getModuleCache(moduleId: string): CustomModuleCachedContent | undefined {
-  return customModulesCache.value[moduleId]
-}
-
-function updateModuleCache(moduleId: string, content: Partial<CustomModuleCachedContent>): void {
-  const existing = customModulesCache.value[moduleId]
-  customModulesCache.value[moduleId] = {
-    ...(existing || { updatedAt: 0 }),
-    ...content,
-    updatedAt: Date.now()
+function parseStructuredContent(
+  text: string,
+  type: CustomModuleConfig['type']
+): CustomModuleCachedContent {
+  const content: CustomModuleCachedContent = { rawText: text, updatedAt: Date.now() }
+  if (type === 'text') {
+    content.text = text
+    return content
   }
-  saveCustomModulesCache()
-}
 
-function onCustomModuleChunk(_event: unknown, payload: unknown): void {
-  if (!payload || typeof payload !== 'object') return
-  const p = payload as { id?: unknown; moduleId?: unknown; delta?: unknown }
-  const moduleId = typeof p.moduleId === 'string' ? p.moduleId : ''
-  if (!moduleId) return
-  if (typeof p.id !== 'string' || !p.id) return
-  if (p.id !== customModulesStreamId.value[moduleId]) return
-  const delta = typeof p.delta === 'string' ? p.delta : ''
-  if (!delta) return
-  customModulesSearching.value[moduleId] = false
-  const cache = customModulesCache.value[moduleId]
-  const currentText = cache?.rawText || ''
-  const next = `${currentText}${delta}`
-  updateModuleCache(moduleId, { rawText: next })
-  if (customModules.value.find((m) => m.id === moduleId)?.type === 'ranking') {
-    const parsed = tryParseRankingsFromText(next)
-    if (parsed) {
-      updateModuleCache(moduleId, { rankings: parsed })
-    }
-  } else if (customModules.value.find((m) => m.id === moduleId)?.type === 'link') {
-    const parsed = tryParseLinksFromText(next)
-    if (parsed) {
-      updateModuleCache(moduleId, { links: parsed })
-    }
-  } else if (customModules.value.find((m) => m.id === moduleId)?.type === 'chart') {
-    const parsed = tryParseChartsFromText(next)
-    if (parsed) {
-      updateModuleCache(moduleId, { charts: parsed })
-    }
-  }
-}
-
-function onCustomModuleDone(_event: unknown, payload: unknown): void {
-  if (!payload || typeof payload !== 'object') return
-  const p = payload as { id?: unknown; moduleId?: unknown; text?: unknown; searchMeta?: unknown }
-  const moduleId = typeof p.moduleId === 'string' ? p.moduleId : ''
-  if (!moduleId) return
-  if (typeof p.id !== 'string' || !p.id) return
-  if (p.id !== customModulesStreamId.value[moduleId]) return
-  const text = typeof p.text === 'string' ? p.text : ''
-  let searchMeta: CustomModuleSearchMeta | undefined
-  if (p.searchMeta && typeof p.searchMeta === 'object') {
-    const sm = p.searchMeta as { resultCount?: unknown; sources?: unknown }
-    const resultCount = typeof sm.resultCount === 'number' ? sm.resultCount : 0
-    const sources = Array.isArray(sm.sources)
-      ? sm.sources.filter((s): s is string => typeof s === 'string')
-      : []
-    if (resultCount > 0) {
-      searchMeta = { resultCount, sources }
-    }
-  }
-  const module = customModules.value.find((m) => m.id === moduleId)
-  if (module?.type === 'text') {
-    updateModuleCache(moduleId, { text, rawText: text, searchMeta })
-  } else if (module?.type === 'link') {
-    const parsed = tryParseLinksFromText(text)
-    if (parsed) {
-      updateModuleCache(moduleId, { links: parsed, rawText: text, searchMeta })
-    } else {
-      updateModuleCache(moduleId, { rawText: text, searchMeta })
-    }
-  } else if (module?.type === 'chart') {
-    const parsed = tryParseChartsFromText(text)
-    if (parsed) {
-      updateModuleCache(moduleId, { charts: parsed, rawText: text, searchMeta })
-    } else {
-      updateModuleCache(moduleId, { rawText: text, searchMeta })
-    }
-  } else {
-    const parsed = tryParseRankingsFromText(text)
-    if (parsed) {
-      updateModuleCache(moduleId, { rankings: parsed, rawText: text, searchMeta })
-    } else {
-      updateModuleCache(moduleId, { rawText: text, searchMeta })
-    }
-  }
-  delete customModulesStreamId.value[moduleId]
-  customModulesLoading.value[moduleId] = false
-  customModulesSearching.value[moduleId] = false
-  customModulesError.value[moduleId] = ''
-}
-
-function onCustomModuleError(_event: unknown, payload: unknown): void {
-  if (!payload || typeof payload !== 'object') return
-  const p = payload as { id?: unknown; moduleId?: unknown; message?: unknown }
-  const moduleId = typeof p.moduleId === 'string' ? p.moduleId : ''
-  if (!moduleId) return
-  if (typeof p.id !== 'string' || !p.id) return
-  if (p.id !== customModulesStreamId.value[moduleId]) return
-  const msg = typeof p.message === 'string' && p.message ? p.message : '生成失败'
-  customModulesError.value[moduleId] = msg
-  delete customModulesStreamId.value[moduleId]
-  customModulesLoading.value[moduleId] = false
-  customModulesSearching.value[moduleId] = false
-}
-
-function onCustomModuleSearching(_event: unknown, payload: unknown): void {
-  if (!payload || typeof payload !== 'object') return
-  const p = payload as { id?: unknown; moduleId?: unknown; status?: unknown; message?: unknown }
-  const moduleId = typeof p.moduleId === 'string' ? p.moduleId : ''
-  if (!moduleId) return
-  if (typeof p.id !== 'string' || !p.id) return
-  if (p.id !== customModulesStreamId.value[moduleId]) return
-  const status = typeof p.status === 'string' ? p.status : ''
-  if (status === 'searching') {
-    customModulesSearching.value[moduleId] = true
-    customModulesError.value[moduleId] = ''
-  } else if (status === 'error') {
-    customModulesSearching.value[moduleId] = false
-    const msg = typeof p.message === 'string' && p.message ? p.message : '搜索失败'
-    customModulesError.value[moduleId] = `联网搜索失败：${msg}`
-  }
-}
-
-function tryParseRankingsFromText(rawText: string): CustomModuleRankingItem[] | null {
-  const cleaned = rawText
-    .replace(/```json\s*/gi, '')
-    .replace(/```\s*/g, '')
-    .trim()
-
-  // Try full JSON parse first
+  const cleaned = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
   try {
     const firstBrace = cleaned.indexOf('{')
     const lastBrace = cleaned.lastIndexOf('}')
     if (firstBrace >= 0 && lastBrace > firstBrace) {
-      const jsonStr = cleaned.slice(firstBrace, lastBrace + 1)
-      const data = JSON.parse(jsonStr) as { rankings?: unknown }
-      if (data.rankings && Array.isArray(data.rankings)) {
-        const rankings: CustomModuleRankingItem[] = []
-        for (const item of data.rankings) {
-          if (item && typeof item === 'object') {
-            const r = item as Record<string, unknown>
-            const title = typeof r.title === 'string' ? r.title.trim() : ''
-            const items = Array.isArray(r.items)
-              ? r.items.filter((i): i is string => typeof i === 'string')
-              : []
-            if (title && items.length > 0) {
-              rankings.push({ title, items })
-            }
-          }
-        }
-        if (rankings.length > 0) return rankings
+      const data = JSON.parse(cleaned.slice(firstBrace, lastBrace + 1))
+
+      if (type === 'ranking' && Array.isArray(data.rankings)) {
+        content.rankings = data.rankings.filter(
+          (r: unknown) => r && typeof r === 'object' && typeof (r as Record<string, unknown>).title === 'string'
+        )
+      } else if (type === 'link' && Array.isArray(data.items)) {
+        content.links = data.items.filter(
+          (r: unknown) => r && typeof r === 'object' && typeof (r as Record<string, unknown>).title === 'string'
+        )
+      } else if (type === 'chart' && Array.isArray(data.charts)) {
+        content.charts = data.charts.filter(
+          (c: unknown) =>
+            c && typeof c === 'object' && Array.isArray((c as Record<string, unknown>).labels)
+        )
       }
     }
   } catch {
-    // Full parse failed (likely truncated JSON) — fall through to item-by-item extraction
+    // JSON parse failed, just keep rawText
   }
-
-  // Fallback: extract individual complete JSON objects item by item
-  const extracted: CustomModuleRankingItem[] = []
-  let idx = 0
-  while (idx < cleaned.length) {
-    const objStart = cleaned.indexOf('{', idx)
-    if (objStart < 0) break
-
-    let depth = 0
-    let objEnd = -1
-    for (let i = objStart; i < cleaned.length; i++) {
-      if (cleaned[i] === '{') depth++
-      else if (cleaned[i] === '}') {
-        depth--
-        if (depth === 0) {
-          objEnd = i
-          break
-        }
-      }
-    }
-    if (objEnd < 0) break
-
-    try {
-      const objStr = cleaned.slice(objStart, objEnd + 1)
-      const obj = JSON.parse(objStr) as Record<string, unknown>
-      const title = typeof obj.title === 'string' ? obj.title.trim() : ''
-      const items = Array.isArray(obj.items)
-        ? obj.items.filter((i): i is string => typeof i === 'string')
-        : []
-      if (title && items.length > 0) {
-        extracted.push({ title, items })
-      }
-    } catch {
-      // skip malformed object
-    }
-    idx = objEnd + 1
-  }
-
-  return extracted.length > 0 ? extracted : null
-}
-
-function tryParseLinksFromText(rawText: string): CustomModuleLinkItem[] | null {
-  const items: CustomModuleLinkItem[] = []
-  const cleaned = rawText
-    .replace(/```json\s*/gi, '')
-    .replace(/```\s*/g, '')
-    .trim()
-
-  // Try full JSON parse first
-  try {
-    const firstBrace = cleaned.indexOf('{')
-    const lastBrace = cleaned.lastIndexOf('}')
-    if (firstBrace >= 0 && lastBrace > firstBrace) {
-      const jsonStr = cleaned.slice(firstBrace, lastBrace + 1)
-      const data = JSON.parse(jsonStr) as { items?: unknown }
-      if (data.items && Array.isArray(data.items)) {
-        for (const item of data.items) {
-          if (item && typeof item === 'object') {
-            const r = item as Record<string, unknown>
-            const title = typeof r.title === 'string' ? r.title.trim() : ''
-            const link = typeof r.link === 'string' ? r.link.trim() : ''
-            const description = typeof r.description === 'string' ? r.description.trim() : undefined
-            if (title && link) {
-              items.push({ title, link, description })
-            }
-          }
-        }
-        if (items.length > 0) return items
-      }
-    }
-  } catch {
-    // Full parse failed (likely truncated JSON) — fall through to item-by-item extraction
-  }
-
-  // Fallback: extract individual complete JSON objects item by item
-  const extracted: CustomModuleLinkItem[] = []
-  let idx = 0
-  while (idx < cleaned.length) {
-    const objStart = cleaned.indexOf('{', idx)
-    if (objStart < 0) break
-
-    let depth = 0
-    let objEnd = -1
-    for (let i = objStart; i < cleaned.length; i++) {
-      if (cleaned[i] === '{') depth++
-      else if (cleaned[i] === '}') {
-        depth--
-        if (depth === 0) {
-          objEnd = i
-          break
-        }
-      }
-    }
-    if (objEnd < 0) break
-
-    try {
-      const objStr = cleaned.slice(objStart, objEnd + 1)
-      const obj = JSON.parse(objStr) as Record<string, unknown>
-      const title = typeof obj.title === 'string' ? obj.title.trim() : ''
-      const link = typeof obj.link === 'string' ? obj.link.trim() : ''
-      const description = typeof obj.description === 'string' ? obj.description.trim() : undefined
-      if (title && link) {
-        extracted.push({ title, link, description })
-      }
-    } catch {
-      // skip malformed object
-    }
-    idx = objEnd + 1
-  }
-
-  return extracted.length > 0 ? extracted : null
-}
-
-function tryParseChartsFromText(rawText: string): CustomModuleChartItem[] | null {
-  const cleaned = rawText
-    .replace(/```json\s*/gi, '')
-    .replace(/```\s*/g, '')
-    .trim()
-
-  try {
-    const firstBrace = cleaned.indexOf('{')
-    const lastBrace = cleaned.lastIndexOf('}')
-    if (firstBrace >= 0 && lastBrace > firstBrace) {
-      const jsonStr = cleaned.slice(firstBrace, lastBrace + 1)
-      const data = JSON.parse(jsonStr) as { charts?: unknown }
-      if (data.charts && Array.isArray(data.charts)) {
-        const charts: CustomModuleChartItem[] = []
-        for (const item of data.charts) {
-          if (item && typeof item === 'object') {
-            const c = item as Record<string, unknown>
-            const title = typeof c.title === 'string' ? c.title.trim() : ''
-            const type = c.type === 'bar' || c.type === 'line' || c.type === 'pie' ? c.type : 'bar'
-            const labels = Array.isArray(c.labels)
-              ? c.labels.filter((l): l is string => typeof l === 'string')
-              : []
-            const series = Array.isArray(c.series)
-              ? c.series
-                  .filter((s): s is Record<string, unknown> => s !== null && typeof s === 'object')
-                  .map((s) => ({
-                    name: typeof s.name === 'string' ? s.name.trim() : '',
-                    type: (s.type === 'bar' || s.type === 'line' || s.type === 'pie'
-                      ? s.type
-                      : 'bar') as 'bar' | 'line' | 'pie',
-                    data: Array.isArray(s.data)
-                      ? s.data.filter((d): d is number => typeof d === 'number')
-                      : [],
-                    color: typeof s.color === 'string' ? s.color : undefined
-                  }))
-                  .filter((s) => s.name && s.data.length > 0)
-              : []
-            if (title && labels.length > 0 && series.length > 0) {
-              charts.push({ title, type, labels, series })
-            }
-          }
-        }
-        if (charts.length > 0) return charts
-      }
-    }
-  } catch {
-    // full parse failed — fall through
-  }
-
-  const extracted: CustomModuleChartItem[] = []
-  let idx = 0
-  while (idx < cleaned.length) {
-    const objStart = cleaned.indexOf('{', idx)
-    if (objStart < 0) break
-    let depth = 0
-    let objEnd = -1
-    for (let i = objStart; i < cleaned.length; i++) {
-      if (cleaned[i] === '{') depth++
-      else if (cleaned[i] === '}') {
-        depth--
-        if (depth === 0) {
-          objEnd = i
-          break
-        }
-      }
-    }
-    if (objEnd < 0) break
-    try {
-      const obj = JSON.parse(cleaned.slice(objStart, objEnd + 1)) as Record<string, unknown>
-      if (obj.series && Array.isArray(obj.series) && Array.isArray(obj.labels)) {
-        const title = typeof obj.title === 'string' ? obj.title.trim() : ''
-        const type =
-          obj.type === 'bar' || obj.type === 'line' || obj.type === 'pie' ? obj.type : 'bar'
-        const labels = obj.labels.filter((l: unknown): l is string => typeof l === 'string')
-        const series = obj.series
-          .filter((s: unknown): s is Record<string, unknown> => s !== null && typeof s === 'object')
-          .map((s: Record<string, unknown>) => ({
-            name: typeof s.name === 'string' ? s.name.trim() : '',
-            type: (s.type === 'bar' || s.type === 'line' || s.type === 'pie' ? s.type : 'bar') as
-              | 'bar'
-              | 'line'
-              | 'pie',
-            data: Array.isArray(s.data)
-              ? s.data.filter((d: unknown): d is number => typeof d === 'number')
-              : [],
-            color: typeof s.color === 'string' ? s.color : undefined
-          }))
-          .filter((s) => s.name && s.data.length > 0)
-        if (title && labels.length > 0 && series.length > 0) {
-          extracted.push({ title, type, labels, series })
-        }
-      }
-    } catch {
-      /* skip */
-    }
-    idx = objEnd + 1
-  }
-  return extracted.length > 0 ? extracted : null
-}
-
-function isSameDay(timestamp: number): boolean {
-  const d1 = new Date(timestamp)
-  const d2 = new Date()
-  return (
-    d1.getFullYear() === d2.getFullYear() &&
-    d1.getMonth() === d2.getMonth() &&
-    d1.getDate() === d2.getDate()
-  )
-}
-
-function isSameWeek(timestamp: number): boolean {
-  const d1 = new Date(timestamp)
-  const d2 = new Date()
-  const startOfWeek = new Date(d2)
-  startOfWeek.setDate(d2.getDate() - d2.getDay())
-  startOfWeek.setHours(0, 0, 0, 0)
-  const endOfWeek = new Date(startOfWeek)
-  endOfWeek.setDate(startOfWeek.getDate() + 7)
-  return d1 >= startOfWeek && d1 < endOfWeek
-}
-
-function isSameMonth(timestamp: number): boolean {
-  const d1 = new Date(timestamp)
-  const d2 = new Date()
-  return d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth()
-}
-
-function shouldAutoRefreshModule(module: CustomModuleConfig): boolean {
-  const freq = module.updateFrequency ?? 'realtime'
-  if (freq === 'realtime') return true
-  const cache = customModulesCache.value[module.id]
-  if (!cache) return true
-  const updatedAt = cache.updatedAt
-  if (!updatedAt) return true
-  if (freq === 'daily') return !isSameDay(updatedAt)
-  if (freq === 'weekly') return !isSameWeek(updatedAt)
-  if (freq === 'monthly') return !isSameMonth(updatedAt)
-  return true
-}
-
-function maybeAutoRefreshModules(): void {
-  for (const mod of customModules.value) {
-    if (shouldAutoRefreshModule(mod) && aiReady.value) {
-      enqueueModuleRefresh(mod)
-    }
-  }
-}
-
-const moduleRefreshQueue: string[] = []
-let moduleRefreshProcessing = false
-
-async function processModuleRefreshQueue(): Promise<void> {
-  if (moduleRefreshProcessing) return
-  moduleRefreshProcessing = true
-  while (moduleRefreshQueue.length > 0) {
-    const moduleId = moduleRefreshQueue.shift()!
-    const module = customModules.value.find((m) => m.id === moduleId)
-    if (module && !customModulesLoading.value[module.id]) {
-      await executeRefreshModule(module)
-    }
-  }
-  moduleRefreshProcessing = false
-}
-
-function enqueueModuleRefresh(mod: CustomModuleConfig): void {
-  if (!moduleRefreshQueue.includes(mod.id) && !customModulesLoading.value[mod.id]) {
-    moduleRefreshQueue.push(mod.id)
-  }
-  processModuleRefreshQueue()
+  return content
 }
 
 async function executeRefreshModule(module: CustomModuleConfig): Promise<void> {
@@ -1130,19 +522,51 @@ async function executeRefreshModule(module: CustomModuleConfig): Promise<void> {
 
   customModulesLoading.value[module.id] = true
   customModulesError.value[module.id] = ''
-  delete customModulesCache.value[module.id]
 
   try {
-    const ret = (await window.electron.ipcRenderer.invoke(CUSTOM_MODULES_EVENTS.STREAM, {
-      moduleId: module.id,
-      type: module.type,
-      prompt: module.prompt,
-      webSearch: !!module.webSearch,
-      enableMarkdown: !!module.enableMarkdown
-    })) as { id?: unknown; moduleId?: unknown }
-    const id = typeof ret?.id === 'string' ? ret.id : ''
-    if (!id) throw new Error('AI 流式请求启动失败')
-    customModulesStreamId.value[module.id] = id
+    const es = await backend.refreshStream(
+      module.id,
+      module.type,
+      module.prompt,
+      !!module.webSearch,
+      !!module.enableMarkdown
+    )
+
+    let rawText = ''
+    es.addEventListener('delta', ({ data }) => {
+      const payload = JSON.parse(data) as { delta?: string }
+      if (payload.delta) {
+        rawText += payload.delta
+        customModulesContent.value[module.id] = { rawText, updatedAt: Date.now() }
+      }
+    })
+
+    es.addEventListener('searching', () => {
+      customModulesSearching.value[module.id] = true
+      customModulesError.value[module.id] = ''
+    })
+
+    es.addEventListener('done', ({ data }) => {
+      const payload = JSON.parse(data) as { text?: string; search_meta?: { result_count: number; sources: string[] } }
+      const text = payload.text || rawText
+      const searchMeta = payload.search_meta?.result_count
+        ? { resultCount: payload.search_meta.result_count, sources: payload.search_meta.sources }
+        : undefined
+      customModulesContent.value[module.id] = {
+        ...parseStructuredContent(text, module.type),
+        searchMeta
+      }
+      customModulesLoading.value[module.id] = false
+      customModulesSearching.value[module.id] = false
+      customModulesError.value[module.id] = ''
+    })
+
+    es.addEventListener('error', ({ data }) => {
+      const payload = JSON.parse(data) as { message?: string }
+      customModulesError.value[module.id] = payload.message || '生成失败'
+      customModulesLoading.value[module.id] = false
+      customModulesSearching.value[module.id] = false
+    })
   } catch (e) {
     customModulesLoading.value[module.id] = false
     customModulesError.value[module.id] = e instanceof Error ? e.message : '请求失败'
@@ -1707,11 +1131,7 @@ onMounted(() => {
     window.electron.ipcRenderer.on('ai:funfact:daily:chunk', onFunFactChunk),
     window.electron.ipcRenderer.on('ai:funfact:daily:done', onFunFactDone),
     window.electron.ipcRenderer.on('ai:funfact:daily:error', onFunFactError),
-    window.electron.ipcRenderer.on('ai:funfact:daily:cancelled', onFunFactCancelled),
-    window.electron.ipcRenderer.on(CUSTOM_MODULES_EVENTS.CHUNK, onCustomModuleChunk),
-    window.electron.ipcRenderer.on(CUSTOM_MODULES_EVENTS.DONE, onCustomModuleDone),
-    window.electron.ipcRenderer.on(CUSTOM_MODULES_EVENTS.ERROR, onCustomModuleError),
-    window.electron.ipcRenderer.on(CUSTOM_MODULES_EVENTS.SEARCHING, onCustomModuleSearching)
+    window.electron.ipcRenderer.on('ai:funfact:daily:cancelled', onFunFactCancelled)
   ]
   tickTimer = window.setInterval(() => {
     nowTickMs.value = Date.now()
@@ -1728,9 +1148,7 @@ onMounted(() => {
     localStorage.setItem('weather.stationId', stationId.value)
   }
   loadCustomModules()
-  loadCustomModulesCache()
   loadGridOrder()
-  maybeAutoRefreshModules()
   refresh().catch(() => null)
 })
 
@@ -1742,13 +1160,6 @@ onUnmounted(() => {
     window.electron.ipcRenderer
       .invoke('ai:funfact:daily:cancel', { id: funFactStreamId.value })
       .catch(() => null)
-  }
-  for (const [, streamId] of Object.entries(customModulesStreamId.value)) {
-    if (streamId) {
-      window.electron.ipcRenderer
-        .invoke(CUSTOM_MODULES_EVENTS.CANCEL, { id: streamId })
-        .catch(() => null)
-    }
   }
   if (tickTimer !== null) {
     window.clearInterval(tickTimer)
@@ -2107,13 +1518,13 @@ onUnmounted(() => {
           <CustomModuleCard
             v-else-if="customModuleMap.has(itemId)"
             :config="customModuleMap.get(itemId)!"
-            :content="getModuleCache(itemId) ?? null"
+            :content="customModulesContent[itemId] ?? null"
             :loading="!!customModulesLoading[itemId]"
             :searching="!!customModulesSearching[itemId]"
             :error-text="customModulesError[itemId] || ''"
             :module-id="itemId"
             @expandchange="(v: boolean) => onModuleExpandChange(itemId, v)"
-            @refresh="enqueueModuleRefresh(customModuleMap.get(itemId)!)"
+            @refresh="executeRefreshModule(customModuleMap.get(itemId)!)"
             @edit="openEditModuleDialog(customModuleMap.get(itemId)!)"
             @delete="deleteModule(itemId)"
           />
