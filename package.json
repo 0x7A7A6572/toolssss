@@ -17,6 +17,8 @@
     "start": "chcp 65001 && electron-vite preview",
     "dev": "chcp 65001 && electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
+    "install:py": "pip install -r server/requirements.txt",
+    "install:py-dev": "pip install -e \"server/[dev]\"",
     "postinstall": "electron-builder install-app-deps",
     "prepare-pack": "node scripts/prepare-pack.mjs",
     "build:unpack": "npm run build && npm run prepare-pack && node scripts/run-electron-builder.mjs --dir",

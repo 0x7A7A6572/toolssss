@@ -1,0 +1,11 @@
+dist
+release
+*.log*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+agents/
+.venv/
+*.egg-info

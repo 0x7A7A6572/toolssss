@@ -1,6 +1,11 @@
 import { app } from 'electron'
 import type { AppSettings } from '@shared/settings'
 
+/**
+ * 开机自启
+ * @param settings
+ * @returns
+ */
 export function ensureAutoStart(settings: AppSettings): void {
   if (process.platform === 'linux') return
 

@@ -93,7 +93,10 @@ export function registerShortcuts(args: RegisterArgs): void {
     }
   }
 
-  if (isEnabled(settings, 'snipStart') && (settings.shortcuts as Record<string, unknown>).snipStart) {
+  if (
+    isEnabled(settings, 'snipStart') &&
+    (settings.shortcuts as Record<string, unknown>).snipStart
+  ) {
     const acc = (settings.shortcuts as Record<string, string>).snipStart
     if (acc) {
       try {
@@ -104,7 +107,10 @@ export function registerShortcuts(args: RegisterArgs): void {
     }
   }
 
-  if (isEnabled(settings, 'stickerPaste') && (settings.shortcuts as Record<string, unknown>).stickerPaste) {
+  if (
+    isEnabled(settings, 'stickerPaste') &&
+    (settings.shortcuts as Record<string, unknown>).stickerPaste
+  ) {
     const acc = (settings.shortcuts as Record<string, string>).stickerPaste
     if (acc) {
       try {

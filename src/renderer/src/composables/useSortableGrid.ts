@@ -9,7 +9,9 @@ export function useSortableGrid(
     disabled?: Ref<boolean>
     filter?: string
   }
-) {
+): {
+  destroy: () => void
+} {
   let sortableInstance: Sortable | null = null
 
   function initSortable(): void {
