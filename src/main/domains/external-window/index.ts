@@ -335,7 +335,9 @@ export async function getExternalWindowRootHwnd(hwnd: string): Promise<string | 
   if (process.platform !== 'win32') return null
   const h = typeof hwnd === 'string' ? hwnd.trim() : ''
   if (!h) return null
-  const pyResult = await postPythonWindows<{ hwnd?: unknown } | null>('/api/windows/root', { hwnd: h })
+  const pyResult = await postPythonWindows<{ hwnd?: unknown } | null>('/api/windows/root', {
+    hwnd: h
+  })
   if (pyResult && typeof pyResult === 'object') {
     const id = typeof pyResult.hwnd === 'string' ? pyResult.hwnd.trim() : ''
     if (id) return id
@@ -460,13 +462,16 @@ export async function hideExternalWindowToEdge(payload: {
   const peekPx = clampNumber(Number(payload.peekPx), 0, 400)
   const animate = Boolean(payload.animate)
   const durationMs = clampNumber(Number(payload.durationMs ?? 180), 60, 1200)
-  const pyResult = await postPythonWindows<Record<string, unknown> | null>('/api/windows/hide-edge', {
-    hwnd,
-    edge,
-    peekPx,
-    animate,
-    durationMs
-  })
+  const pyResult = await postPythonWindows<Record<string, unknown> | null>(
+    '/api/windows/hide-edge',
+    {
+      hwnd,
+      edge,
+      peekPx,
+      animate,
+      durationMs
+    }
+  )
   if (pyResult && typeof pyResult === 'object') {
     const pyOk = Boolean(pyResult['ok'])
     const pyHwnd = typeof pyResult['hwnd'] === 'string' ? pyResult['hwnd'] : hwnd
@@ -487,7 +492,9 @@ export async function hideExternalWindowToEdge(payload: {
             }
           : undefined
       const newPos: { x: number; y: number } | undefined =
-        newPosRaw && Number.isFinite(Number(newPosRaw['x'])) && Number.isFinite(Number(newPosRaw['y']))
+        newPosRaw &&
+        Number.isFinite(Number(newPosRaw['x'])) &&
+        Number.isFinite(Number(newPosRaw['y']))
           ? { x: Number(newPosRaw['x']), y: Number(newPosRaw['y']) }
           : undefined
       return { ok: true, hwnd: pyHwnd, rect, newPos }

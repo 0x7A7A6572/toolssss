@@ -13,6 +13,7 @@
 ### Task 1: Preserve AI Profiles And Keys In Python Config
 
 **Files:**
+
 - Modify: `f:\codes\toolssss\server\app\config.py`
 - Modify: `f:\codes\toolssss\src\main\core\python-server.ts`
 
@@ -23,6 +24,7 @@
 ### Task 2: Resolve Embedding Profile On Python Side
 
 **Files:**
+
 - Modify: `f:\codes\toolssss\server\app\core\embeddings.py`
 
 - [ ] Add a Python embedding resolver that reads `config.embedding.profile_id`, finds the matching entry in `config.profiles`, validates model type, and resolves the correct API key from the synced key map.
@@ -32,6 +34,7 @@
 ### Task 3: Rewire RAG Calls And Guard With Tests
 
 **Files:**
+
 - Modify: `f:\codes\toolssss\server\app\domains\agents\rag_engine.py`
 - Modify: `f:\codes\toolssss\server\app\domains\agents\kb_indexer.py`
 - Modify: `f:\codes\toolssss\server\tests\test_openai_factories.py`

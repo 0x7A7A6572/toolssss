@@ -485,7 +485,10 @@ function parseStructuredContent(
     return content
   }
 
-  const cleaned = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
+  const cleaned = text
+    .replace(/```json\s*/gi, '')
+    .replace(/```\s*/g, '')
+    .trim()
   try {
     const firstBrace = cleaned.indexOf('{')
     const lastBrace = cleaned.lastIndexOf('}')
@@ -494,11 +497,13 @@ function parseStructuredContent(
 
       if (type === 'ranking' && Array.isArray(data.rankings)) {
         content.rankings = data.rankings.filter(
-          (r: unknown) => r && typeof r === 'object' && typeof (r as Record<string, unknown>).title === 'string'
+          (r: unknown) =>
+            r && typeof r === 'object' && typeof (r as Record<string, unknown>).title === 'string'
         )
       } else if (type === 'link' && Array.isArray(data.items)) {
         content.links = data.items.filter(
-          (r: unknown) => r && typeof r === 'object' && typeof (r as Record<string, unknown>).title === 'string'
+          (r: unknown) =>
+            r && typeof r === 'object' && typeof (r as Record<string, unknown>).title === 'string'
         )
       } else if (type === 'chart' && Array.isArray(data.charts)) {
         content.charts = data.charts.filter(
@@ -547,7 +552,10 @@ async function executeRefreshModule(module: CustomModuleConfig): Promise<void> {
     })
 
     es.addEventListener('done', ({ data }) => {
-      const payload = JSON.parse(data) as { text?: string; search_meta?: { result_count: number; sources: string[] } }
+      const payload = JSON.parse(data) as {
+        text?: string
+        search_meta?: { result_count: number; sources: string[] }
+      }
       const text = payload.text || rawText
       const searchMeta = payload.search_meta?.result_count
         ? { resultCount: payload.search_meta.result_count, sources: payload.search_meta.sources }

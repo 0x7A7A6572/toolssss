@@ -24,7 +24,13 @@ import type { CustomModuleConfig } from '@shared/custom-modules'
 // 类型定义
 // =============================================================================
 
-export type { AgentConversation, AgentKnowledgeDoc, AgentMessage, AgentRagChunk, KnowledgeBaseConfig }
+export type {
+  AgentConversation,
+  AgentKnowledgeDoc,
+  AgentMessage,
+  AgentRagChunk,
+  KnowledgeBaseConfig
+}
 
 export interface ConversationListItem {
   id: string
@@ -223,9 +229,7 @@ export const knowledgeBaseApi = {
   },
 
   reindex(kbId: string): Promise<KnowledgeBaseConfig> {
-    return post<unknown>(`/api/agents/knowledge-bases/${kbId}/reindex`).then(
-      normalizeKnowledgeBase
-    )
+    return post<unknown>(`/api/agents/knowledge-bases/${kbId}/reindex`).then(normalizeKnowledgeBase)
   }
 }
 
@@ -254,7 +258,12 @@ export const moduleApi = {
   /** 创建模块 */
   create(
     data: Pick<CustomModuleConfig, 'name' | 'type' | 'prompt'> &
-      Partial<Pick<CustomModuleConfig, 'webSearch' | 'minHeight' | 'maxHeight' | 'enableMarkdown' | 'updateFrequency'>>
+      Partial<
+        Pick<
+          CustomModuleConfig,
+          'webSearch' | 'minHeight' | 'maxHeight' | 'enableMarkdown' | 'updateFrequency'
+        >
+      >
   ): Promise<CustomModuleConfig> {
     return post<unknown>('/api/modules', denormalizeModuleConfig(data)).then(normalizeModuleConfig)
   },
@@ -262,7 +271,19 @@ export const moduleApi = {
   /** 更新模块（PATCH 语义） */
   update(
     id: string,
-    data: Partial<Pick<CustomModuleConfig, 'name' | 'type' | 'prompt' | 'webSearch' | 'minHeight' | 'maxHeight' | 'enableMarkdown' | 'updateFrequency'>>
+    data: Partial<
+      Pick<
+        CustomModuleConfig,
+        | 'name'
+        | 'type'
+        | 'prompt'
+        | 'webSearch'
+        | 'minHeight'
+        | 'maxHeight'
+        | 'enableMarkdown'
+        | 'updateFrequency'
+      >
+    >
   ): Promise<CustomModuleConfig> {
     return requestJson<unknown>(`/api/modules/${id}`, {
       method: 'PUT',
@@ -314,10 +335,7 @@ export const moduleApi = {
 // =============================================================================
 
 export interface CustomEventSource {
-  addEventListener(
-    event: string,
-    listener: (data: { data: string }) => void
-  ): void
+  addEventListener(event: string, listener: (data: { data: string }) => void): void
   close(): void
 }
 
@@ -436,18 +454,21 @@ function normalizeModuleConfig(raw: unknown): CustomModuleConfig {
     prompt: asString(item.prompt),
     createdAt: asNumber(item.createdAt ?? item.created_at, Date.now()),
     webSearch: item.webSearch !== undefined ? Boolean(item.webSearch) : Boolean(item.web_search),
-    minHeight: item.minHeight != null ? asNumber(item.minHeight ?? item.min_height, 0) || undefined : undefined,
+    minHeight:
+      item.minHeight != null
+        ? asNumber(item.minHeight ?? item.min_height, 0) || undefined
+        : undefined,
     maxHeight: normalizeMaxHeight(item.maxHeight ?? item.max_height),
     enableMarkdown:
-      item.enableMarkdown !== undefined ? Boolean(item.enableMarkdown) : Boolean(item.enable_markdown),
-    updateFrequency:
-      (asString(item.updateFrequency ?? item.update_frequency) || 'realtime') as CustomModuleConfig['updateFrequency']
+      item.enableMarkdown !== undefined
+        ? Boolean(item.enableMarkdown)
+        : Boolean(item.enable_markdown),
+    updateFrequency: (asString(item.updateFrequency ?? item.update_frequency) ||
+      'realtime') as CustomModuleConfig['updateFrequency']
   }
 }
 
-function denormalizeModuleConfig(
-  data: Partial<CustomModuleConfig>
-): Record<string, unknown> {
+function denormalizeModuleConfig(data: Partial<CustomModuleConfig>): Record<string, unknown> {
   const out: Record<string, unknown> = {}
   if (data.name !== undefined) out.name = data.name
   if (data.type !== undefined) out.type = data.type

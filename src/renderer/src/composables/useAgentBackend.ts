@@ -5,7 +5,12 @@
  * 如果 Python 服务不可用，直接抛错。
  */
 
-import { agentApi, knowledgeBaseApi, moduleApi, isPythonServerAvailable } from '@renderer/utils/python-api'
+import {
+  agentApi,
+  knowledgeBaseApi,
+  moduleApi,
+  isPythonServerAvailable
+} from '@renderer/utils/python-api'
 
 let pythonReady = false
 let detectPromise: Promise<void> | null = null

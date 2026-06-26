@@ -1,13 +1,13 @@
 // electron.vite.config.ts
-import { resolve } from "path";
-import { defineConfig, externalizeDepsPlugin } from "electron-vite";
-import vue from "@vitejs/plugin-vue";
+import { resolve } from 'path'
+import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
+import vue from '@vitejs/plugin-vue'
 var electron_vite_config_default = defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
     resolve: {
       alias: {
-        "@shared": resolve("src/shared")
+        '@shared': resolve('src/shared')
       }
     }
   },
@@ -15,20 +15,18 @@ var electron_vite_config_default = defineConfig({
     plugins: [externalizeDepsPlugin()],
     resolve: {
       alias: {
-        "@shared": resolve("src/shared")
+        '@shared': resolve('src/shared')
       }
     }
   },
   renderer: {
     resolve: {
       alias: {
-        "@renderer": resolve("src/renderer/src"),
-        "@shared": resolve("src/shared")
+        '@renderer': resolve('src/renderer/src'),
+        '@shared': resolve('src/shared')
       }
     },
     plugins: [vue()]
   }
-});
-export {
-  electron_vite_config_default as default
-};
+})
+export { electron_vite_config_default as default }

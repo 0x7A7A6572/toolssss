@@ -6,7 +6,12 @@ import { BrowserWindow, clipboard, ipcMain, screen } from 'electron'
 import type { AppSettings } from '@shared/settings'
 import { TRANSLATOR_EVENTS, type TranslatePayload, type TranslateResult } from '@shared/translator'
 import { SystemMessage, HumanMessage } from '@langchain/core/messages'
-import { createChatModel, resolveAiModelConfig, resolveApiKey, invokeText } from '@main-core/ai-service'
+import {
+  createChatModel,
+  resolveAiModelConfig,
+  resolveApiKey,
+  invokeText
+} from '@main-core/ai-service'
 
 const execAsync = promisify(exec)
 
@@ -298,9 +303,7 @@ export function createTranslatorDomain(deps: Deps): {
       maxTokens: 2000
     })
     const messages = [
-      new SystemMessage(
-        '你是一个翻译引擎。只输出译文，不要解释，不要加引号。保留原文换行与格式。'
-      ),
+      new SystemMessage('你是一个翻译引擎。只输出译文，不要解释，不要加引号。保留原文换行与格式。'),
       new HumanMessage(
         `请把下面内容翻译成目标语言。\n` +
           `源语言：${sourceLabel === 'auto' ? '自动检测' : sourceLabel}\n` +

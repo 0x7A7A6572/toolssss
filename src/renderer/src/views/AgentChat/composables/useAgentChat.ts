@@ -48,9 +48,7 @@ export function useAgentChat(): UseAgentChatReturn {
   let activePythonStream: CustomEventSource | null = null
   let pythonStreamCancelled = false
 
-  function toConversationState(
-    input: AgentConversation | ConversationListItem
-  ): AgentConversation {
+  function toConversationState(input: AgentConversation | ConversationListItem): AgentConversation {
     return {
       id: input.id,
       agentId: input.agentId,

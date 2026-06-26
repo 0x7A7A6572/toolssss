@@ -3,6 +3,7 @@ import { computed, defineAsyncComponent } from 'vue'
 import { theme } from 'ant-design-vue'
 const AlarmView = defineAsyncComponent(() => import('./views/AlarmView.vue'))
 const MainView = defineAsyncComponent(() => import('./views/MainView.vue'))
+const OverlayHome = defineAsyncComponent(() => import('./views/OverlayHome/OverlayHome.vue'))
 const OverlayView = defineAsyncComponent(() => import('./views/OverlayView.vue'))
 const StashHandleView = defineAsyncComponent(() => import('./views/StashHandleView.vue'))
 const StickerView = defineAsyncComponent(() => import('./views/StickerView.vue'))
@@ -21,6 +22,7 @@ const antdTheme = computed(() => ({
     <a-app>
       <MainView v-if="mode === 'main'" />
       <OverlayView v-else-if="mode === 'overlay'" />
+      <OverlayHome v-else-if="mode === 'mouse-hook-overlay'" />
       <AlarmView v-else-if="mode === 'alarm'" />
       <StashHandleView v-else-if="mode === 'stash-handle'" />
       <StickerView v-else-if="mode === 'sticker'" />

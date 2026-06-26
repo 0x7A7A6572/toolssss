@@ -48,6 +48,7 @@
 ### Task 1: Redefine Shared Types For Real RAG
 
 **Files:**
+
 - Modify: `f:\codes\toolssss\src\shared\agents.ts`
 - Modify: `f:\codes\toolssss\src\shared\settings.ts`
 - Test: `f:\codes\toolssss\src\main\domains\agents\rag-engine.test.ts`
@@ -158,6 +159,7 @@ git commit -m "refactor: redefine shared types for vector rag"
 ### Task 2: Move Knowledge Base Content Out Of Settings
 
 **Files:**
+
 - Create: `f:\codes\toolssss\src\main\domains\agents\knowledge-base-store.ts`
 - Modify: `f:\codes\toolssss\src\main\core\settings-store.ts`
 - Test: `f:\codes\toolssss\src\main\domains\agents\knowledge-base-store.test.ts`
@@ -246,6 +248,7 @@ git commit -m "refactor: move knowledge base content out of settings"
 ### Task 3: Add Embeddings Support To AI Service
 
 **Files:**
+
 - Modify: `f:\codes\toolssss\src\main\core\ai-service.ts`
 - Test: `f:\codes\toolssss\src\main\domains\agents\kb-indexer.test.ts`
 
@@ -324,6 +327,7 @@ git commit -m "feat: add embeddings model support"
 ### Task 4: Implement Chunking And Local Vector Indexing
 
 **Files:**
+
 - Create: `f:\codes\toolssss\src\main\domains\agents\kb-chunker.ts`
 - Create: `f:\codes\toolssss\src\main\domains\agents\kb-index-store.ts`
 - Create: `f:\codes\toolssss\src\main\domains\agents\kb-indexer.ts`
@@ -338,15 +342,18 @@ import { chunkKnowledgeDocument } from './kb-chunker'
 
 describe('kb-chunker', () => {
   it('splits long documents into stable overlapping chunks', async () => {
-    const chunks = await chunkKnowledgeDocument({
-      kbId: 'kb-1',
-      docId: 'doc-1',
-      title: 'Guide',
-      content: '第一段。'.repeat(500)
-    }, {
-      chunkSize: 600,
-      chunkOverlap: 100
-    })
+    const chunks = await chunkKnowledgeDocument(
+      {
+        kbId: 'kb-1',
+        docId: 'doc-1',
+        title: 'Guide',
+        content: '第一段。'.repeat(500)
+      },
+      {
+        chunkSize: 600,
+        chunkOverlap: 100
+      }
+    )
 
     expect(chunks.length).toBeGreaterThan(1)
     expect(chunks[0]?.docTitle).toBe('Guide')
@@ -385,10 +392,20 @@ import { rebuildKnowledgeBaseIndex } from './kb-indexer'
 
 describe('kb-indexer', () => {
   it('writes chunk vectors for every chunk', async () => {
-    const embedDocuments = vi.fn().mockResolvedValue([[0.1, 0.2], [0.3, 0.4]])
+    const embedDocuments = vi.fn().mockResolvedValue([
+      [0.1, 0.2],
+      [0.3, 0.4]
+    ])
     const result = await rebuildKnowledgeBaseIndex({
       docs: [
-        { id: 'doc-1', kbId: 'kb-1', title: 'Guide', content: 'A'.repeat(1200), createdAt: 1, updatedAt: 1 }
+        {
+          id: 'doc-1',
+          kbId: 'kb-1',
+          title: 'Guide',
+          content: 'A'.repeat(1200),
+          createdAt: 1,
+          updatedAt: 1
+        }
       ],
       rag: { topK: 4, chunkSize: 600, chunkOverlap: 100 },
       embeddings: { embedDocuments }
@@ -414,9 +431,13 @@ export interface IndexedKnowledgeChunk {
 }
 
 export async function rebuildKnowledgeBaseIndex(input: RebuildInput): Promise<RebuildOutput> {
-  const chunkGroups = await Promise.all(input.docs.map((doc) => chunkKnowledgeDocument(doc, input.rag)))
+  const chunkGroups = await Promise.all(
+    input.docs.map((doc) => chunkKnowledgeDocument(doc, input.rag))
+  )
   const chunks = chunkGroups.flat()
-  const vectors = chunks.length ? await input.embeddings.embedDocuments(chunks.map((item) => item.text)) : []
+  const vectors = chunks.length
+    ? await input.embeddings.embedDocuments(chunks.map((item) => item.text))
+    : []
   return {
     chunks: chunks.map((chunk, index) => ({ ...chunk, embedding: vectors[index] ?? [] })),
     indexedAt: Date.now()
@@ -439,6 +460,7 @@ git commit -m "feat: add local chunking and vector index builder"
 ### Task 5: Replace Lexical Search With Vector Retrieval
 
 **Files:**
+
 - Create: `f:\codes\toolssss\src\main\domains\agents\vector-search.ts`
 - Modify: `f:\codes\toolssss\src\main\domains\agents\rag-engine.ts`
 - Modify: `f:\codes\toolssss\src\main\domains\agents\chat-pipeline.ts`
@@ -459,8 +481,24 @@ describe('rag-engine', () => {
       loadIndex: vi.fn().mockResolvedValue({
         indexedAt: 1,
         chunks: [
-          { id: 'a', kbId: 'kb-1', docId: 'doc-1', docTitle: 'Install', text: 'installation steps', index: 0, embedding: [1, 0] },
-          { id: 'b', kbId: 'kb-1', docId: 'doc-2', docTitle: 'FAQ', text: 'billing question', index: 0, embedding: [0, 1] }
+          {
+            id: 'a',
+            kbId: 'kb-1',
+            docId: 'doc-1',
+            docTitle: 'Install',
+            text: 'installation steps',
+            index: 0,
+            embedding: [1, 0]
+          },
+          {
+            id: 'b',
+            kbId: 'kb-1',
+            docId: 'doc-2',
+            docTitle: 'FAQ',
+            text: 'billing question',
+            index: 0,
+            embedding: [0, 1]
+          }
         ]
       }),
       topK: 1
@@ -547,6 +585,7 @@ git commit -m "feat: replace lexical rag retrieval with vector search"
 ### Task 6: Add IPC For KB CRUD And Index Rebuild
 
 **Files:**
+
 - Modify: `f:\codes\toolssss\src\main\domains\agents\index.ts`
 - Modify: `f:\codes\toolssss\src\shared\agents.ts`
 - Test: `f:\codes\toolssss\src\main\domains\agents\knowledge-base-store.test.ts`
@@ -570,7 +609,9 @@ export const AGENT_EVENTS = {
 
 ```ts
 ipcMain.handle(AGENT_EVENTS.KB_LIST, () => kbStore.listKnowledgeBases())
-ipcMain.handle(AGENT_EVENTS.KB_DOC_LIST, (_event, payload) => kbStore.listDocuments(requireString(payload?.kbId, 'kbId')))
+ipcMain.handle(AGENT_EVENTS.KB_DOC_LIST, (_event, payload) =>
+  kbStore.listDocuments(requireString(payload?.kbId, 'kbId'))
+)
 ipcMain.handle(AGENT_EVENTS.KB_REINDEX, async (_event, payload) => {
   const kbId = requireString(payload?.kbId, 'kbId')
   return reindexKnowledgeBase(kbId, deps.getSettings())
@@ -600,6 +641,7 @@ git commit -m "feat: add knowledge base ipc and reindex hooks"
 ### Task 7: Migrate Settings UI To Dedicated KB APIs
 
 **Files:**
+
 - Modify: `f:\codes\toolssss\src\renderer\src\views\Settings\SettingsView.vue`
 - Modify: `f:\codes\toolssss\src\renderer\src\state\settings.ts`
 
@@ -646,15 +688,14 @@ async function saveDoc(): Promise<void> {
 ```vue
 <div class="agent-modal-field">
   <div class="agent-modal-label">Embedding Profile</div>
-  <a-select
-    v-model:value="settings.ai.embedding.profileId"
-    :options="settings.ai.profiles.map((p) => ({ value: p.id, label: p.name }))"
-  />
-</div>
+<a-select
+  v-model:value="settings.ai.embedding.profileId"
+  :options="settings.ai.profiles.map((p) => ({ value: p.id, label: p.name }))"
+/>
+
 <div class="agent-modal-field">
   <div class="agent-modal-label">Embedding Model</div>
-  <input v-model="embeddingModelDraft" class="text agent-modal-input" type="text" />
-</div>
+<input v-model="embeddingModelDraft" class="text agent-modal-input" type="text" />
 ```
 
 - [ ] **Step 4: Run web typecheck**
@@ -672,6 +713,7 @@ git commit -m "refactor: move knowledge base ui to dedicated rag apis"
 ### Task 8: Verify End-To-End Chat Retrieval And Citations
 
 **Files:**
+
 - Modify: `f:\codes\toolssss\src\renderer\src\views\AgentChat\AgentChatView.vue`
 - Modify: `f:\codes\toolssss\src\main\domains\agents\index.ts`
 - Test: `f:\codes\toolssss\src\main\domains\agents\rag-engine.test.ts`
@@ -702,6 +744,7 @@ npm run dev
 ```
 
 Expected:
+
 - Create KB in settings
 - Add document containing `KB_CANARY_9F3A2D 是 xxx`
 - Reindex automatically

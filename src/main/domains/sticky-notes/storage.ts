@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'fs'
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  unlinkSync,
+  writeFileSync
+} from 'fs'
 import { join } from 'path'
 import type { StickyNote } from '@shared/sticky-notes'
 
@@ -211,4 +219,3 @@ export function copyStickyNotesStorageIfAbsent(prevDir: string, nextDir: string)
     }
   }
 }
-

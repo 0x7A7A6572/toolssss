@@ -83,6 +83,7 @@ Do **not** put this into the existing `FastAPI` process. Qt event loop plus HTTP
 ### Task 1: Freeze The Boundary
 
 **Files:**
+
 - Modify: `f:\codes\toolssss\src\shared\settings.ts`
 - Modify: `f:\codes\toolssss\src\renderer\src\views\Settings\SettingsView.vue`
 
@@ -132,6 +133,7 @@ Never block F1/F3/Shift+F3 just because Python is missing.
 ### Task 2: Add The Electron Worker Manager
 
 **Files:**
+
 - Create: `f:\codes\toolssss\src\main\core\python-desktop-worker.ts`
 - Modify: `f:\codes\toolssss\src\main\index.ts`
 
@@ -202,6 +204,7 @@ app.whenReady().then(async () => {
 ### Task 3: Bootstrap The Python GUI Process
 
 **Files:**
+
 - Modify: `f:\codes\toolssss\server\pyproject.toml`
 - Create: `f:\codes\toolssss\server\desktop_worker\main.py`
 - Create: `f:\codes\toolssss\server\desktop_worker\protocol.py`
@@ -280,6 +283,7 @@ def send_event(self, payload: dict) -> None:
 ### Task 4: Implement Screenshot Capture And Export
 
 **Files:**
+
 - Create: `f:\codes\toolssss\server\desktop_worker\services\capture_service.py`
 - Create: `f:\codes\toolssss\server\desktop_worker\windows\capture_overlay.py`
 
@@ -332,6 +336,7 @@ self.capture_saved.emit(file_path, True, self._stick_after_save)
 ### Task 5: Implement Gallery Operations In Python
 
 **Files:**
+
 - Create: `f:\codes\toolssss\server\desktop_worker\services\gallery_service.py`
 - Modify: `f:\codes\toolssss\server\desktop_worker\app_controller.py`
 - Modify: `f:\codes\toolssss\src\main\domains\snip\index.ts`
@@ -385,6 +390,7 @@ Only branch early to Python and return to the old code when Python is unavailabl
 ### Task 6: Implement Sticker Windows In Python
 
 **Files:**
+
 - Create: `f:\codes\toolssss\server\desktop_worker\windows\sticker_window.py`
 - Modify: `f:\codes\toolssss\server\desktop_worker\app_controller.py`
 - Modify: `f:\codes\toolssss\src\main\domains\stickers\index.ts`
@@ -443,6 +449,7 @@ return await recognizeStickerImageText(dataUrl)
 ### Task 7: Move OCR To Python
 
 **Files:**
+
 - Create: `f:\codes\toolssss\server\desktop_worker\services\ocr_service.py`
 - Modify: `f:\codes\toolssss\src\main\domains\stickers\index.ts`
 
@@ -496,6 +503,7 @@ Then remove dead code after parity is verified.
 ### Task 8: Wire Domain Routing Without Breaking Userspace
 
 **Files:**
+
 - Modify: `f:\codes\toolssss\src\main\index.ts`
 - Modify: `f:\codes\toolssss\src\main\domains\snip\index.ts`
 - Modify: `f:\codes\toolssss\src\main\domains\stickers\index.ts`
@@ -561,6 +569,7 @@ No gallery file naming change.
 ### Task 9: Verify Before Deleting Anything
 
 **Files:**
+
 - Test: `f:\codes\toolssss\server\tests\desktop_worker\test_protocol.py`
 - Test: `f:\codes\toolssss\server\tests\desktop_worker\test_gallery_service.py`
 - Test: `f:\codes\toolssss\server\tests\desktop_worker\test_ocr_service.py`

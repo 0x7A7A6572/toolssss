@@ -666,7 +666,6 @@ onMounted(() => {
     })
     .catch(() => null)
 })
-
 </script>
 
 <template>

@@ -90,7 +90,10 @@ async function requestFromAi(settings: AppSettings, ymd: string): Promise<string
     return await invokeText(model, messages, controller.signal)
   } catch (e) {
     const name =
-      e && typeof e === 'object' && 'name' in e && typeof (e as { name?: unknown }).name === 'string'
+      e &&
+      typeof e === 'object' &&
+      'name' in e &&
+      typeof (e as { name?: unknown }).name === 'string'
         ? ((e as { name: string }).name as string)
         : ''
     if (name === 'AbortError')
@@ -174,7 +177,10 @@ export function registerFunFactHandlers(args: { getSettings: () => AppSettings }
         } catch (e) {
           if (streamBySender.get(senderId)?.id !== id) return
           const name =
-            e && typeof e === 'object' && 'name' in e && typeof (e as { name?: unknown }).name === 'string'
+            e &&
+            typeof e === 'object' &&
+            'name' in e &&
+            typeof (e as { name?: unknown }).name === 'string'
               ? ((e as { name: string }).name as string)
               : ''
           if (name === 'AbortError') {

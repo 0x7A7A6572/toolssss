@@ -78,37 +78,42 @@ src/
 ## 关键设计模式
 
 ### Domain 工厂模式
+
 所有 domain 使用工厂函数模式：`createXxxDomain(deps)` 返回 `{ registerIpcHandlers, ...方法 }`。依赖通过参数显式注入（如 `getSettings`、`loadWindow`），不直接 import 其他 domain。
 
 ### App 多模式分发
+
 `App.vue` 根据 URL 参数 `?mode=` 渲染不同根视图。一个 Electron 窗口可加载为不同模式：`main`（主界面）、`overlay`（护眼遮罩）、`alarm`（闹钟弹窗）、`stash-handle`（收纳手柄）、`sticker`（贴图）、`note-editor`（便签编辑）、`translator-popup`（翻译弹窗）。
 
 ### 设置同步流程
+
 设置由主进程持有唯一权威副本（`settings.json`）。渲染进程通过 IPC 获取：`settings:get`、`settings:update`（带 patch）。主进程通过 `settings:changed` 广播到所有窗口。设置 store 使用 `structuredClone` 进行不可变更新。
 
 ### IPC 通道规范
+
 - 同步数据：`module:action` 格式（如 `settings:get`、`update:check`）
 - 事件推送：主进程通过 `webContents.send` 推送，渲染进程通过 `ipcRenderer.on` 监听
 - Domain 事件常量集中在 `shared/custom-modules.ts` 中的 `CUSTOM_MODULES_EVENTS` 类模式
 
 ### ESLint 域隔离规则
+
 `src/main/domains/` 下的文件禁止 `../` 相对引用和 `@main/*` 别名引用——只能使用 `./` 同级导入、`@main-core/*` 和 `@shared/*`。这防止 domain 之间的隐式耦合。
 
 ## 技术栈
 
-| 层 | 技术 |
-|---|---|
-| 框架 | Electron 39 |
-| 前端 | Vue 3.5 (Composition API, `<script setup>`) |
-| UI 库 | Ant Design Vue 4 |
-| 样式 | Tailwind CSS 3 + SCSS (sass-embedded) |
-| 图表 | ECharts 6 |
-| 编辑器 | Tiptap (富文本便签) |
-| 打包 | electron-vite 5 |
-| 分发 | electron-builder (NSIS/DMG/AppImage) |
-| 测试 | Vitest 3 + jsdom |
-| 代码规范 | ESLint 9 + Prettier 3 |
-| 包管理 | pnpm |
+| 层       | 技术                                        |
+| -------- | ------------------------------------------- |
+| 框架     | Electron 39                                 |
+| 前端     | Vue 3.5 (Composition API, `<script setup>`) |
+| UI 库    | Ant Design Vue 4                            |
+| 样式     | Tailwind CSS 3 + SCSS (sass-embedded)       |
+| 图表     | ECharts 6                                   |
+| 编辑器   | Tiptap (富文本便签)                         |
+| 打包     | electron-vite 5                             |
+| 分发     | electron-builder (NSIS/DMG/AppImage)        |
+| 测试     | Vitest 3 + jsdom                            |
+| 代码规范 | ESLint 9 + Prettier 3                       |
+| 包管理   | pnpm                                        |
 
 ## 代码风格
 

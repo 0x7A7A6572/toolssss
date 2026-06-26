@@ -369,8 +369,14 @@ onBeforeUnmount(() => {
     <aside class="agent-sidebar" :class="{ collapsed: sidebarCollapsed }">
       <!-- 顶部操作栏：智能体选择 + 新建对话 + 折叠 -->
       <div class="sidebar-top-row">
-        <a-select v-if="!sidebarCollapsed" :value="currentAgentId" placeholder="选择智能体"
-          :options="agents.map((a) => ({ value: a.id, label: a.name }))" class="agent-select" @change="selectAgent">
+        <a-select
+          v-if="!sidebarCollapsed"
+          :value="currentAgentId"
+          placeholder="选择智能体"
+          :options="agents.map((a) => ({ value: a.id, label: a.name }))"
+          class="agent-select"
+          @change="selectAgent"
+        >
           <template #notFoundContent>
             <div class="agent-empty-hint">
               <span>暂无智能体</span>
@@ -380,15 +386,20 @@ onBeforeUnmount(() => {
         </a-select>
 
         <a-tooltip title="新对话">
-          <a-button class="icon-btn" :border="false" :disabled="!currentAgentId || streaming" @click="handleNewConversation">
+          <a-button
+            class="icon-btn"
+            :border="false"
+            :disabled="!currentAgentId || streaming"
+            @click="handleNewConversation"
+          >
             <Plus :size="16" />
           </a-button>
         </a-tooltip>
 
         <a-tooltip :title="sidebarCollapsed ? '展开侧栏' : '收起侧栏'">
-          <a-button class="icon-btn"  @click="toggleSidebar">
+          <a-button class="icon-btn" @click="toggleSidebar">
             <PanelLeftClose v-if="!sidebarCollapsed" :size="16" />
-            <PanelLeftOpen v-else  :size="16" />
+            <PanelLeftOpen v-else :size="16" />
           </a-button>
         </a-tooltip>
       </div>
@@ -399,10 +410,7 @@ onBeforeUnmount(() => {
           <div
             v-for="conv in conversationItems"
             :key="conv.key"
-            :class="[
-              'conversation-list-item',
-              { active: activeConversationKey === conv.key }
-            ]"
+            :class="['conversation-list-item', { active: activeConversationKey === conv.key }]"
             @click="handleConversationSelect(String(conv.key))"
           >
             <div class="conversation-list-main">
@@ -412,12 +420,7 @@ onBeforeUnmount(() => {
               </div>
             </div>
             <a-dropdown :trigger="['click']">
-              <a-button
-                class="conversation-list-more"
-                type="text"
-                size="small"
-                @click.stop
-              >
+              <a-button class="conversation-list-more" type="text" size="small" @click.stop>
                 <template #icon>
                   <MoreHorizontal :size="14" />
                 </template>
@@ -538,14 +541,29 @@ onBeforeUnmount(() => {
 
       <!-- 输入区域 -->
       <div class="sender-area">
-        <Sender :value="senderValue" :loading="streaming" :disabled="!currentAgentId"
-          :allow-speech="speechSupported ? allowSpeechConfig : false" :placeholder="currentAgentId ? '输入消息，Enter 发送，Shift+Enter 换行...' : '请先选择智能体'
-            " @change="(val: string) => (senderValue = val)" @submit="handleSend" @cancel="handleCancel" />
+        <Sender
+          :value="senderValue"
+          :loading="streaming"
+          :disabled="!currentAgentId"
+          :allow-speech="speechSupported ? allowSpeechConfig : false"
+          :placeholder="
+            currentAgentId ? '输入消息，Enter 发送，Shift+Enter 换行...' : '请先选择智能体'
+          "
+          @change="(val: string) => (senderValue = val)"
+          @submit="handleSend"
+          @cancel="handleCancel"
+        />
       </div>
     </main>
 
-    <a-modal :open="settingsModalOpen" :footer="null" width="700px" centered destroy-on-close
-      @cancel="closeSettingsModal">
+    <a-modal
+      :open="settingsModalOpen"
+      :footer="null"
+      width="700px"
+      centered
+      destroy-on-close
+      @cancel="closeSettingsModal"
+    >
       <div class="agent-settings-modal">
         <div class="agent-settings-modal-head">
           <div class="agent-settings-modal-title">智能体设置</div>

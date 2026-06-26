@@ -20,10 +20,10 @@ import { getAiApiKeyFromSecrets, getLegacyAiApiKeyFromSecrets } from './secrets'
 
 /** Python 服务运行状态 */
 export type PythonServerStatus =
-  | 'stopped'       // 未启动
-  | 'starting'      // 正在启动（等待健康检查）
-  | 'running'       // 正常运行
-  | 'error'         // 启动失败
+  | 'stopped' // 未启动
+  | 'starting' // 正在启动（等待健康检查）
+  | 'running' // 正常运行
+  | 'error' // 启动失败
 
 /** Python 环境检测结果 */
 export interface PythonEnvInfo {
@@ -115,8 +115,12 @@ function runPythonVersion(command: string): Promise<string | null> {
     const proc = spawn(command, ['--version'], { windowsHide: true })
     let stdout = ''
     let stderr = ''
-    proc.stdout?.on('data', (data: Buffer) => { stdout += data.toString() })
-    proc.stderr?.on('data', (data: Buffer) => { stderr += data.toString() })
+    proc.stdout?.on('data', (data: Buffer) => {
+      stdout += data.toString()
+    })
+    proc.stderr?.on('data', (data: Buffer) => {
+      stderr += data.toString()
+    })
     proc.on('error', reject)
     proc.on('close', (code) => {
       if (code !== 0) {
@@ -158,31 +162,53 @@ async function findAvailablePort(): Promise<number> {
 function startCallbackServer(): Promise<number> {
   return new Promise((resolve, reject) => {
     callbackServer = createServer((req, res) => {
-      // 只处理 POST /internal/config-callback
-      if (req.url !== '/internal/config-callback' || req.method !== 'POST') {
-        res.writeHead(404)
-        res.end()
+      // POST /internal/config-callback —— Python 请求写入配置
+      if (req.url === '/internal/config-callback' && req.method === 'POST') {
+        let body = ''
+        req.on('data', (chunk: Buffer) => {
+          body += chunk.toString()
+        })
+        req.on('end', () => {
+          try {
+            const payload = JSON.parse(body) as {
+              action: string
+              [key: string]: unknown
+            }
+            handleConfigCallback(payload)
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ status: 'ok' }))
+          } catch {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: '无效的请求体' }))
+          }
+        })
         return
       }
 
-      let body = ''
-      req.on('data', (chunk: Buffer) => {
-        body += chunk.toString()
-      })
-      req.on('end', () => {
-        try {
-          const payload = JSON.parse(body) as {
-            action: string
-            [key: string]: unknown
+      // POST /internal/mouse-hook —— 鼠标钩子事件
+      if (req.url === '/internal/mouse-hook' && req.method === 'POST') {
+        let body = ''
+        req.on('data', (chunk: Buffer) => {
+          body += chunk.toString()
+        })
+        req.on('end', () => {
+          try {
+            const payload = JSON.parse(body) as { action: string; deltaY: number; startX: number; startY: number }
+            if (onMouseHookEvent) {
+              onMouseHookEvent(payload)
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ status: 'ok' }))
+          } catch {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: '无效的请求体' }))
           }
-          handleConfigCallback(payload)
-          res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ status: 'ok' }))
-        } catch (e) {
-          res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ error: '无效的请求体' }))
-        }
-      })
+        })
+        return
+      }
+
+      res.writeHead(404)
+      res.end()
     })
 
     callbackServer.listen(0, '127.0.0.1', () => {
@@ -197,10 +223,7 @@ function startCallbackServer(): Promise<number> {
 }
 
 /** 处理 Python 发来的配置回调 */
-function handleConfigCallback(payload: {
-  action: string
-  [key: string]: unknown
-}): void {
+function handleConfigCallback(payload: { action: string; [key: string]: unknown }): void {
   if (!deps) return
 
   const settings = deps.getSettings()
@@ -251,6 +274,9 @@ function handleConfigCallback(payload: {
 /** 配置写入回调（由外部注入 commitSettings） */
 let onConfigWrite: ((patch: Partial<import('@shared/settings').AppSettings>) => void) | null = null
 
+/** 鼠标钩子事件回调（由外部注入） */
+let onMouseHookEvent: ((event: { action: string; deltaY: number; startX: number; startY: number }) => void) | null = null
+
 // =============================================================================
 // Python 进程管理
 // =============================================================================
@@ -277,8 +303,7 @@ export async function startPythonServer(
         ? {
             ...current.agents,
             ...patch.agents,
-            knowledgeBases:
-              patch.agents.knowledgeBases ?? current.agents.knowledgeBases,
+            knowledgeBases: patch.agents.knowledgeBases ?? current.agents.knowledgeBases,
             configs: patch.agents.configs ?? current.agents.configs,
             rag: patch.agents.rag ?? current.agents.rag
           }
@@ -328,16 +353,28 @@ async function spawnPythonProcess(): Promise<boolean> {
 
   status = 'starting'
 
-  pythonProcess = spawn(pythonCmd, ['main.py', '--port', String(pythonPort), '--host', '127.0.0.1', '--user-data-path', deps.getUserDataPath()], {
-    cwd: serverDir,
-    windowsHide: true,
-    env: {
-      ...process.env,
-      FS_CALLBACK_PORT: String(callbackPort),
-      PYTHONUNBUFFERED: '1',
-      PYTHONIOENCODING: 'utf-8'
+  pythonProcess = spawn(
+    pythonCmd,
+    [
+      'main.py',
+      '--port',
+      String(pythonPort),
+      '--host',
+      '127.0.0.1',
+      '--user-data-path',
+      deps.getUserDataPath()
+    ],
+    {
+      cwd: serverDir,
+      windowsHide: true,
+      env: {
+        ...process.env,
+        FS_CALLBACK_PORT: String(callbackPort),
+        PYTHONUNBUFFERED: '1',
+        PYTHONIOENCODING: 'utf-8'
+      }
     }
-  })
+  )
 
   pythonProcess.stdout?.on('data', (data: Buffer) => {
     const text = data.toString().trim()
@@ -494,7 +531,11 @@ export async function pushConfigToPython(): Promise<void> {
       aiApiKeys[profileId] = profileApiKey
     }
   }
-  if (settings.ai.activeProfileId.trim() && apiKey && !aiApiKeys[settings.ai.activeProfileId.trim()]) {
+  if (
+    settings.ai.activeProfileId.trim() &&
+    apiKey &&
+    !aiApiKeys[settings.ai.activeProfileId.trim()]
+  ) {
     aiApiKeys[settings.ai.activeProfileId.trim()] = apiKey
   } else if (settings.ai.activeProfileId.trim() && legacyAiApiKey) {
     aiApiKeys[settings.ai.activeProfileId.trim()] = legacyAiApiKey
@@ -651,9 +692,21 @@ export function getPythonPort(): number {
   return pythonPort
 }
 
+/** 获取 Electron 回调服务器端口（供 main 进程 domain 使用） */
+export function getCallbackPort(): number {
+  return callbackPort
+}
+
 /** 获取 Python 服务运行状态 */
 export function getPythonServerStatus(): PythonServerStatus {
   return status
+}
+
+/** 注册鼠标钩子事件回调 */
+export function setMouseHookCallback(
+  cb: ((event: { action: string; deltaY: number; startX: number; startY: number }) => void) | null
+): void {
+  onMouseHookEvent = cb
 }
 
 // =============================================================================

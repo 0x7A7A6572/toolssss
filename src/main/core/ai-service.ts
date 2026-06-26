@@ -49,7 +49,11 @@ function assertEmbeddingChainSupported(profile: AiProfile, model: string): void 
 export function formatEmbeddingChainError(error: unknown): string {
   if (error instanceof Error) {
     const msg = error.message
-    if (/Unsupported model/i.test(msg) || /model_not_supported/i.test(msg) || /MODEL_NOT_FOUND/i.test(msg)) {
+    if (
+      /Unsupported model/i.test(msg) ||
+      /model_not_supported/i.test(msg) ||
+      /MODEL_NOT_FOUND/i.test(msg)
+    ) {
       return `当前所选向量模型不支持现有 RAG 链路。请在 AI 设置中为 RAG 选择可走 OpenAI-compatible embeddings 的文本向量模型，例如 text-embedding-v3。原始错误：${msg}`
     }
     return msg
@@ -180,9 +184,10 @@ export function createModelFromSettings(
   return { model, profileId: config.profileId }
 }
 
-export function createEmbeddingsModelFromSettings(
-  settings: AppSettings
-): { model: OpenAIEmbeddings; profileId: string } {
+export function createEmbeddingsModelFromSettings(settings: AppSettings): {
+  model: OpenAIEmbeddings
+  profileId: string
+} {
   const config = resolveEmbeddingModelConfig(settings)
   const apiKey = resolveApiKey(config.profileId)
   const model = createEmbeddingsModel(config, apiKey)

@@ -349,8 +349,10 @@ export function normalizeSettings(input: unknown): AppSettings {
     const embedding = normalizeEmbeddingProfileConfig(ai['embedding'])
     if (typeof embedding.enabled === 'boolean') base.ai.embedding.enabled = embedding.enabled
     if (typeof embedding.profileId === 'string') base.ai.embedding.profileId = embedding.profileId
-    if (typeof embedding.model === 'string' && embedding.model) base.ai.embedding.model = embedding.model
-    if (typeof embedding.dimensions === 'number') base.ai.embedding.dimensions = embedding.dimensions
+    if (typeof embedding.model === 'string' && embedding.model)
+      base.ai.embedding.model = embedding.model
+    if (typeof embedding.dimensions === 'number')
+      base.ai.embedding.dimensions = embedding.dimensions
   }
 
   if (
@@ -610,8 +612,10 @@ export function applySettingsPatch(current: AppSettings, patch: unknown): AppSet
     const embedding = normalizeEmbeddingProfileConfig(ai['embedding'])
     if (typeof embedding.enabled === 'boolean') next.ai.embedding.enabled = embedding.enabled
     if (typeof embedding.profileId === 'string') next.ai.embedding.profileId = embedding.profileId
-    if (typeof embedding.model === 'string' && embedding.model) next.ai.embedding.model = embedding.model
-    if (typeof embedding.dimensions === 'number') next.ai.embedding.dimensions = embedding.dimensions
+    if (typeof embedding.model === 'string' && embedding.model)
+      next.ai.embedding.model = embedding.model
+    if (typeof embedding.dimensions === 'number')
+      next.ai.embedding.dimensions = embedding.dimensions
   }
 
   if (

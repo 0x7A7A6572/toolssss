@@ -67,4 +67,3 @@ export function parseHourlyTrendsFromText(text: string): WeatherHourlyTrends | n
     cloudPercent: cloudTokens.slice(0, n).map(parseMaybeNumberToken)
   }
 }
-

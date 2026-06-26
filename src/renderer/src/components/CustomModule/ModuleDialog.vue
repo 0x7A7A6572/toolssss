@@ -3,7 +3,7 @@ import { ref, watch } from 'vue'
 import type { UpdateFrequency } from '@shared/custom-modules'
 import AppSwitch from '@renderer/components/AppSwitch.vue'
 import { useAgentBackend } from '@renderer/composables/useAgentBackend'
-import { Save, X } from 'lucide-vue-next'
+import { Save, X, Sparkles } from 'lucide-vue-next'
 export interface ModuleDialogData {
   name: string
   type: 'text' | 'ranking' | 'link' | 'chart'
@@ -211,17 +211,30 @@ function save(): void {
       <div class="module-dialog-field">
         <div class="module-dialog-row">
           <div class="module-dialog-label">提示词</div>
-        </div>
-        <div class="relative">
           <button
-            class="ai-enhance-btn absolute right-[10px] top-[10px]"
+            class="icon-btn"
             type="button"
             :disabled="draftAiEnhancing"
+            title="AI补充"
             @click="aiEnhancePrompt"
           >
             <span v-if="draftAiEnhancing" class="ai-enhance-spinner"></span>
-            {{ draftAiEnhancing ? '补充中…' : 'AI补充' }}
+            <Sparkles v-else :size="14" />
           </button>
+        </div>
+        <div class="relative overflow-hidden rounded-md">
+          <!-- <view class="textarea-bar absolute bottom-[0px] left-[0px] z-10 bg-[#bee5ff3a] w-full">
+            <button
+              class="ai-enhance-btn"
+              type="button"
+              :disabled="draftAiEnhancing"
+              @click="aiEnhancePrompt"
+            >
+              <span v-if="draftAiEnhancing" class="ai-enhance-spinner"></span>
+              {{ draftAiEnhancing ? '补充中…' : 'AI补充' }}
+            </button>
+          </view> -->
+
           <a-textarea
             v-model:value="draftPrompt"
             class="module-dialog-textarea"
@@ -390,10 +403,12 @@ function save(): void {
   flex-direction: column;
   height: 500px;
   overflow-y: auto;
+
   /* Chrome / Safari / Edge */
   &::-webkit-scrollbar {
     display: none;
   }
+
   /* Firefox */
   scrollbar-width: none;
   /* IE / 旧 Edge */
@@ -466,7 +481,7 @@ function save(): void {
   padding: 3px 10px;
   border: none;
   border-radius: 6px;
-  background: rgba(99, 102, 241, 0.1);
+  background: transparent;
   color: rgba(99, 102, 241, 0.85);
   font-size: 12px;
   font-weight: 700;

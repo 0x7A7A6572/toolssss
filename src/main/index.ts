@@ -50,8 +50,14 @@ import {
   toggleTopmostWindowAtCursor
 } from './domains/window-stash'
 import { createEyeOverlayDomain } from './domains/eye-overlay'
+import { createMouseHookDomain } from './domains/mouse-hook'
 import { createRemindersDomain } from './domains/reminders'
-import { startPythonServer, stopPythonServer, getPythonPort, pushConfigToPython } from './core/python-server'
+import {
+  startPythonServer,
+  stopPythonServer,
+  getPythonPort,
+  pushConfigToPython
+} from './core/python-server'
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
@@ -63,6 +69,7 @@ let settings: AppSettings = DEFAULT_SETTINGS
 const updates = createUpdateService({ getMainWindow: () => mainWindow })
 const stickers = createStickersDomain({ icon, loadWindow })
 const overlay = createEyeOverlayDomain({ icon, loadWindow, getSettings: () => settings })
+const mouseHook = createMouseHookDomain({ icon, loadWindow })
 const reminders = createRemindersDomain({
   icon,
   loadWindow,
@@ -320,6 +327,7 @@ app.whenReady().then(async () => {
       .finally(() => {
         disposeAllWindowStash()
         disposeExternalWindowPowerShell()
+        mouseHook.dispose()
         stopPythonServer().catch(() => null)
         markWindowStashSessionClean()
           .catch(() => null)
@@ -343,15 +351,19 @@ app.whenReady().then(async () => {
   startPythonServer(
     { getSettings: () => settings, getUserDataPath: () => app.getPath('userData') },
     (next) => commitSettings(next)
-  ).then((port) => {
-    if (port) {
-      console.log('[Main] Python 服务已启动，端口:', port)
-    } else {
-      console.log('[Main] Python 服务未启动（环境不满足或启动失败）')
-    }
-  }).catch((e) => {
-    console.error('[Main] Python 服务启动异常:', e)
-  })
+  )
+    .then((port) => {
+      if (port) {
+        console.log('[Main] Python 服务已启动，端口:', port)
+        // Python 就绪后自动启动全局鼠标钩子
+        mouseHook.start().catch(() => null)
+      } else {
+        console.log('[Main] Python 服务未启动（环境不满足或启动失败）')
+      }
+    })
+    .catch((e) => {
+      console.error('[Main] Python 服务启动异常:', e)
+    })
 
   setTimeout(() => {
     warmupExternalWindowPowerShell().catch(() => null)
@@ -448,6 +460,19 @@ app.whenReady().then(async () => {
   })
   registerFunFactHandlers({ getSettings: () => settings })
   registerCustomModuleHandlers({ getSettings: () => settings })
+  ipcMain.handle('mouse-hook:start', async () => {
+    await mouseHook.start()
+    return mouseHook.isRunning()
+  })
+  ipcMain.handle('mouse-hook:stop', async () => {
+    await mouseHook.stop()
+    return mouseHook.isRunning()
+  })
+  ipcMain.handle('mouse-hook:status', () => mouseHook.isRunning())
+  ipcMain.handle('mouse-hook:overlay:close', () => {
+    mouseHook.hideOverlay()
+    return true
+  })
   ipcMain.handle('sticky-notes:saveDir:choose', async () => {
     const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
     const options: OpenDialogOptions = { properties: ['openDirectory', 'createDirectory'] }

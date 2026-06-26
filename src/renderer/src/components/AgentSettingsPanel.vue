@@ -2,11 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { message } from 'ant-design-vue'
 import type { AppSettings, SettingsPatch } from '@shared/settings'
-import {
-  type AgentConfig,
-  type AgentKnowledgeDoc,
-  type KnowledgeBaseConfig
-} from '@shared/agents'
+import { type AgentConfig, type AgentKnowledgeDoc, type KnowledgeBaseConfig } from '@shared/agents'
 import AppSwitch from './AppSwitch.vue'
 import { Pencil, Plus, RefreshCw, Trash2 } from 'lucide-vue-next'
 import { useSettingsStore } from '@renderer/state/settings'
@@ -52,9 +48,7 @@ async function refreshKnowledgeBases(): Promise<void> {
   await Promise.all([loadKnowledgeBases(), settingsStore.refresh()])
 }
 
-async function updateEmbedding(
-  patch: Partial<AppSettings['ai']['embedding']>
-): Promise<void> {
+async function updateEmbedding(patch: Partial<AppSettings['ai']['embedding']>): Promise<void> {
   await update({
     ai: {
       embedding: {
@@ -440,9 +434,7 @@ onMounted(() => {
         </a-button>
       </div>
 
-      <div v-if="!knowledgeBases.length" class="empty-hint">
-        暂无知识库，点击「添加」创建一个
-      </div>
+      <div v-if="!knowledgeBases.length" class="empty-hint">暂无知识库，点击「添加」创建一个</div>
 
       <div v-for="kb in knowledgeBases" :key="kb.id" class="kb-item">
         <div class="kb-item-header">

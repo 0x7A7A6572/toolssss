@@ -40,6 +40,7 @@
 ### Task 1: Define the Python Border Sync API
 
 **Files:**
+
 - Modify: `f:\codes\toolssss\server\app\models\windows.py`
 - Modify: `f:\codes\toolssss\server\app\domains\windows\router.py`
 - Test: `f:\codes\toolssss\server\tests\test_windows_border_router.py`
@@ -140,6 +141,7 @@ git commit -m "feat: add python topmost border sync api"
 ### Task 2: Build the Python Border Manager Core
 
 **Files:**
+
 - Create: `f:\codes\toolssss\server\app\domains\windows\border_manager.py`
 - Modify: `f:\codes\toolssss\server\app\domains\windows\service.py`
 - Test: `f:\codes\toolssss\server\tests\test_windows_border_router.py`
@@ -266,6 +268,7 @@ git commit -m "feat: add python border manager core"
 ### Task 3: Make the Python Border Manager Event-Driven
 
 **Files:**
+
 - Modify: `f:\codes\toolssss\server\app\domains\windows\border_manager.py`
 - Test: `f:\codes\toolssss\server\tests\test_windows_border_router.py`
 
@@ -371,6 +374,7 @@ git commit -m "feat: add event-driven python topmost border manager"
 ### Task 4: Replace Electron Overlay Drawing With Python Sync
 
 **Files:**
+
 - Modify: `f:\codes\toolssss\src\main\window-stash.ts`
 - Modify: `f:\codes\toolssss\src\main\domains\external-window\index.ts`
 
@@ -475,6 +479,7 @@ git commit -m "feat: drive topmost borders through python sync"
 ### Task 5: Wire Shutdown and Recovery Correctly
 
 **Files:**
+
 - Modify: `f:\codes\toolssss\src\main\index.ts`
 - Modify: `f:\codes\toolssss\server\app\domains\windows\border_manager.py`
 
@@ -533,6 +538,7 @@ git commit -m "fix: clean python topmost borders on shutdown"
 ### Task 6: Remove the Polling-Based Border Path After Verification
 
 **Files:**
+
 - Modify: `f:\codes\toolssss\src\main\window-stash.ts`
 - Modify: `f:\codes\toolssss\src\libs\win32\powershellRunners.ts`
 

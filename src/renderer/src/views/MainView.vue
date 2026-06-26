@@ -119,10 +119,13 @@ onMounted(() => {
       maximized.value = Boolean(p.maximized)
     })
     .catch(() => null)
-  offWindowState = window.electron.ipcRenderer.on('window:state', (_: unknown, payload: unknown) => {
-    const p = payload && typeof payload === 'object' ? (payload as { maximized?: unknown }) : {}
-    maximized.value = Boolean(p.maximized)
-  })
+  offWindowState = window.electron.ipcRenderer.on(
+    'window:state',
+    (_: unknown, payload: unknown) => {
+      const p = payload && typeof payload === 'object' ? (payload as { maximized?: unknown }) : {}
+      maximized.value = Boolean(p.maximized)
+    }
+  )
 })
 
 onBeforeUnmount(() => {

@@ -13,6 +13,7 @@
 ### Task 1: Freeze The Gap List
 
 **Files:**
+
 - Modify: `f:\codes\toolssss\src\renderer\src\views\AgentChat\composables\useAgentChat.ts`
 - Modify: `f:\codes\toolssss\src\renderer\src\components\AgentSettingsPanel.vue`
 - Modify: `f:\codes\toolssss\src\renderer\src\composables\useAgentBackend.ts`
@@ -40,6 +41,7 @@ Do not change the visible UI contract of AgentChatView.vue.
 ### Task 2: Repair The Python Client Contract
 
 **Files:**
+
 - Modify: `f:\codes\toolssss\src\renderer\src\utils\python-api.ts`
 
 - [ ] **Step 1: Normalize Python responses to shared camelCase shapes**
@@ -82,6 +84,7 @@ listDocuments(kbId: string): Promise<AgentKnowledgeDoc[]> {
 ### Task 3: Centralize Renderer Backend Switching
 
 **Files:**
+
 - Modify: `f:\codes\toolssss\src\renderer\src\composables\useAgentBackend.ts`
 
 - [ ] **Step 1: Expand the adapter so pages do not touch IPC directly**
@@ -89,7 +92,9 @@ listDocuments(kbId: string): Promise<AgentKnowledgeDoc[]> {
 ```ts
 async function listDocuments(kbId: string): Promise<AgentKnowledgeDoc[]> {
   if (pythonAvailable.value) return knowledgeBaseApi.listDocuments(kbId)
-  return (await window.electron.ipcRenderer.invoke('agent:kb:doc:list', { kbId })) as AgentKnowledgeDoc[]
+  return (await window.electron.ipcRenderer.invoke('agent:kb:doc:list', {
+    kbId
+  })) as AgentKnowledgeDoc[]
 }
 ```
 
@@ -119,6 +124,7 @@ return {
 ### Task 4: Switch Chat State To The Adapter
 
 **Files:**
+
 - Modify: `f:\codes\toolssss\src\renderer\src\views\AgentChat\composables\useAgentChat.ts`
 
 - [ ] **Step 1: Replace direct IPC CRUD calls with adapter calls**
@@ -151,6 +157,7 @@ if (activePythonStream.value) {
 ### Task 5: Switch Knowledge-Base Panel To The Adapter
 
 **Files:**
+
 - Modify: `f:\codes\toolssss\src\renderer\src\components\AgentSettingsPanel.vue`
 
 - [ ] **Step 1: Route knowledge-base CRUD through useAgentBackend()**
@@ -171,6 +178,7 @@ Only knowledge-base document/index operations move behind the backend adapter.
 ### Task 6: Fix Python Startup Config Sync
 
 **Files:**
+
 - Modify: `f:\codes\toolssss\src\main\core\python-server.ts`
 
 - [ ] **Step 1: Mark the Python server running before the first config push**
@@ -191,6 +199,7 @@ if ((status !== 'running' && status !== 'starting') || !pythonPort || !deps) ret
 ### Task 7: Verify The Wiring
 
 **Files:**
+
 - Test: `f:\codes\toolssss\src\renderer\src\utils\python-api.ts`
 - Test: `f:\codes\toolssss\src\renderer\src\views\AgentChat\composables\useAgentChat.ts`
 - Test: `f:\codes\toolssss\src\renderer\src\components\AgentSettingsPanel.vue`
