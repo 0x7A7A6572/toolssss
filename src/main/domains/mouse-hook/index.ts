@@ -1,5 +1,6 @@
 import { BrowserWindow, screen } from 'electron'
 import { join } from 'path'
+import { is } from '@electron-toolkit/utils'
 import { setMouseHookCallback, getPythonPort, getCallbackPort } from '@main-core/python-server'
 
 // =============================================================================
@@ -73,6 +74,8 @@ async function startHook(): Promise<void> {
     if (res && res.running) {
       hookRunning = true
       dbg('全局鼠标钩子已启动')
+      // 预加载覆盖窗口，确保用户首次触发中键时立即可用（无需等待 BrowserWindow 创建和渲染加载）
+      preloadOverlay()
     } else {
       dbg('全局鼠标钩子启动失败（Python 返回 running=false）')
     }
@@ -98,16 +101,16 @@ async function stopHook(): Promise<void> {
 // 全屏透明覆盖窗口
 // =============================================================================
 
-function createOverlay(): void {
+/** 预加载覆盖窗口：创建 BrowserWindow 并加载渲染进程，但保持隐藏。
+ *  在全局鼠标钩子启动后立即调用，确保用户首次触发中键时窗口立即可用。 */
+function preloadOverlay(): void {
   if (!deps) return
   if (overlayWindow && !overlayWindow.isDestroyed()) {
-    dbg('覆盖窗口已存在，showInactive')
-    overlayWindow.showInactive()
-    overlayWindow.setIgnoreMouseEvents(false)
+    dbg('覆盖窗口已存在，无需预加载')
     return
   }
 
-  dbg('创建全屏透明覆盖窗口...')
+  dbg('预加载全屏透明覆盖窗口...')
   const primaryDisplay = screen.getPrimaryDisplay()
   const { x, y, width, height } = primaryDisplay.bounds
   dbg(`覆盖窗口: ${width}x${height} @ (${x}, ${y})`)
@@ -122,7 +125,8 @@ function createOverlay(): void {
     transparent: true,
     resizable: false,
     movable: false,
-    focusable: false,
+    // 待定，会影响触摸事件
+    // focusable: is.dev,
     skipTaskbar: true,
     alwaysOnTop: true,
     hasShadow: false,
@@ -136,6 +140,65 @@ function createOverlay(): void {
 
   overlayWindow.setAlwaysOnTop(true, 'screen-saver', 20)
   overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  // 开发模式：打开 DevTools 方便调试
+  if (is.dev) overlayWindow.webContents.openDevTools({ mode: 'detach' })
+  // 预加载阶段：隐藏窗口并转发鼠标事件，用户触发前不拦截任何操作
+  overlayWindow.setIgnoreMouseEvents(true, { forward: true })
+
+  deps.loadWindow(overlayWindow, { mode: 'mouse-hook-overlay' }).catch(() => null)
+
+  overlayWindow.webContents.once('did-finish-load', () => {
+    overlayReady = true
+    dbg('覆盖窗口预加载完成（隐藏待命）')
+  })
+
+  overlayWindow.on('closed', () => {
+    overlayReady = false
+    overlayWindow = null
+    dbg('覆盖窗口已关闭')
+  })
+}
+
+function createOverlay(): void {
+  if (!deps) return
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    dbg('覆盖窗口已存在，showInactive')
+    overlayWindow.showInactive()
+    overlayWindow.setIgnoreMouseEvents(false)
+    return
+  }
+
+  dbg('覆盖窗口不存在，即时创建（预加载未完成或窗口已销毁）...')
+  const primaryDisplay = screen.getPrimaryDisplay()
+  const { x, y, width, height } = primaryDisplay.bounds
+  dbg(`覆盖窗口: ${width}x${height} @ (${x}, ${y})`)
+
+  overlayWindow = new BrowserWindow({
+    x,
+    y,
+    width,
+    height,
+    show: false,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: false,
+    focusable: is.dev,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    hasShadow: false,
+    backgroundColor: '#00000000',
+    ...(process.platform === 'linux' ? { icon: deps.icon } : {}),
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: true
+    }
+  })
+
+  overlayWindow.setAlwaysOnTop(true, 'screen-saver', 20)
+  overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  // 开发模式：打开 DevTools 方便调试
+  if (is.dev) overlayWindow.webContents.openDevTools({ mode: 'detach' })
 
   deps.loadWindow(overlayWindow, { mode: 'mouse-hook-overlay' }).catch(() => null)
 
@@ -183,7 +246,7 @@ function sendOverlayIpc(event: MouseHookEvent): void {
 function onHookEvent(event: MouseHookEvent): void {
   switch (event.action) {
     case 'start':
-      // 中键松开后触发：创建覆盖窗口，直接进入可点击状态
+      // 中键松开后触发：显示预加载的覆盖窗口，直接进入可点击状态
       createOverlay()
       sendWhenReady(event)
       break

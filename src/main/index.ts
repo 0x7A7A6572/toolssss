@@ -473,6 +473,9 @@ app.whenReady().then(async () => {
     mouseHook.hideOverlay()
     return true
   })
+  ipcMain.on('console:log', (_event, ...args: unknown[]) => {
+    console.log('[renderer]', ...args)
+  })
   ipcMain.handle('sticky-notes:saveDir:choose', async () => {
     const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
     const options: OpenDialogOptions = { properties: ['openDirectory', 'createDirectory'] }
@@ -495,17 +498,17 @@ app.whenReady().then(async () => {
   screen.on('display-removed', () => overlay.ensureWindows())
   screen.on('display-metrics-changed', () => overlay.ensureWindows())
 
-  createWindow()
+  // createWindow()
   updates.init()
   setTimeout(() => {
     void updates.requestCheck()
   }, 3500)
 
-  app.on('activate', function () {
-    // On macOS it's common to re-create a window in the app when the
-    // dock icon is clicked and there are no other windows open.
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
-  })
+  // app.on('activate', function () {
+  //   // On macOS it's common to re-create a window in the app when the
+  //   // dock icon is clicked and there are no other windows open.
+  //   if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  // })
 })
 
 // Quit when all windows are closed, except on macOS. There, it's common

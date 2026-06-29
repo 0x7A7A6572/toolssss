@@ -277,7 +277,7 @@ onBeforeUnmount(() => {
             :disabled="loadingSaved || saved.length === 0"
             @click="clearSaved"
           >
-            <Trash2 :size="16" />
+            <Trash2 :size="26" />
           </button>
           <button
             class="flex px-[6px] py-[4px] rounded-[4px] bg-[#99999933] border-none"
@@ -287,7 +287,7 @@ onBeforeUnmount(() => {
             :disabled="loadingSaved"
             @click="refreshSaved"
           >
-            <RefreshCw :size="16" />
+            <RefreshCw :size="26" />
           </button>
         </div>
       </div>
@@ -297,7 +297,7 @@ onBeforeUnmount(() => {
         暂无截图。点击截图工具条“保存”会自动保存到「截图保存目录」。
       </div>
 
-      <a-timeline v-else mode="right" class="shot-timeline">
+      <a-timeline v-else mode="left" class="shot-timeline">
         <a-timeline-item v-for="group in timelineGroups" :key="group.key">
           <!-- <template #label> -->
           <div class="tl-label">
@@ -305,7 +305,6 @@ onBeforeUnmount(() => {
             <div class="tl-meta">{{ group.count }} 张 · {{ formatSize(group.totalBytes) }}</div>
           </div>
           <!-- </template> -->
-
           <div class="day-grid">
             <div
               v-for="item in group.items"
@@ -449,7 +448,6 @@ onBeforeUnmount(() => {
 .card {
   /* border: 1px solid rgba(255, 255, 255, 0.08); */
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.04);
   padding: 16px;
   display: flex;
   flex-direction: column;
@@ -489,8 +487,9 @@ onBeforeUnmount(() => {
 }
 
 .tl-date {
-  /* font-size: 32px; */
-  font-weight: 800;
+  font-size: 28px;
+  margin-bottom: 10px;
+  /* font-weight: 800; */
   color: rgba(235, 235, 245, 0.86);
   /* text-align: left; */
 }

@@ -2,7 +2,6 @@
 import { ref, onBeforeUnmount, onMounted } from 'vue'
 import type { StickyNote } from '@shared/sticky-notes'
 import { STICKY_NOTES_EVENTS } from '@shared/sticky-notes'
-import { MasonryWall } from '@yeger/vue-masonry-wall'
 import NoteCard from './components/NoteCard.vue'
 import { Plus, StickyNote as StickyNoteIcon } from 'lucide-vue-next'
 import confirm from '../../utils/confirm'
@@ -130,31 +129,25 @@ onBeforeUnmount(() => {
 <template>
   <div class="sticky-notes-page">
     <header class="header">
-      <div>
-        <h1 class="title">我的便签</h1>
-        <span class="sub-title">{{ notes.length }} 条便签</span>
-      </div>
-      <button class="add-btn" @click="addNote"><Plus :size="18" /> 新建便签</button>
+      <span class="title">便签</span>
+      <button class="add-btn" @click="addNote"><Plus :size="14" /></button>
     </header>
 
     <div class="content-area">
-      <MasonryWall :items="notes" :ssr-columns="1" :column-width="280" :gap="16">
-        <template #default="{ item }">
-          <NoteCard
-            :note="item"
-            @update="updateNote"
-            @delete="deleteNote"
-            @fullscreen="openFullscreen"
-          />
-        </template>
-      </MasonryWall>
+      <div v-if="notes.length > 0" class="notes-list">
+        <NoteCard
+          v-for="item in notes"
+          :key="item.id"
+          :note="item"
+          @update="updateNote"
+          @delete="deleteNote"
+          @fullscreen="openFullscreen"
+        />
+      </div>
 
-      <div v-if="notes.length === 0 && !loading" class="empty-state">
-        <div class="empty-icon">
-          <StickyNoteIcon :size="148" />
-        </div>
-        <p>还没有便签</p>
-        <p class="sub-text">点击右上角创建一个吧</p>
+      <div v-else-if="!loading" class="empty-state">
+        <StickyNoteIcon :size="32" />
+        <span>暂无便签</span>
       </div>
     </div>
   </div>
@@ -162,11 +155,10 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .sticky-notes-page {
-  height: 100vh;
+  height: 100%;
   display: flex;
   flex-direction: column;
-
-  color: var(--color-text);
+  color: rgba(235, 235, 245, 0.85);
   overflow: hidden;
 }
 
@@ -174,53 +166,51 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 32px;
+  padding: 12px 12px 8px;
   flex-shrink: 0;
 }
 
 .title {
-  font-size: 28px;
+  font-size: 15px;
   font-weight: 700;
-  letter-spacing: -0.5px;
-}
-
-.sub-title {
-  font-size: 14px;
-  font-weight: 400;
-  opacity: 0.7;
+  letter-spacing: -0.3px;
 }
 
 .add-btn {
-  background: var(--ev-c-theme);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  padding: 8px 16px;
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(235, 235, 245, 0.7);
   cursor: pointer;
-  font-weight: 600;
-  font-size: 14px;
-  transition: background-color 0.2s;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s;
 }
 
 .add-btn:hover {
-  background: #2563eb; /* Blue-600 */
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.3);
 }
 
 .content-area {
   flex: 1;
   overflow-y: auto;
-  padding-bottom: 40px;
-  /* Hide scrollbar for cleaner look */
+  padding: 0 8px 12px;
   scrollbar-width: none;
-  padding-top: 20px;
 }
 
 .content-area::-webkit-scrollbar {
   display: none;
+}
+
+.notes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .empty-state {
@@ -228,18 +218,10 @@ onBeforeUnmount(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 60%;
-  opacity: 0.6;
-}
-
-.empty-icon {
-  font-size: 48px;
-  margin-bottom: 16px;
-}
-
-.sub-text {
-  font-size: 14px;
-  margin-top: 8px;
-  opacity: 0.7;
+  gap: 8px;
+  height: 100%;
+  opacity: 0.4;
+  font-size: 13px;
+  color: rgba(235, 235, 245, 0.6);
 }
 </style>

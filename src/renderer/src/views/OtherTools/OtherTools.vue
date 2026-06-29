@@ -226,36 +226,36 @@ const BUILTIN_MODULE_LABELS: Record<
 const moduleVisibility = reactive<Record<string, boolean>>(loadBuiltinModuleVisibility())
 const moduleVisibilityDrawerOpen = ref(false)
 
-const addBtnVisible = ref(false)
-let addBtnHideTimer: number | null = null
+// const addBtnVisible = ref(false)
+// let addBtnHideTimer: number | null = null
 
-function onPageMouseMove(e: MouseEvent): void {
-  const viewportHeight = window.innerHeight
-  const threshold = viewportHeight * 0.7
-  if (e.clientY >= threshold) {
-    if (addBtnHideTimer !== null) {
-      window.clearTimeout(addBtnHideTimer)
-      addBtnHideTimer = null
-    }
-    addBtnVisible.value = true
-  } else {
-    if (addBtnVisible.value) {
-      scheduleAddBtnHide()
-    }
-  }
-}
+// function onPageMouseMove(e: MouseEvent): void {
+//   const viewportHeight = window.innerHeight
+//   const threshold = viewportHeight * 0.7
+//   if (e.clientY >= threshold) {
+//     if (addBtnHideTimer !== null) {
+//       window.clearTimeout(addBtnHideTimer)
+//       addBtnHideTimer = null
+//     }
+//     addBtnVisible.value = true
+//   } else {
+//     if (addBtnVisible.value) {
+//       scheduleAddBtnHide()
+//     }
+//   }
+// }
 
-function onPageMouseLeave(): void {
-  scheduleAddBtnHide()
-}
+// function onPageMouseLeave(): void {
+//   scheduleAddBtnHide()
+// }
 
-function scheduleAddBtnHide(): void {
-  if (addBtnHideTimer !== null) return
-  addBtnHideTimer = window.setTimeout(() => {
-    addBtnVisible.value = false
-    addBtnHideTimer = null
-  }, 300)
-}
+// function scheduleAddBtnHide(): void {
+//   if (addBtnHideTimer !== null) return
+//   addBtnHideTimer = window.setTimeout(() => {
+//     addBtnVisible.value = false
+//     addBtnHideTimer = null
+//   }, 300)
+// }
 
 function loadBuiltinModuleVisibility(): Record<string, boolean> {
   try {
@@ -1177,7 +1177,8 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="page-content" @mousemove="onPageMouseMove" @mouseleave="onPageMouseLeave">
+  <!-- @mousemove="onPageMouseMove" @mouseleave="onPageMouseLeave" -->
+  <div class="page-content">
     <header class="header">
       <div class="flex flex-col">
         <div class="title">Hello</div>
@@ -1551,13 +1552,13 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div
+    <!-- <div
       class="add-btn-float"
       :class="{ 'show-in': addBtnVisible && !anyModuleExpanded }"
       @click="!anyModuleExpanded && openAddModuleDialog()"
     >
       <Plus :size="24" />
-    </div>
+    </div> -->
   </div>
 
   <a-modal :open="cityPickerOpen" centered :footer="null" @cancel="closeCityPicker">
@@ -1648,9 +1649,9 @@ onUnmounted(() => {
           </transition>
         </div>
       </div>
-      <div class="picker-actions mt-[10px]">
+      <!-- <div class="picker-actions mt-[10px]">
         <a-button @click="closeCityPicker">关闭</a-button>
-      </div>
+      </div> -->
     </div>
   </a-modal>
 
@@ -1841,6 +1842,9 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 4px;
   padding: 8px 0;
+  background: #1a3764;
+  border-radius: 99px;
+  height: fit-content;
 }
 
 .letter-btn {
@@ -2102,7 +2106,9 @@ onUnmounted(() => {
 .card {
   /* border: 1px solid rgba(255, 255, 255, 0.08); */
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.04);
+  // background: rgba(255, 255, 255, 0.04);
+  background: rgba(44, 44, 44, 0.9);
+
   padding: 16px;
   display: flex;
   flex-direction: column;
@@ -2332,7 +2338,7 @@ onUnmounted(() => {
 }
 
 .work-calendar-card {
-  width: min(360px, 100%);
+  // width: min(360px, 100%);
   height: 230px;
   align-self: flex-start;
   padding: 14px;
@@ -2719,7 +2725,8 @@ onUnmounted(() => {
 .block {
   position: relative;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.03);
+  // background: rgba(255, 255, 255, 0.03);
+  background: rgba(44, 44, 44, 0.877);
   padding: 12px;
   display: flex;
   flex-direction: column;

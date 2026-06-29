@@ -79,12 +79,16 @@ function createStickyEditorWindow(noteId: string): void {
     movable: true,
     fullscreen: false,
     skipTaskbar: true,
+    alwaysOnTop: true,
     backgroundColor: '#111827',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true
     }
   })
+  // 设置比 overlay 窗口更高的层级（overlay 为 screen-saver + 20），确保编辑窗在覆盖层之上
+  win.setAlwaysOnTop(true, 'screen-saver', 21)
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
 
   try {
     win.webContents.closeDevTools()

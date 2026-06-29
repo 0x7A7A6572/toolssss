@@ -29,7 +29,7 @@ async function bootstrap(): Promise<void> {
 
   const app = createApp(App).use(Antd).use(AntDesignX)
 
-  if (mode === 'main') {
+  if (mode === 'main' || mode === 'mouse-hook-overlay') {
     const m = await import('./router')
     app.use(m.default)
   }

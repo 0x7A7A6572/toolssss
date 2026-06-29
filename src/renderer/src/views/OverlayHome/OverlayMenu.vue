@@ -1,14 +1,15 @@
 <template>
-  <div v-show="visible" ref="menuRef" class="overlay-menu-wrapper" :style="menuStyle">
-    <div class="text-white">
-      ???
-      <image class="w-[30px] h-[30px]" src="/resources/icon.png" mode="scaleToFill" />
+  <div @click.stop>
+    <div v-show="visible" ref="menuRef" class="overlay-menu-wrapper" :style="menuStyle">
+      <div class="p-[4px]">
+        <img class="w-[30px] h-[30px]" src="../../assets/images/icon.png" mode="scaleToFill" />
+      </div>
+      <a-menu mode="vertical" :overflowed-indicator="null" @select="onSelect" @click="handleClick">
+        <MenuItemRenderer v-for="tab in tabs" :key="tab.id" :item="tab" />
+      </a-menu>
     </div>
-    <a-menu mode="vertical" :overflowed-indicator="null" @click="handleClick">
-      <MenuItemRenderer v-for="tab in tabs" :key="tab.id" :item="tab" />
-    </a-menu>
+    <div v-if="visible" class="menu-overlay" @click.stop="close"></div>
   </div>
-  <div v-if="visible" class="menu-overlay" @click.stop="close"></div>
 </template>
 <script lang="ts" setup>
 import { nextTick, onMounted, reactive, ref, watch } from 'vue'
@@ -41,7 +42,7 @@ const props = defineProps<{
   show: boolean
 }>()
 
-const emits = defineEmits(['update:show'])
+const emits = defineEmits(['update:show', 'select'])
 
 const visible = ref(props.show)
 
@@ -62,25 +63,25 @@ const tabs: TabItem[] = [
     label: '智能体',
     showTitle: false,
     path: '/agents',
-    icon: MessageSquareMore,
-    children: [
-      { id: 'AgentChat-Dialog', label: '对话', path: '/agents/dialog', icon: MessageSquareMore },
-      {
-        id: 'AgentChat-Knowledge',
-        label: '知识库',
-        path: '/agents/knowledge',
-        icon: MessageSquareMore,
-        children: [
-          {
-            id: 'AgentChat-Dialog',
-            label: '对话',
-            path: '/agents/dialog',
-            icon: MessageSquareMore
-          },
-          { id: 'AgentChat-Dialog', label: '对话', path: '/agents/dialog', icon: MessageSquareMore }
-        ]
-      }
-    ]
+    icon: MessageSquareMore
+    // children: [
+    //   { id: 'AgentChat-Dialog阿萨, label: '对话', path: '/agents/dialog', icon: MessageSquareMore },
+    //   {
+    //     id: 'AgentChat-Knowle阿萨ge',
+    //     label: '知识库',
+    //     path: '/agents/knowle阿萨ge',
+    //     icon: MessageSquareMo阿萨e,
+    //     children: [
+    //       {
+    //         id: 'AgentChat-Dialog',
+    //         label: '对话',
+    //         path: '/agents/dialog',
+    //         icon: MessageSquareMore
+    //       },
+    //       { id: 'AgentChat-Dialog', label: '对话', path: '/agents/dialog', icon: MessageSquareMore }
+    //     ]
+    //   }
+    // ]
   },
 
   { id: 'StickyNotes', showTitle: false, label: '便签', path: '/sticky-notes', icon: StickyNote },
@@ -136,6 +137,24 @@ const menuStyle = reactive<Record<string, string>>({
   visibility: 'hidden'
 })
 
+/** 递归查找菜单项 */
+function findTabById(items: TabItem[], id: string): TabItem | null {
+  for (const item of items) {
+    if (item.id === id) return item
+    if (item.children) {
+      const found = findTabById(item.children, id)
+      if (found) return found
+    }
+  }
+  return null
+}
+
+function onSelect({ item, key, selectedKeys }): void {
+  console.log('select', item, key, selectedKeys)
+  const tab = findTabById(tabs, key as string)
+  emits('select', { item, key, selectedKeys, path: tab?.path ?? '' })
+}
+
 const PADDING = 8
 
 function computePosition(): void {
@@ -175,6 +194,7 @@ function handleClick(e: { key: string }): void {
 .overlay-menu-wrapper {
   z-index: 11;
   position: relative;
+  background: #141414;
 }
 
 .ant-menu {

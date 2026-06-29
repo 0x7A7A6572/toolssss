@@ -568,14 +568,15 @@ function openLink(url: string): void {
 <style lang="scss" scoped>
 .card {
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.04);
+  background: rgb(39, 39, 39);
+  // background: rgba(255, 255, 255, 0.04);
   padding: 14px;
   display: flex;
   flex-direction: column;
   gap: 10px;
   position: relative;
   z-index: 1;
-  width: min(360px, 100%);
+  // width: min(360px, 100%);
   min-height: 180px;
   align-self: flex-start;
 }
