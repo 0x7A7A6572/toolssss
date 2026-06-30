@@ -6,13 +6,17 @@ AI API 调用封装 —— 流式/非流式文本生成
 """
 
 import logging
+import asyncio
+
 from typing import AsyncIterator, Optional
 
 from langchain_core.messages import AIMessageChunk, BaseMessage
 from langchain_openai import ChatOpenAI
 
-from app.config import AiSettings
+from app.configs.ai import AiModel, AiConfig
+from app.configs.main import get_config
 from app.core.exceptions import AiServiceError
+from app.domains.ai.service import ai_model_service
 
 logger = logging.getLogger(__name__)
 
@@ -43,17 +47,21 @@ def normalize_base_url(base_url: str) -> str:
 
 
 def create_chat_model(
-    config: AiSettings,
-    api_key: str,
     temperature: float = 0.7,
     max_tokens: Optional[int] = None,
 ) -> ChatOpenAI:
+    
+    ai_model = ai_model_service.get_use_model()
+    if ai_model is None:
+        raise AiServiceError("未配置可用的 AI 模型")
+
+
     """创建 LangChain ChatOpenAI 实例"""
     kwargs = {
-        "model": config.model,
-        "api_key": api_key,
+        "model": ai_model.model_id,
+        "api_key": ai_model.api_key,
         "temperature": temperature,
-        "base_url": normalize_base_url(config.base_url),
+        "base_url": normalize_base_url(ai_model.base_url),
         "stream_usage": False,  # 兼容非 OpenAI 提供商
     }
 
@@ -61,7 +69,7 @@ def create_chat_model(
     # langchain-openai 1.3.x rewrites explicit `max_tokens=` into
     # `max_completion_tokens`, which breaks DeepSeek compatibility.
     if max_tokens is not None:
-        if config.provider == "deepseek":
+        if ai_model.provider == "deepseek":
             kwargs["extra_body"] = {"max_tokens": max_tokens}
         else:
             kwargs["max_tokens"] = max_tokens
@@ -112,7 +120,6 @@ async def invoke_text(
     Raises:
         AiServiceError: AI 未返回有效内容时
     """
-    import asyncio
 
     if signal and signal.is_set():
         raise AiServiceError("请求已被取消")

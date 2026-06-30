@@ -130,7 +130,9 @@ onBeforeUnmount(() => {
   <div class="sticky-notes-page">
     <header class="header">
       <span class="title">便签</span>
-      <button class="add-btn" @click="addNote"><Plus :size="14" /></button>
+      <button class="icon-btn round-hover" @click="addNote">
+        <Plus :size="30" />
+      </button>
     </header>
 
     <div class="content-area">
@@ -153,7 +155,7 @@ onBeforeUnmount(() => {
   </div>
 </template>
 
-<style scoped>
+<style lang="scss" scoped>
 .sticky-notes-page {
   height: 100%;
   display: flex;
@@ -171,7 +173,7 @@ onBeforeUnmount(() => {
 }
 
 .title {
-  font-size: 15px;
+  font-size: 20px;
   font-weight: 700;
   letter-spacing: -0.3px;
 }
@@ -180,8 +182,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+
   border-radius: 6px;
   border: 1px solid rgba(255, 255, 255, 0.15);
   background: rgba(255, 255, 255, 0.06);

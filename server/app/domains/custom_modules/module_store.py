@@ -17,9 +17,11 @@ from typing import Optional
 from app.models.custom_modules import CustomModuleCache, CustomModuleConfig
 
 
-def generate_id(prefix: str) -> str:
+def generate_id(prefix: str = "Node") -> str:
     """生成唯一 ID"""
-    return f"{prefix}-{int(time.time() * 1000)}-{uuid.uuid4().hex[:6]}"
+    if prefix:
+        prefix += "-"
+    return f"{prefix}{int(time.time())}{uuid.uuid4().hex[:6]}"
 
 
 def _now_ms() -> float:

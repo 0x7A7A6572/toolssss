@@ -12,7 +12,8 @@ from typing import AsyncIterator, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.config import AppConfig
+# from app.config import AppConfig
+from app.configs.main import get_config
 from app.core.ai_client import create_chat_model
 from app.core.exceptions import NotFoundError
 from app.domains.custom_modules.module_store import ModuleStore, generate_id, _now_ms
@@ -91,16 +92,8 @@ def _build_system_prompt(module_type: str, enable_markdown: bool = False) -> str
     return SYSTEM_PROMPTS.get(module_type, SYSTEM_PROMPTS["text"])
 
 
-def _build_max_tokens(module_type: str, web_search: bool = False) -> int:
-    """根据模块类型决定 max_tokens"""
-    base = 16384
-    return base * 2 if web_search else base
-
-
 async def run_module_stream(
     *,
-    config: AppConfig,
-    api_key: str,
     module_type: str,
     prompt: str,
     web_search: bool = False,
@@ -116,6 +109,8 @@ async def run_module_stream(
     - {"type": "done", "text": str, "search_meta": Optional[SearchMeta]}
     - {"type": "error", "message": str}
     """
+
+    config = get_config().ai_config
     try:
         final_prompt = prompt
         search_meta: Optional[SearchMeta] = None
@@ -168,12 +163,10 @@ async def run_module_stream(
             HumanMessage(content=final_prompt),
         ]
 
-        # 3. 流式生成
+        # 3. 消息生成
         model = create_chat_model(
-            config=config.ai,
-            api_key=api_key,
             temperature=0.7,
-            max_tokens=_build_max_tokens(module_type, web_search),
+            max_tokens= 10244,
         )
 
         full_text = ""
@@ -201,8 +194,6 @@ async def run_module_stream(
 
 
 async def enhance_prompt(
-    config: AppConfig,
-    api_key: str,
     title: str,
     prompt: str,
     module_type: str,
@@ -227,8 +218,6 @@ async def enhance_prompt(
     ]
 
     model = create_chat_model(
-        config=config.ai,
-        api_key=api_key,
         temperature=0.5,
         max_tokens=600,
     )
@@ -446,7 +435,7 @@ class ModuleService:
     def create_module(self, data: ModuleCreateRequest) -> CustomModuleConfig:
         now = _now_ms()
         module = CustomModuleConfig(
-            id=generate_id("cm"),
+            id=generate_id(),
             name=data.name,
             type=data.type,
             prompt=data.prompt,

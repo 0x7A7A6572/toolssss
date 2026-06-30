@@ -9,13 +9,19 @@ from typing import Literal, Optional, Union
 from pydantic import BaseModel, Field
 
 
-class ModuleStreamRequest(BaseModel):
-    """自定义模块流式生成请求"""
+class ModuleRequest(BaseModel):
+    """模块请求"""
     module_id: str
-    type: str = "text"  # "text" | "ranking" | "link" | "chart"
     prompt: str
     web_search: bool = False
+
+
+class ModuleStreamRequest(ModuleRequest):
+    """自定义模块流式生成请求"""
+    type: str = "text"  # "text" | "ranking" | "link" | "chart"
     enable_markdown: bool = False
+
+
 
 
 class ModuleCancelRequest(BaseModel):

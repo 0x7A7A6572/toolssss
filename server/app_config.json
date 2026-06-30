@@ -6,19 +6,21 @@
     "debug": false
   },
   "ai": {
-    "model": {
-      "name": "",
-      "base_url": "",
-      "api_key": "",
-      "model_id": "",
-      "model_type": "llm",
-      "provider": "custom",
-      "settings": {
+    "models": [
+      {
+        "name": "DeepSeek · deepseek-v4-flash",
+        "base_url": "https://api.deepseek.com",
+        "api_key": "sk-dc3bfd10db634cf7b52382d4a438bb8a",
+        "model_id": "deepseek-v4-flash",
         "model_type": "llm",
-        "temperature": 0.7,
-        "max_tokens": 4096,
-        "detail": "auto"
+        "provider": "deepseek",
+        "settings": {
+          "model_type": "llm",
+          "temperature": 0.7,
+          "max_tokens": 4096,
+          "detail": "auto"
+        }
       }
-    }
+    ]
   }
 }

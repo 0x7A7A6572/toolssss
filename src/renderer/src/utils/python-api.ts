@@ -234,8 +234,81 @@ export const knowledgeBaseApi = {
 }
 
 // =============================================================================
-// 自定义模块 API
+// AI 模型 API
 // =============================================================================
+
+/** Python 端 AiModel 的字段名（snake_case），经 normalize 后转为 camelCase */
+export interface AiModelInfo {
+  modelId: string
+  name: string
+  provider: string
+  baseUrl: string
+  apiKey: string
+  modelType: string
+  settings: Record<string, unknown>
+}
+
+/** 服务商信息 */
+export interface ProviderInfo {
+  provider: string
+  title: string
+  baseUrl: string
+  models: string[]
+}
+
+export const aiModelApi = {
+  /** 获取服务商列表 */
+  listProviders(): Promise<ProviderInfo[]> {
+    return get<ProviderInfo[]>('/api/ai/providers')
+  },
+
+  /** 获取模型列表 */
+  list(): Promise<AiModelInfo[]> {
+    return get<unknown[]>('/api/ai').then((rows) =>
+      Array.isArray(rows) ? rows.map(normalizeAiModel) : []
+    )
+  },
+
+  /** 获取单个模型 */
+  get(modelId: string): Promise<AiModelInfo> {
+    return get<unknown>(`/api/ai/${modelId}`).then(normalizeAiModel)
+  },
+
+  /** 创建模型 */
+  create(data: {
+    name: string
+    provider: string
+    baseUrl: string
+    apiKey: string
+    modelId: string
+    modelType: string
+  }): Promise<AiModelInfo> {
+    return post<unknown>('/api/ai', denormalizeAiModel(data)).then(normalizeAiModel)
+  },
+
+  /** 更新模型（全量替换，apiKey 为空则保留原值） */
+  update(
+    modelId: string,
+    data: {
+      name: string
+      provider: string
+      baseUrl: string
+      apiKey: string
+      modelId: string
+      modelType: string
+    }
+  ): Promise<AiModelInfo> {
+    return requestJson<unknown>(`/api/ai/${modelId}`, {
+      method: 'PUT',
+      body: denormalizeAiModel(data)
+    }).then(normalizeAiModel)
+  },
+
+  /** 删除模型 */
+  async delete(modelId: string): Promise<void> {
+    await requestVoid(`/api/ai/${modelId}`, { method: 'DELETE' })
+  }
+}
 
 export const moduleApi = {
   /** Prompt 增强 */
@@ -302,7 +375,7 @@ export const moduleApi = {
    * 监听 'delta' 获取增量文本，'done' 获取最终结果，'error' 获取错误。
    */
   async refreshStream(
-    moduleId: string,
+    cardId: string,
     type: string,
     prompt: string,
     webSearch: boolean = false,
@@ -312,7 +385,7 @@ export const moduleApi = {
     const res = await request('/api/modules/stream', {
       method: 'POST',
       body: {
-        module_id: moduleId,
+        module_id: cardId,
         type,
         prompt,
         web_search: webSearch,
@@ -613,7 +686,7 @@ function createEventSourceFromReader(
         if (done) break
 
         buffer += decoder.decode(value, { stream: true })
-        const blocks = buffer.split('\n\n')
+        const blocks = buffer.split(/\r?\n\r?\n/)
         buffer = blocks.pop() || ''
         for (const block of blocks) {
           processEventBlock(block)
@@ -626,6 +699,34 @@ function createEventSourceFromReader(
 
   read()
   return source
+}
+
+// =============================================================================
+// AI 模型 normalize / denormalize
+// =============================================================================
+
+function normalizeAiModel(raw: unknown): AiModelInfo {
+  const item = asRecord(raw)
+  return {
+    modelId: asString(item.model_id ?? item.modelId ?? item.id),
+    name: asString(item.name),
+    provider: asString(item.provider),
+    baseUrl: asString(item.base_url ?? item.baseUrl),
+    apiKey: asString(item.api_key ?? item.apiKey),
+    modelType: asString(item.model_type ?? item.modelType) || 'llm',
+    settings: asRecord(item.settings)
+  }
+}
+
+function denormalizeAiModel(data: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  if (data.name !== undefined) out.name = data.name
+  if (data.provider !== undefined) out.provider = data.provider
+  if (data.baseUrl !== undefined) out.base_url = data.baseUrl
+  if (data.apiKey !== undefined) out.api_key = data.apiKey
+  if (data.modelId !== undefined) out.model_id = data.modelId
+  if (data.modelType !== undefined) out.model_type = data.modelType
+  return out
 }
 
 // =============================================================================

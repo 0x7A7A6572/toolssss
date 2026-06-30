@@ -5,13 +5,6 @@ import { join } from 'path'
 import { BrowserWindow, clipboard, ipcMain, screen } from 'electron'
 import type { AppSettings } from '@shared/settings'
 import { TRANSLATOR_EVENTS, type TranslatePayload, type TranslateResult } from '@shared/translator'
-import { SystemMessage, HumanMessage } from '@langchain/core/messages'
-import {
-  createChatModel,
-  resolveAiModelConfig,
-  resolveApiKey,
-  invokeText
-} from '@main-core/ai-service'
 
 const execAsync = promisify(exec)
 
@@ -282,68 +275,11 @@ export function createTranslatorDomain(deps: Deps): {
     }
   }
 
-  const trimAiTranslateText = (text: string): string => {
-    const t = text.replace(/\r\n/g, '\n').trim()
-    if (t.length <= 12000) return t
-    return t.slice(0, 12000).trimEnd()
-  }
-
-  const translateWithAi = async (
-    settings: AppSettings,
-    args: { text: string; source: string; target: string }
-  ): Promise<string> => {
-    const sourceLabel = args.source && args.source !== 'auto' ? args.source : 'auto'
-    const target = args.target
-    if (!target) throw new Error('未指定目标语言')
-
-    const config = resolveAiModelConfig(settings)
-    const apiKey = resolveApiKey(config.profileId)
-    const model = createChatModel(config, apiKey, {
-      temperature: 0.1,
-      maxTokens: 2000
-    })
-    const messages = [
-      new SystemMessage('你是一个翻译引擎。只输出译文，不要解释，不要加引号。保留原文换行与格式。'),
-      new HumanMessage(
-        `请把下面内容翻译成目标语言。\n` +
-          `源语言：${sourceLabel === 'auto' ? '自动检测' : sourceLabel}\n` +
-          `目标语言：${target}\n` +
-          `内容：\n` +
-          args.text
-      )
-    ]
-
-    const controller = new AbortController()
-    const timeoutMs = 45000
-    const timeout = setTimeout(() => controller.abort(), timeoutMs)
-    try {
-      const content = await invokeText(model, messages, controller.signal)
-      return trimAiTranslateText(content)
-    } catch (e) {
-      const name =
-        e &&
-        typeof e === 'object' &&
-        'name' in e &&
-        typeof (e as { name?: unknown }).name === 'string'
-          ? ((e as { name: string }).name as string)
-          : ''
-      if (name === 'AbortError')
-        throw new Error(`AI 翻译超时（${Math.round(timeoutMs / 1000)}秒），请稍后重试`)
-      throw e
-    } finally {
-      clearTimeout(timeout)
-    }
-  }
-
   const translate = async (payload: TranslatePayload): Promise<TranslateResult> => {
     const settings = deps.getSettings()
     const cfg = resolveTranslateConfig(settings, payload)
     const text = cfg.text.trim()
     if (!text) return { text: '' }
-    if (cfg.provider === 'ai') {
-      const out = await translateWithAi(settings, { text, source: cfg.source, target: cfg.target })
-      return { text: out }
-    }
     if (cfg.provider === 'bing') {
       const out = await translateWithBing({
         baseUrl: settings.translate.bing.baseUrl,

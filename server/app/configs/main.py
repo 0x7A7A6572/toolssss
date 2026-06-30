@@ -5,6 +5,7 @@
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Optional
 
 from app.configs.ai import AiConfig
 from app.configs.base import BaseConfig
@@ -25,7 +26,6 @@ class AppConfig:
 
     base_config: BaseConfig = field(default_factory=BaseConfig)
     ai_config: AiConfig = field(default_factory=AiConfig)
-
 
     def update_setting(self):
         """将当前配置存储到本地 JSON 文件"""
@@ -61,3 +61,17 @@ class AppConfig:
             pass
 
         return config
+    
+    
+_current: Optional["AppConfig"] = None
+
+def init_config() -> "AppConfig":
+    global _current
+    _current = AppConfig.load_from_file()
+    return _current
+
+def get_config() -> "AppConfig":
+    if _current is None:
+        raise RuntimeError("Config not initialized. Call init_config() first.")
+    return _current
+

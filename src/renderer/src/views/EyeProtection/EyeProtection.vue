@@ -122,10 +122,10 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="page-content">
-    <header class="header">
+    <!-- <header class="header">
       <div class="title">护眼工具</div>
       <div class="subtitle">屏幕护眼遮罩 + 全屏提醒</div>
-    </header>
+    </header> -->
 
     <section class="card">
       <div class="card-head">

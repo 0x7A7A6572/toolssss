@@ -76,9 +76,14 @@ onUnmounted(() => {
     <Transition name="modal-fade">
       <div v-if="open" class="module-dialog-overlay" @click="onOverlayClick">
         <div class="modal-header mb-[20px] pt-[10vh]">
-          <div class="flex items-center gap-[10px]">
-            <div class="bg-[#a0c5f3] w-[4px] h-[15px]"></div>
-            <span class="modal-title">{{ currentRoute?.name }}</span>
+          <div class="flex items-start gap-[10px]">
+            <!-- <div class="bg-[#a0c5f3] w-[4px] h-[15px]"></div> -->
+            <div class="modal-title">
+              <span class="title-text"> {{ currentRoute?.meta?.title }}</span>
+              <div class="sub-title">
+                {{ currentRoute.name }}
+              </div>
+            </div>
           </div>
 
           <div class="modal-header-actions">
@@ -110,7 +115,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  width: 100vw;
+  width: 80vw;
   position: sticky;
   top: 0;
   /* 半透明背景是 backdrop-filter 毛玻璃效果的关键 —— 它提供了可见的"玻璃"表面 */
@@ -131,8 +136,36 @@ onUnmounted(() => {
 }
 
 .modal-title {
-  font-size: 35px;
+  font-size: 30px;
   font-weight: 700;
+  line-height: 30px;
+
+  .title-text {
+    font-size: 30px;
+    font-weight: 700;
+    line-height: 30px;
+    position: relative;
+
+    /** 底部渐变横线 */
+    &::after {
+      content: '';
+      position: absolute;
+      left: 0;
+      bottom: -4px;
+      width: 100%;
+      height: 4px;
+      background: linear-gradient(to right, #a0c5f3 80%, transparent 100%);
+    }
+  }
+
+  .sub-title {
+    font-size: 26px;
+    line-height: 20px;
+    font-weight: 700;
+    /** 大写 */
+    text-transform: uppercase;
+    color: rgba(235, 235, 245, 0.123);
+  }
 }
 
 .modal-header-actions {
@@ -295,7 +328,7 @@ onUnmounted(() => {
 .module-dialog-content {
   padding: 0 15vh 15vh 15vh;
   box-sizing: border-box;
-  width: 100vw;
+  width: 70vw;
   height: 100vh;
 }
 </style>

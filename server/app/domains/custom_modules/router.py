@@ -143,11 +143,6 @@ async def module_stream(body: ModuleStreamRequest, request: Request):
     if not body.prompt:
         raise ValidationError("提示词不能为空")
 
-    config = request.app.state.config
-    api_key = config.api_key
-    if not api_key:
-        raise ValidationError("未配置 AI API Key")
-
     svc = _get_module_service(request)
 
     stream_id = _generate_id()
@@ -159,8 +154,6 @@ async def module_stream(body: ModuleStreamRequest, request: Request):
         done_search_meta = None
         try:
             async for event in run_module_stream(
-                config=config,
-                api_key=api_key,
                 module_type=body.type,
                 prompt=body.prompt,
                 web_search=body.web_search,
@@ -253,7 +246,6 @@ async def module_stream(body: ModuleStreamRequest, request: Request):
             _active_module_streams.pop(stream_id, None)
 
     return EventSourceResponse(event_generator())
-
 
 @router.post("/cancel")
 async def module_cancel(body: ModuleCancelRequest):

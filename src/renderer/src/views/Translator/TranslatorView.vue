@@ -45,10 +45,6 @@ const canTranslate = computed(() => inputText.value.trim().length > 0 && !loadin
 const missingConfigHint = computed(() => {
   const s = settings.value
   if (s.translate.provider === 'ai') {
-    if (!s.ai.enabled) return 'AI 未启用，请到「全局设置」开启。'
-    if (!s.ai.baseUrl.trim()) return '未配置 AI Base URL，请到「全局设置」完善。'
-    if (!s.ai.model.trim()) return '未配置 AI Model，请到「全局设置」完善。'
-    if (!s.ai.apiKeySet) return '未配置 AI API Key，请到「全局设置」完善。'
     return ''
   }
   if (s.translate.provider === 'bing') {
@@ -154,10 +150,10 @@ onMounted(() => {
 
 <template>
   <div class="page-content">
-    <header class="header">
+    <!-- <header class="header">
       <div class="title">快捷翻译</div>
       <div class="subtitle">手动输入翻译 + 全局划词快捷键</div>
-    </header>
+    </header> -->
 
     <section class="card">
       <div class="row">

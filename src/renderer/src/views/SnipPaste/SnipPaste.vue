@@ -255,7 +255,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="page-content">
-    <header class="header">
+    <!-- <header class="header">
       <div class="header-row">
         <div class="header-left">
           <div class="title">截屏贴图</div>
@@ -263,7 +263,7 @@ onBeforeUnmount(() => {
         </div>
         <a-button type="primary" @click="helpOpen = true">说明</a-button>
       </div>
-    </header>
+    </header> -->
 
     <section class="card">
       <div class="card-head">

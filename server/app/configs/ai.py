@@ -7,32 +7,53 @@ AI_PROVIDER = {
     "openai": {
       "base_url": "https://api.openai.com/v1",
       "provider": "openai",
+      "title": "OpenAI",
+      "models": ["gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini"],
     },
     "google": {
       "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
       "provider": "google",
+      "title": "Google Gemini",
+      "models": ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.0-flash"],
     },
     "kimi": {
       "base_url": "https://api.moonshot.cn/v1",
       "provider": "kimi",
+      "title": "Kimi (Moonshot)",
+      "models": ["moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"],
     },
     "anthropic": {
       "base_url": "https://api.anthropic.com/v1",
       "provider": "anthropic",
+      "title": "Anthropic",
+      "models": ["claude-sonnet-4-6", "claude-opus-4-8", "claude-haiku-4-5"],
     },
     "deepseek": {
       "base_url": "https://api.deepseek.com",
       "provider": "deepseek",
+      "title": "DeepSeek",
+      "models": ["deepseek-v4-flash", "deepseek-v4-pro"],
     },
     "qwen": {
       "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
       "provider": "qwen",
+      "title": "Qwen",
+      "models": ["qwen2.5-7b-instruct", "qwen2.5-32b-instruct", "qwen2.5-72b-instruct"],
     },
     "custom": {
       "base_url": "",
       "provider": "custom",
+      "title": "自定义",
+      "models": [],
     }
 }
+
+class ProviderInfo(BaseModel):
+    """服务商信息"""
+    provider: str
+    title: str
+    base_url: str
+    models: list[str]
 
 
 class LLMSettings(BaseModel):
@@ -53,18 +74,17 @@ class EmbeddingSettings(BaseModel):
 class AiModel(BaseModel):
     """AI 模型"""
 
-    name: str = Field(default="") # 自定义名称
+    name: str = Field(default="", min_length=1, description="自定义名称")
     base_url: str = Field(default="")
     api_key: str = Field(default="")
-    model_id: str = Field(default="")
-    model_type: AI_MODEL_TYPE = Field(default="llm") # 模型类型
-    provider: str = Field(default="custom") # 提供商
+    model_id: str = Field(default="", min_length=1, description="模型 ID")
+    model_type: AI_MODEL_TYPE = Field(default="llm")
+    provider: str = Field(default="custom")
     settings: LLMSettings | EmbeddingSettings = Field(default_factory=LLMSettings)
-    
-    
 
 
 class AiConfig(BaseModel):
     """全局 AI 配置"""
-    
-    model: AiModel = Field(default_factory=AiModel)  # 当前模型
+
+    models: list[AiModel] = Field(default_factory=list)
+

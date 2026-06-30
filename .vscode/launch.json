@@ -2,6 +2,40 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "Attach to Python Server",
+      "type": "debugpy",
+      "request": "attach",
+      "connect": {
+        "host": "127.0.0.1",
+        "port": 5678
+      },
+      "pathMappings": [
+        {
+          "localRoot": "${workspaceFolder}/server",
+          "remoteRoot": "${workspaceFolder}/server"
+        }
+      ],
+      "justMyCode": false
+    },
+    {
+      "name": "Debug Python Server (Standalone)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": [
+        "main:create_app",
+        "--factory",
+        "--host", "127.0.0.1",
+        "--port", "8710",
+        "--log-level", "debug"
+      ],
+      "cwd": "${workspaceFolder}/server",
+      "env": {
+        "FS_DEBUG": "1"
+      },
+      "justMyCode": false
+    },
+    {
       "name": "Debug Main Process",
       "type": "node",
       "request": "launch",
@@ -12,7 +46,13 @@
       },
       "runtimeArgs": ["--sourcemap"],
       "env": {
-        "REMOTE_DEBUGGING_PORT": "9222"
+        "REMOTE_DEBUGGING_PORT": "9222",
+        "FS_DEBUG_PORT": "5678"
+      },
+      "serverReadyAction": {
+        "pattern": "\\[debugpy\\] 监听端口 (\\d+)",
+        "action": "startDebugging",
+        "name": "Attach to Python Server"
       }
     },
     {
@@ -29,7 +69,7 @@
   ],
   "compounds": [
     {
-      "name": "Debug All",
+      "name": "Debug All (Electron + Python)",
       "configurations": ["Debug Main Process", "Debug Renderer Process"],
       "presentation": {
         "order": 1

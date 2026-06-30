@@ -176,11 +176,6 @@ function ymdLocal(d: Date): string {
 
 const funFactTodayYmd = computed(() => ymdLocal(new Date(nowTickMs.value)))
 
-const aiReady = computed(() => {
-  const ai = settings.value.ai
-  return Boolean(ai.enabled && ai.apiKeySet && ai.baseUrl.trim() && ai.model.trim())
-})
-
 const funFactTitle = computed(() => {
   const v = settings.value.funFact?.title
   return (typeof v === 'string' ? v.trim() : '') || DEFAULT_SETTINGS.funFact.title
@@ -519,10 +514,6 @@ function parseStructuredContent(
 }
 
 async function executeRefreshModule(module: CustomModuleConfig): Promise<void> {
-  if (!aiReady.value) {
-    customModulesError.value[module.id] = '请到「全局设置」启用 AI 并配置 Base URL / Key / Model'
-    return
-  }
   if (customModulesLoading.value[module.id]) return
 
   customModulesLoading.value[module.id] = true
@@ -694,12 +685,6 @@ function onFunFactCancelled(_event: unknown, payload: unknown): void {
 
 async function refreshDailyFunFact(force: boolean): Promise<void> {
   loadingSate.daily = true
-  // normalizeCachedFunFact()
-  if (!aiReady.value) {
-    funFactErrorText.value = '请到「全局设置」启用 AI 并配置 Base URL / Key / Model'
-    endFunFactLoading()
-    return
-  }
   if (!force && funFactYmd.value === funFactTodayYmd.value && funFactText.value.trim()) {
     funFactErrorText.value = ''
     endFunFactLoading()
@@ -1181,7 +1166,7 @@ onUnmounted(() => {
   <div class="page-content">
     <header class="header">
       <div class="flex flex-col">
-        <div class="title">Hello</div>
+        <div class="title"><!-- Hello --></div>
         <div class="subtitle">...</div>
       </div>
       <div class="ctrl-btns">
@@ -1505,7 +1490,7 @@ onUnmounted(() => {
                   <button
                     class="bg-transparent border-none"
                     type="button"
-                    :disabled="funFactLoading || !aiReady"
+                    :disabled="funFactLoading"
                     @click.stop="refreshDailyFunFact(true)"
                   >
                     <Sparkles v-if="!loadingSate.daily" :size="16" />

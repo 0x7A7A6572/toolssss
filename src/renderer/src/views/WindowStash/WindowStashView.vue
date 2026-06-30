@@ -303,12 +303,12 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="page-content">
-    <header class="header">
+    <!-- <header class="header">
       <div class="title">窗口收纳</div>
       <div class="subtitle">
         Ctrl + Shift + 1/2/3/4：左/上/右/下贴边收纳 · Ctrl + Alt + T：置顶/取消置顶
       </div>
-    </header>
+    </header> -->
 
     <div class="card-container-flex">
       <section class="card">

@@ -28,7 +28,8 @@ import {
   Scissors,
   PanelRightOpen,
   Clock,
-  Info
+  Info,
+  Settings
 } from 'lucide-vue-next'
 
 interface TabItem {
@@ -52,7 +53,8 @@ const tabs: TabItem[] = [
   { id: 'SnipPaste', label: '截屏贴图', path: '/snip-paste', icon: Scissors },
   { id: 'WindowStash', label: '窗口收纳', path: '/window-stash', icon: PanelRightOpen },
   { id: 'ScheduledTasks', label: '定时任务', path: '/scheduled-tasks', icon: Clock },
-  { id: 'Landing', label: '关于', path: '/landing', icon: Info }
+  { id: 'Landing', label: '关于', path: '/landing', icon: Info },
+  { id: 'Settings', label: '设置', path: '/settings', icon: Settings }
 ]
 
 function onSelect(tab: TabItem): void {
@@ -73,7 +75,7 @@ function onSelect(tab: TabItem): void {
   align-items: center;
   flex-direction: column;
   width: 56px;
-  background: linear-gradient(145deg, #141414 0%, #0a1225d0 80%, transparent);
+  background: linear-gradient(145deg, #3b3b3b 0%, #0a1225d0 80%, transparent);
 }
 
 /* ================================================================== */

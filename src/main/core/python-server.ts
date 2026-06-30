@@ -12,8 +12,6 @@
 import { spawn, type ChildProcess } from 'child_process'
 import { createServer, type Server } from 'http'
 import { join } from 'path'
-import { getAiApiKeyFromSecrets, getLegacyAiApiKeyFromSecrets } from './secrets'
-
 // =============================================================================
 // 类型定义
 // =============================================================================
@@ -507,49 +505,13 @@ export async function pushConfigToPython(): Promise<void> {
   const http = require('http') as typeof import('http')
   const settings = deps.getSettings()
   const userDataPath = deps.getUserDataPath()
-  const aiApiKeys: Record<string, string> = {}
-
-  // 解析当前激活的 API Key（优先按 profileId 查找，回退到兼容旧版单一 key）
-  let apiKey = ''
-  let legacyAiApiKey = ''
-  try {
-    apiKey = getAiApiKeyFromSecrets(settings.ai.activeProfileId) ?? ''
-    // 如果多 profile 没找到，尝试旧版单一 key
-    if (!apiKey) {
-      legacyAiApiKey = getLegacyAiApiKeyFromSecrets() ?? ''
-      apiKey = legacyAiApiKey
-    }
-  } catch {
-    void 0
-  }
-
-  for (const profile of settings.ai.profiles) {
-    const profileId = profile.id.trim()
-    if (!profileId) continue
-    const profileApiKey = getAiApiKeyFromSecrets(profileId)?.trim() ?? ''
-    if (profileApiKey) {
-      aiApiKeys[profileId] = profileApiKey
-    }
-  }
-  if (
-    settings.ai.activeProfileId.trim() &&
-    apiKey &&
-    !aiApiKeys[settings.ai.activeProfileId.trim()]
-  ) {
-    aiApiKeys[settings.ai.activeProfileId.trim()] = apiKey
-  } else if (settings.ai.activeProfileId.trim() && legacyAiApiKey) {
-    aiApiKeys[settings.ai.activeProfileId.trim()] = legacyAiApiKey
-  }
 
   const payload = JSON.stringify({
-    ai: settings.ai,
     agents: settings.agents,
     translate: settings.translate,
     fun_fact: settings.funFact,
     user_data_path: userDataPath,
     callback_port: callbackPort,
-    api_key: apiKey,
-    ai_api_keys: aiApiKeys
   })
 
   return new Promise((resolve) => {

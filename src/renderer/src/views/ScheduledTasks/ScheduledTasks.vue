@@ -233,12 +233,12 @@ onMounted(async () => {
 
 <template>
   <div class="page-content">
-    <header class="header">
+    <!-- <header class="header">
       <div class="flex flex-col">
         <div class="title">定时任务</div>
         <div class="subtitle">管理系统定时任务，例如定时关机等</div>
       </div>
-    </header>
+    </header> -->
 
     <section class="card">
       <div class="block-title" style="margin-bottom: 16px">

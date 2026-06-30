@@ -14,7 +14,6 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { DEFAULT_SETTINGS, type AppSettings, type SettingsPatch } from '@shared/settings'
 import { applySettingsPatch, loadSettingsFromDisk, saveSettingsToDisk } from './core/settings-store'
-import { clearAiApiKeyFromSecrets, setAiApiKeyToSecrets } from './core/secrets'
 import { createUpdateService } from './core/updates'
 import { ensureAutoStart as applyAutoStart } from './core/autostart'
 import { registerShortcuts } from './core/shortcuts'
@@ -417,49 +416,8 @@ app.whenReady().then(async () => {
   })
   ipcMain.handle('update:install', () => updates.install())
   ipcMain.handle('settings:get', () => settings)
-  ipcMain.handle('ai:apiKey:set', (_event, payload: unknown) => {
-    const profileId =
-      payload &&
-      typeof payload === 'object' &&
-      typeof (payload as { profileId?: unknown }).profileId === 'string'
-        ? (payload as { profileId: string }).profileId.trim()
-        : settings.ai.activeProfileId.trim()
-    const apiKey =
-      payload &&
-      typeof payload === 'object' &&
-      typeof (payload as { apiKey?: unknown }).apiKey === 'string'
-        ? (payload as { apiKey: string }).apiKey.trim()
-        : typeof payload === 'string'
-          ? payload.trim()
-          : ''
-    if (!apiKey) return settings
-    if (!setAiApiKeyToSecrets(profileId, apiKey)) return settings
-    const next: AppSettings = structuredClone(settings)
-    next.ai.profiles = next.ai.profiles.map((item) => {
-      return item.id === profileId ? { ...item, apiKeySet: true } : item
-    })
-    if (next.ai.activeProfileId === profileId) next.ai.apiKeySet = true
-    commitSettings(next)
-    return next
-  })
-  ipcMain.handle('ai:apiKey:clear', (_event, payload: unknown) => {
-    const profileId =
-      payload &&
-      typeof payload === 'object' &&
-      typeof (payload as { profileId?: unknown }).profileId === 'string'
-        ? (payload as { profileId: string }).profileId.trim()
-        : settings.ai.activeProfileId.trim()
-    if (!clearAiApiKeyFromSecrets(profileId)) return settings
-    const next: AppSettings = structuredClone(settings)
-    next.ai.profiles = next.ai.profiles.map((item) => {
-      return item.id === profileId ? { ...item, apiKeySet: false } : item
-    })
-    if (next.ai.activeProfileId === profileId) next.ai.apiKeySet = false
-    commitSettings(next)
-    return next
-  })
-  registerFunFactHandlers({ getSettings: () => settings })
-  registerCustomModuleHandlers({ getSettings: () => settings })
+  registerFunFactHandlers()
+  registerCustomModuleHandlers()
   ipcMain.handle('mouse-hook:start', async () => {
     await mouseHook.start()
     return mouseHook.isRunning()

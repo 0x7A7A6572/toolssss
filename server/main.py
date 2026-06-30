@@ -23,15 +23,26 @@ if str(_SERVER_DIR) not in sys.path:
 
 def create_app() -> "fastapi.FastAPI":
     """工厂函数：创建 FastAPI 应用实例（供 uvicorn --factory 使用）"""
+    import os
+
+    # 如果传入了 FS_DEBUG_PORT 环境变量，启动 debugpy 监听
+    _debug_port = os.environ.get("FS_DEBUG_PORT")
+    if _debug_port:
+        try:
+            import debugpy
+            debugpy.listen(("127.0.0.1", int(_debug_port)))
+            print(f"[debugpy] 监听端口 {_debug_port}，请在 VS Code 中 Attach")
+        except Exception as e:
+            print(f"[debugpy] 启动失败: {e}")
 
     # from app.config import AppConfig
     
     from fastapi import FastAPI
-    from app.configs.main import AppConfig
 
     from app.core.exceptions import register_exception_handlers
     from app.core.middleware import register_middleware
     from app.domains.agents.router import router as agents_router
+    from app.domains.ai.router import router as ai_router
     from app.domains.custom_modules.router import router as custom_modules_router
     from app.domains.mouse_hook.router import router as mouse_hook_router
     from app.domains.mouse_hook.service import get_mouse_hook
@@ -39,8 +50,9 @@ def create_app() -> "fastapi.FastAPI":
     from app.domains.windows.service import shutdown_windows_runtime
 
     # 从命令行参数或环境变量解析配置
-    # config = AppConfig.from_args()
-    config = AppConfig.load_from_file()
+    from app.configs.main import init_config
+
+    config = init_config()
 
     @asynccontextmanager
     async def lifespan(_app: "FastAPI"):
@@ -67,6 +79,7 @@ def create_app() -> "fastapi.FastAPI":
 
     # 注册 domain 路由
     app.include_router(agents_router, prefix="/api/agents", tags=["智能体对话"])
+    app.include_router(ai_router, prefix="/api/ai", tags=["AI 模型配置"])
     app.include_router(custom_modules_router, prefix="/api/modules", tags=["自定义模块"])
     app.include_router(windows_router, prefix="/api/windows", tags=["Windows 窗口"])
     app.include_router(mouse_hook_router, prefix="/api/mouse-hook", tags=["鼠标钩子"])

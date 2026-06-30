@@ -17,7 +17,8 @@ const reindexingKbIds = ref<Set<string>>(new Set())
 const kbDocs = ref<Record<string, AgentKnowledgeDoc[]>>({})
 
 const embeddingAiProfiles = computed(() => {
-  return settings.value.ai.profiles.filter((item) => item.modelType === 'embedding')
+  // TODO: 后续重构 —— 从 Python API 获取 embedding 模型列表
+  return [] as Array<{ id: string; name: string; model: string }>
 })
 
 const embeddingProfileOptions = computed(() => {
@@ -48,27 +49,16 @@ async function refreshKnowledgeBases(): Promise<void> {
   await Promise.all([loadKnowledgeBases(), settingsStore.refresh()])
 }
 
-async function updateEmbedding(patch: Partial<AppSettings['ai']['embedding']>): Promise<void> {
-  await update({
-    ai: {
-      embedding: {
-        ...settings.value.ai.embedding,
-        ...patch
-      }
-    }
-  })
+async function updateEmbedding(_patch: Record<string, unknown>): Promise<void> {
+  // TODO: 后续重构 —— 从 Python API 管理 embedding 配置
 }
 
 async function onEmbeddingProfileChange(raw: string | number | undefined): Promise<void> {
   const profileId = String(raw ?? '').trim()
-  const profile = settings.value.ai.profiles.find((item) => item.id === profileId) ?? null
-  if (profile && profile.modelType !== 'embedding') {
-    message.error(`模型「${profile.name}」不是向量模型，不能用于当前 RAG 链路。`)
-    return
-  }
+  // TODO: 后续重构 —— 从 Python API 校验 embedding profile
   await updateEmbedding({
     profileId,
-    model: profile?.model ?? ''
+    model: ''
   })
 }
 
@@ -340,7 +330,7 @@ onMounted(() => {
       <div class="row">
         <div class="label">启用 Embedding</div>
         <AppSwitch
-          :model-value="settings.ai.embedding.enabled"
+          :model-value="false"
           @update:model-value="updateEmbedding({ enabled: $event })"
         />
       </div>
@@ -349,7 +339,7 @@ onMounted(() => {
         <div class="label">Embedding Profile</div>
         <a-select
           class="select"
-          :value="settings.ai.embedding.profileId || undefined"
+          :value="undefined"
           :options="embeddingProfileOptions"
           placeholder="选择向量模型配置"
           style="width: 280px"
@@ -363,7 +353,7 @@ onMounted(() => {
           class="text"
           type="number"
           min="1"
-          :value="String(settings.ai.embedding.dimensions)"
+          :value="'0'"
           @change="
             updateEmbedding({
               dimensions: Number(($event.target as HTMLInputElement).value) || 1536

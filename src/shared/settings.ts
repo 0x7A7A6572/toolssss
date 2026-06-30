@@ -1,9 +1,6 @@
-import type { AiProviderKey } from './ai-providers'
 import type { AgentConfig, KnowledgeBaseConfig } from './agents'
 
 export type AlarmReason = 'alarm' | 'break'
-export type AiProvider = AiProviderKey | 'custom'
-export type AiProfileSource = 'provider' | 'custom'
 
 /** AI 模型类型标识 */
 export type AiModelType = 'llm' | 'vision' | 'multimodal' | 'speech' | 'embedding' | 'reasoning'
@@ -26,25 +23,6 @@ export const AI_MODEL_TYPE_COLORS: Record<AiModelType, string> = {
   speech: '#f59e0b',
   embedding: '#06b6d4',
   reasoning: '#ec4899'
-}
-
-export interface AiProfile {
-  id: string
-  name: string
-  source: AiProfileSource
-  provider: AiProvider
-  baseUrl: string
-  model: string
-  apiKeySet: boolean
-  /** 模型类型，默认为 llm */
-  modelType: AiModelType
-}
-
-export interface EmbeddingProfileConfig {
-  enabled: boolean
-  profileId: string
-  model: string
-  dimensions: number
 }
 
 export interface RagRuntimeConfig {
@@ -85,14 +63,7 @@ export interface AppSettings {
   }
   ai: {
     enabled: boolean
-    provider: AiProvider
-    baseUrl: string
-    model: string
-    apiKeySet: boolean
-    activeProfileId: string
-    profiles: AiProfile[]
     searchMcpCommand: string
-    embedding: EmbeddingProfileConfig
   }
   funFact: {
     title: string
@@ -218,19 +189,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   ai: {
     enabled: false,
-    provider: 'openai',
-    baseUrl: '',
-    model: '',
-    apiKeySet: false,
-    activeProfileId: '',
-    profiles: [],
-    searchMcpCommand: 'npx -y mcp-remote https://search.parallel.ai/mcp',
-    embedding: {
-      enabled: false,
-      profileId: '',
-      model: 'text-embedding-3-small',
-      dimensions: 1536
-    }
+    searchMcpCommand: 'npx -y mcp-remote https://search.parallel.ai/mcp'
   },
   funFact: {
     title: '每日冷知识',
