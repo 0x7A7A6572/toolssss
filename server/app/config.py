@@ -98,14 +98,6 @@ class TranslateSettings(BaseModel):
     default_target: str = Field(default="zh", validation_alias="defaultTarget")
 
 
-class FunFactSettings(BaseModel):
-    """每日趣味内容设置（对应 settings.funFact）"""
-    model_config = {"populate_by_name": True}
-
-    title: str = "每日冷知识"
-    prompt: str = ""
-
-
 class SettingsPayload(BaseModel):
     """Electron 推送的配置载荷
 
@@ -122,8 +114,6 @@ class SettingsPayload(BaseModel):
     ai_api_keys: Optional[dict[str, str]] = None
     # 翻译
     translate: Optional[TranslateSettings] = None
-    # 趣味内容
-    fun_fact: Optional[FunFactSettings] = None
     # 生命周期
     user_data_path: Optional[str] = None
     callback_port: Optional[int] = None
@@ -147,7 +137,6 @@ class AppConfig:
     ai: AiSettings = field(default_factory=AiSettings)
     agents: AgentsSettings = field(default_factory=AgentsSettings)
     translate: TranslateSettings = field(default_factory=TranslateSettings)
-    fun_fact: FunFactSettings = field(default_factory=FunFactSettings)
     api_key: str = ""
     ai_api_keys: dict[str, str] = field(default_factory=dict)
     callback_port: int = 0
@@ -170,8 +159,6 @@ class AppConfig:
             self.agents = payload.agents
         if payload.translate is not None:
             self.translate = payload.translate
-        if payload.fun_fact is not None:
-            self.fun_fact = payload.fun_fact
         if payload.api_key is not None:
             self.api_key = payload.api_key
         if payload.ai_api_keys is not None:

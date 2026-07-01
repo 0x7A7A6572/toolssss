@@ -509,7 +509,6 @@ export async function pushConfigToPython(): Promise<void> {
   const payload = JSON.stringify({
     agents: settings.agents,
     translate: settings.translate,
-    fun_fact: settings.funFact,
     user_data_path: userDataPath,
     callback_port: callbackPort,
   })

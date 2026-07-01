@@ -51,7 +51,6 @@ src/
 │   │   ├── sticky-notes/     # 便签
 │   │   ├── translator/       # 翻译
 │   │   ├── weather/          # 天气
-│   │   ├── fun-fact/         # 每日趣味内容（AI 生成）
 │   │   └── scheduled-tasks/  # 定时任务（关机等）
 │   ├── window-stash.ts    # window-stash 主逻辑（代码量最大的模块）
 │   ├── external-window.ts # external-window 的公开导出

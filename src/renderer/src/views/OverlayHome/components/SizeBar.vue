@@ -22,7 +22,6 @@
 import { ref } from 'vue'
 import {
   MessageSquareMore,
-  StickyNote,
   Eye,
   Languages,
   Scissors,
@@ -47,7 +46,7 @@ const activeId = ref<string>('')
 
 const tabs: TabItem[] = [
   { id: 'AgentChat', label: '智能体', path: '/agents', icon: MessageSquareMore },
-  { id: 'StickyNotes', label: '便签', path: '/sticky-notes', icon: StickyNote },
+  // { id: 'StickyNotes', label: '便签', path: '/sticky-notes', icon: StickyNote },
   { id: 'EyeProtection', label: '护眼', path: '/eye-protection', icon: Eye },
   { id: 'Translator', label: '快捷翻译', path: '/translator', icon: Languages },
   { id: 'SnipPaste', label: '截屏贴图', path: '/snip-paste', icon: Scissors },

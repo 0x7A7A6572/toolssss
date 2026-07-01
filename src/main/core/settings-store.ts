@@ -85,6 +85,8 @@ export function normalizeSettings(input: unknown): AppSettings {
   if (obj.general) {
     base.general.minimizeToTray = Boolean(obj.general.minimizeToTray)
     base.general.autoStart = Boolean(obj.general.autoStart)
+    if (typeof obj.general.immersiveMode === 'boolean')
+      base.general.immersiveMode = obj.general.immersiveMode
   }
 
   if (obj.snip) {
@@ -214,16 +216,6 @@ export function normalizeSettings(input: unknown): AppSettings {
       base.ai.searchMcpCommand = (ai['searchMcpCommand'] as string).trim()
   }
 
-  if (
-    (obj as { funFact?: unknown }).funFact &&
-    typeof (obj as { funFact?: unknown }).funFact === 'object'
-  ) {
-    const ff = (obj as { funFact: Record<string, unknown> }).funFact
-    if (typeof ff['title'] === 'string' && ff['title'].trim())
-      base.funFact.title = ff['title'].trim()
-    if (typeof ff['prompt'] === 'string' && ff['prompt'].trim()) base.funFact.prompt = ff['prompt']
-  }
-
   base.eye.enabled = Boolean(obj.eye?.enabled)
   base.eye.opacity = clampNumber(Number(obj.eye?.opacity), 0, 0.7)
   if (typeof obj.eye?.color === 'string' && obj.eye.color.trim()) {
@@ -341,6 +333,8 @@ export function applySettingsPatch(current: AppSettings, patch: unknown): AppSet
     if (typeof p.general.minimizeToTray === 'boolean')
       next.general.minimizeToTray = p.general.minimizeToTray
     if (typeof p.general.autoStart === 'boolean') next.general.autoStart = p.general.autoStart
+    if (typeof p.general.immersiveMode === 'boolean')
+      next.general.immersiveMode = p.general.immersiveMode
   }
 
   if (p.snip) {
@@ -445,15 +439,6 @@ export function applySettingsPatch(current: AppSettings, patch: unknown): AppSet
     if (typeof ai['enabled'] === 'boolean') next.ai.enabled = ai['enabled'] as boolean
     if (typeof ai['searchMcpCommand'] === 'string')
       next.ai.searchMcpCommand = ai['searchMcpCommand'] as string
-  }
-
-  if (
-    (p as { funFact?: unknown }).funFact &&
-    typeof (p as { funFact?: unknown }).funFact === 'object'
-  ) {
-    const ff = (p as { funFact: Record<string, unknown> }).funFact
-    if (typeof ff['title'] === 'string') next.funFact.title = ff['title'] as string
-    if (typeof ff['prompt'] === 'string') next.funFact.prompt = ff['prompt'] as string
   }
 
   if (p.eye) {

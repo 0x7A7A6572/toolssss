@@ -11,7 +11,6 @@ import {
 } from 'vue'
 import { WeatherTool } from '../../utils/weather'
 import type { WeatherDashboard, WeatherProvinceCity } from '@shared/weather'
-import { DEFAULT_SETTINGS, type AppSettings } from '@shared/settings'
 import { useSettingsStore } from '@renderer/state/settings'
 import {
   Stone,
@@ -139,7 +138,6 @@ const answerSpotlightStyle = computed<Record<string, string>>(() => ({
 }))
 
 const settingsStore = useSettingsStore()
-const settings = computed(() => settingsStore.settings.value)
 const backend = useAgentBackend()
 
 const FUN_FACT_YMD_KEY = 'ai.funFact.ymd'
@@ -175,11 +173,6 @@ function ymdLocal(d: Date): string {
 }
 
 const funFactTodayYmd = computed(() => ymdLocal(new Date(nowTickMs.value)))
-
-const funFactTitle = computed(() => {
-  const v = settings.value.funFact?.title
-  return (typeof v === 'string' ? v.trim() : '') || DEFAULT_SETTINGS.funFact.title
-})
 
 const customModules = ref<CustomModuleConfig[]>([])
 const customModulesContent = ref<Record<string, CustomModuleCachedContent>>({})
@@ -572,62 +565,6 @@ async function executeRefreshModule(module: CustomModuleConfig): Promise<void> {
   }
 }
 
-const funFactEditOpen = ref(false)
-const funFactTitleDraft = ref('')
-const funFactPromptDraft = ref('')
-const funFactEditSaving = ref(false)
-const funFactEditErrorText = ref('')
-
-function openFunFactEditor(): void {
-  funFactEditErrorText.value = ''
-  funFactTitleDraft.value =
-    (typeof settings.value.funFact?.title === 'string'
-      ? settings.value.funFact.title
-      : ''
-    ).trim() || DEFAULT_SETTINGS.funFact.title
-  funFactPromptDraft.value =
-    typeof settings.value.funFact?.prompt === 'string'
-      ? settings.value.funFact.prompt
-      : DEFAULT_SETTINGS.funFact.prompt
-  funFactEditOpen.value = true
-}
-
-function closeFunFactEditor(): void {
-  funFactEditOpen.value = false
-  funFactEditSaving.value = false
-  funFactEditErrorText.value = ''
-}
-
-async function saveFunFactEditor(): Promise<void> {
-  funFactEditSaving.value = true
-  funFactEditErrorText.value = ''
-  try {
-    const title = funFactTitleDraft.value.trim()
-    const prompt = funFactPromptDraft.value.replace(/\r\n/g, '\n')
-    const ret = (await window.electron.ipcRenderer.invoke('settings:update', {
-      funFact: {
-        title,
-        prompt
-      }
-    })) as AppSettings
-    settingsStore.replace(ret)
-    closeFunFactEditor()
-  } catch (e) {
-    funFactEditErrorText.value = e instanceof Error ? e.message : '保存失败'
-  } finally {
-    funFactEditSaving.value = false
-  }
-}
-
-function normalizeCachedFunFact(): void {
-  if (!funFactYmd.value) return
-  if (funFactYmd.value === funFactTodayYmd.value) return
-  funFactYmd.value = ''
-  funFactText.value = ''
-  localStorage.removeItem(FUN_FACT_YMD_KEY)
-  localStorage.removeItem(FUN_FACT_TEXT_KEY)
-}
-
 async function refreshSettings(): Promise<void> {
   await settingsStore.refresh()
 }
@@ -683,40 +620,6 @@ function onFunFactCancelled(_event: unknown, payload: unknown): void {
   endFunFactLoading()
 }
 
-async function refreshDailyFunFact(force: boolean): Promise<void> {
-  loadingSate.daily = true
-  if (!force && funFactYmd.value === funFactTodayYmd.value && funFactText.value.trim()) {
-    funFactErrorText.value = ''
-    endFunFactLoading()
-    return
-  }
-  funFactLoading.value = true
-  funFactErrorText.value = ''
-  funFactText.value = ''
-  try {
-    const ret = (await window.electron.ipcRenderer.invoke('ai:funfact:daily:stream', {
-      force
-    })) as { id?: unknown; ymd?: unknown; text?: unknown }
-    const id = typeof ret?.id === 'string' ? ret.id : ''
-    const ymd = typeof ret?.ymd === 'string' ? ret.ymd : funFactTodayYmd.value
-    const text = typeof ret?.text === 'string' ? ret.text : ''
-    if (!id) throw new Error('AI 流式请求启动失败')
-    funFactStreamId.value = id
-    funFactYmd.value = ymd
-    if (text) {
-      funFactText.value = text
-      if (ymd) localStorage.setItem(FUN_FACT_YMD_KEY, ymd)
-      localStorage.setItem(FUN_FACT_TEXT_KEY, text)
-      funFactStreamId.value = ''
-      endFunFactLoading()
-    }
-  } catch (e) {
-    funFactErrorText.value = e instanceof Error ? e.message : '获取冷知识失败'
-    funFactStreamId.value = ''
-    endFunFactLoading()
-  }
-}
-
 let autoFunFactRequested = false
 function maybeAutoRefreshFunFact(): void {
   if (autoFunFactRequested) return
@@ -725,8 +628,6 @@ function maybeAutoRefreshFunFact(): void {
   if (funFactLoading.value) return
   if (funFactStreamId.value) return
   autoFunFactRequested = true
-  normalizeCachedFunFact()
-  refreshDailyFunFact(false).catch(() => null)
 }
 
 watch(
@@ -758,7 +659,6 @@ function onKeydown(e: KeyboardEvent): void {
   }
   closeCityPicker()
   closePaydayDialog()
-  closeFunFactEditor()
 }
 
 async function loadProvinces(): Promise<void> {
@@ -1128,11 +1028,9 @@ onMounted(() => {
   ]
   tickTimer = window.setInterval(() => {
     nowTickMs.value = Date.now()
-    normalizeCachedFunFact()
   }, 60 * 1000)
   refreshSettings()
     .then(() => {
-      normalizeCachedFunFact()
       maybeAutoRefreshFunFact()
     })
     .catch(() => null)
@@ -1476,12 +1374,10 @@ onUnmounted(() => {
                 @click="setStackActive('funFact')"
               >
                 <div class="fun-fact-title">
-                  {{ funFactTitle }}
                   <button
                     class="bg-transparent border-none"
                     type="button"
                     :disabled="funFactLoading"
-                    @click.stop="openFunFactEditor"
                   >
                     <PencilLine :size="14" />
                   </button>
@@ -1491,7 +1387,6 @@ onUnmounted(() => {
                     class="bg-transparent border-none"
                     type="button"
                     :disabled="funFactLoading"
-                    @click.stop="refreshDailyFunFact(true)"
                   >
                     <Sparkles v-if="!loadingSate.daily" :size="16" />
                     <div v-else class="loading-spinner"></div>
@@ -1651,42 +1546,6 @@ onUnmounted(() => {
     <div class="picker-actions">
       <a-button @click="closePaydayDialog">取消</a-button>
       <a-button type="primary" @click="savePaydayDay">保存</a-button>
-    </div>
-  </a-modal>
-
-  <a-modal
-    :open="funFactEditOpen"
-    :width="560"
-    centered
-    :mask-closable="!funFactEditSaving"
-    :keyboard="!funFactEditSaving"
-    :closable="!funFactEditSaving"
-    :footer="null"
-    @cancel="closeFunFactEditor"
-  >
-    <div class="picker-title">编辑冷知识</div>
-    <div class="funfact-form">
-      <div class="funfact-field">
-        <div class="funfact-label">标题</div>
-        <a-input v-model:value="funFactTitleDraft" placeholder="例如：每日冷知识" />
-      </div>
-      <div class="funfact-field">
-        <div class="funfact-label">提示词</div>
-        <a-textarea
-          v-model:value="funFactPromptDraft"
-          class="funfact-textarea"
-          :rows="6"
-          placeholder="支持变量：{ymd}、{title}"
-        />
-        <div class="hint">支持变量：{ymd}（日期）、{title}（标题）。</div>
-      </div>
-      <div v-if="funFactEditErrorText" class="error">{{ funFactEditErrorText }}</div>
-    </div>
-    <div class="picker-actions">
-      <a-button :disabled="funFactEditSaving" @click="closeFunFactEditor">取消</a-button>
-      <a-button type="primary" :loading="funFactEditSaving" @click="saveFunFactEditor"
-        >保存</a-button
-      >
     </div>
   </a-modal>
 

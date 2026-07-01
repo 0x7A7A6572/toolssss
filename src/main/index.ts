@@ -1,6 +1,5 @@
 import {
   app,
-  shell,
   BrowserWindow,
   ipcMain,
   dialog,
@@ -28,7 +27,6 @@ import { createSnipDomain } from './domains/snip'
 import { createTranslatorDomain } from './domains/translator'
 import { registerWeatherHandlers } from './domains/weather'
 import { applyScheduledTasks, registerScheduledTasksHandlers } from './domains/scheduled-tasks'
-import { registerFunFactHandlers } from './domains/fun-fact'
 import { registerCustomModuleHandlers } from './domains/custom-modules'
 import {
   disposeExternalWindowPowerShell,
@@ -60,7 +58,6 @@ import {
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
-let isQuitting = false
 let snipCapturing = false
 let windowStashRestoredOnQuit = false
 
@@ -68,7 +65,7 @@ let settings: AppSettings = DEFAULT_SETTINGS
 const updates = createUpdateService({ getMainWindow: () => mainWindow })
 const stickers = createStickersDomain({ icon, loadWindow })
 const overlay = createEyeOverlayDomain({ icon, loadWindow, getSettings: () => settings })
-const mouseHook = createMouseHookDomain({ icon, loadWindow })
+const mouseHook = createMouseHookDomain({ icon, loadWindow, getSettings: () => settings })
 const reminders = createRemindersDomain({
   icon,
   loadWindow,
@@ -147,10 +144,12 @@ function ensureTray(): void {
     {
       icon,
       tray,
-      getMainWindow: () => mainWindow,
-      createMainWindow: createWindow,
-      setIsQuitting: (v) => {
-        isQuitting = v
+      getMainWindow: () => mouseHook.getOverlayWindow(),
+      createMainWindow: () => {
+        mouseHook.showOverlay()
+      },
+      setIsQuitting: () => {
+        // 覆盖窗口没有最小化到托盘的关闭拦截，直接退出即可
       }
     },
     settings
@@ -187,117 +186,6 @@ function applySettingsToRuntime(): void {
   ensureTray()
   ensureAutoStart()
   ensureShortcuts()
-}
-
-function createWindow(): void {
-  mainWindow = new BrowserWindow({
-    width: 800,
-    height: 670,
-    show: false,
-    frame: false,
-    resizable: true,
-    autoHideMenuBar: true,
-    ...(process.platform === 'linux' ? { icon } : {}),
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      sandbox: true
-    }
-  })
-
-  mainWindow.on('ready-to-show', () => {
-    mainWindow?.show()
-  })
-
-  const sendWindowState = (): void => {
-    if (!mainWindow || mainWindow.isDestroyed()) return
-    const payload = {
-      maximized: mainWindow.isMaximized(),
-      minimized: mainWindow.isMinimized(),
-      focused: mainWindow.isFocused()
-    }
-    mainWindow.webContents.send('window:state', payload)
-  }
-  mainWindow.on('maximize', sendWindowState)
-  mainWindow.on('unmaximize', sendWindowState)
-  mainWindow.on('minimize', sendWindowState)
-  mainWindow.on('restore', sendWindowState)
-  mainWindow.on('focus', sendWindowState)
-  mainWindow.on('blur', sendWindowState)
-
-  mainWindow.on('close', (event) => {
-    if (updates.isCloseLocked()) {
-      event.preventDefault()
-      try {
-        mainWindow?.show()
-        mainWindow?.focus()
-      } catch {
-        void 0
-      }
-      return
-    }
-    if (settings.general.minimizeToTray && !isQuitting) {
-      event.preventDefault()
-      mainWindow?.hide()
-    }
-  })
-
-  mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
-    return { action: 'deny' }
-  })
-
-  loadWindow(mainWindow, {}).catch(() => null)
-
-  mainWindow.webContents.once('did-finish-load', () => {
-    updates.broadcast()
-  })
-
-  ipcMain.handle('window:state:get', () => {
-    if (!mainWindow || mainWindow.isDestroyed())
-      return { maximized: false, minimized: false, focused: false }
-    return {
-      maximized: mainWindow.isMaximized(),
-      minimized: mainWindow.isMinimized(),
-      focused: mainWindow.isFocused()
-    }
-  })
-  ipcMain.on('window:control', (event, payload: unknown) => {
-    const win = BrowserWindow.fromWebContents(event.sender)
-    if (!win || win.isDestroyed()) return
-    const action =
-      typeof payload === 'string'
-        ? payload
-        : payload && typeof payload === 'object'
-          ? (payload as { action?: unknown }).action
-          : ''
-    const act = typeof action === 'string' ? action : ''
-    if (!act) return
-    if (act === 'minimize') {
-      try {
-        win.minimize()
-      } catch {
-        void 0
-      }
-      return
-    }
-    if (act === 'toggleMaximize') {
-      try {
-        if (win.isMaximized()) win.unmaximize()
-        else win.maximize()
-      } catch {
-        void 0
-      }
-      return
-    }
-    if (act === 'close') {
-      try {
-        win.close()
-      } catch {
-        void 0
-      }
-      return
-    }
-  })
 }
 
 // This method will be called when Electron has finished
@@ -416,7 +304,7 @@ app.whenReady().then(async () => {
   })
   ipcMain.handle('update:install', () => updates.install())
   ipcMain.handle('settings:get', () => settings)
-  registerFunFactHandlers()
+
   registerCustomModuleHandlers()
   ipcMain.handle('mouse-hook:start', async () => {
     await mouseHook.start()
@@ -435,11 +323,9 @@ app.whenReady().then(async () => {
     console.log('[renderer]', ...args)
   })
   ipcMain.handle('sticky-notes:saveDir:choose', async () => {
-    const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
     const options: OpenDialogOptions = { properties: ['openDirectory', 'createDirectory'] }
-    const result = parent
-      ? await dialog.showOpenDialog(parent, options)
-      : await dialog.showOpenDialog(options)
+    // 覆盖窗口是透明/无框窗口，不适合作为文件对话框的父窗口
+    const result = await dialog.showOpenDialog(options)
     if (result.canceled) return null
     const p = result.filePaths?.[0]
     return typeof p === 'string' && p.trim() ? p : null

@@ -35,6 +35,7 @@ export interface AppSettings {
   general: {
     minimizeToTray: boolean
     autoStart: boolean
+    immersiveMode: boolean
   }
   snip: {
     provider: 'app'
@@ -64,10 +65,6 @@ export interface AppSettings {
   ai: {
     enabled: boolean
     searchMcpCommand: string
-  }
-  funFact: {
-    title: string
-    prompt: string
   }
   eye: {
     enabled: boolean
@@ -123,7 +120,6 @@ export type SettingsPatch = Partial<{
     bing?: Partial<AppSettings['translate']['bing']>
   }
   ai: Partial<AppSettings['ai']>
-  funFact: Partial<AppSettings['funFact']>
   eye: Partial<AppSettings['eye']>
   reminderSeconds: number
   alarm: Partial<AppSettings['alarm']>
@@ -136,7 +132,8 @@ export type SettingsPatch = Partial<{
 export const DEFAULT_SETTINGS: AppSettings = {
   general: {
     minimizeToTray: false,
-    autoStart: false
+    autoStart: false,
+    immersiveMode: true
   },
   snip: {
     provider: 'app',
@@ -190,11 +187,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   ai: {
     enabled: false,
     searchMcpCommand: 'npx -y mcp-remote https://search.parallel.ai/mcp'
-  },
-  funFact: {
-    title: '每日冷知识',
-    prompt:
-      '给我一条“{title}”，日期：{ymd}。\n要求：1) 1-3 句；2) 不要列表；3) 不要标题符号；4) 不要输出多余解释。'
   },
   eye: {
     enabled: false,

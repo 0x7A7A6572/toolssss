@@ -12,8 +12,8 @@ from pydantic import BaseModel, Field
 class ModuleRequest(BaseModel):
     """模块请求"""
     module_id: str
-    prompt: str
-    web_search: bool = False
+    # prompt: str
+    # web_search: bool = False
 
 
 class ModuleStreamRequest(ModuleRequest):

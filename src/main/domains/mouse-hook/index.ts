@@ -10,6 +10,7 @@ import { setMouseHookCallback, getPythonPort, getCallbackPort } from '@main-core
 type Deps = {
   icon: string
   loadWindow: (win: BrowserWindow, query: Record<string, string>) => Promise<void>
+  getSettings: () => { general: { immersiveMode: boolean } }
 }
 
 type MouseHookEvent = { action: string; deltaY: number; startX: number; startY: number }
@@ -98,8 +99,63 @@ async function stopHook(): Promise<void> {
 }
 
 // =============================================================================
-// 全屏透明覆盖窗口
+// 沉浸模式判断
 // =============================================================================
+
+function isImmersive(): boolean {
+  return deps?.getSettings()?.general?.immersiveMode !== false
+}
+
+// =============================================================================
+// 覆盖窗口创建
+// =============================================================================
+
+/** 根据沉浸模式构建 BrowserWindow 构造参数 */
+function buildWindowOptions(
+  displayBounds: Electron.Rectangle
+): Electron.BrowserWindowConstructorOptions {
+  const immersive = isImmersive()
+
+  if (immersive) {
+    // 沉浸模式：全屏透明无框窗口
+    return {
+      x: displayBounds.x,
+      y: displayBounds.y,
+      width: displayBounds.width,
+      height: displayBounds.height,
+      show: false,
+      frame: false,
+      transparent: true,
+      resizable: false,
+      movable: false,
+      skipTaskbar: true,
+      alwaysOnTop: true,
+      hasShadow: false,
+      backgroundColor: '#00000000'
+    }
+  }
+
+  // 非沉浸模式：标准窗口，带标题栏和边框
+  const winWidth = 960
+  const winHeight = 680
+  return {
+    width: winWidth,
+    height: winHeight,
+    // 居中
+    x: Math.round(displayBounds.x + (displayBounds.width - winWidth) / 2),
+    y: Math.round(displayBounds.y + (displayBounds.height - winHeight) / 2),
+    show: false,
+    frame: true,
+    transparent: false,
+    resizable: true,
+    movable: true,
+    skipTaskbar: false,
+    alwaysOnTop: false,
+    hasShadow: true,
+    backgroundColor: '#1a1a1a',
+    title: 'Forge Studio'
+  }
+}
 
 /** 预加载覆盖窗口：创建 BrowserWindow 并加载渲染进程，但保持隐藏。
  *  在全局鼠标钩子启动后立即调用，确保用户首次触发中键时窗口立即可用。 */
@@ -110,27 +166,13 @@ function preloadOverlay(): void {
     return
   }
 
-  dbg('预加载全屏透明覆盖窗口...')
+  const immersive = isImmersive()
+  dbg(`预加载覆盖窗口（${immersive ? '沉浸' : '窗口'}模式）...`)
   const primaryDisplay = screen.getPrimaryDisplay()
-  const { x, y, width, height } = primaryDisplay.bounds
-  dbg(`覆盖窗口: ${width}x${height} @ (${x}, ${y})`)
+  const options = buildWindowOptions(primaryDisplay.bounds)
 
   overlayWindow = new BrowserWindow({
-    x,
-    y,
-    width,
-    height,
-    show: false,
-    frame: false,
-    transparent: true,
-    resizable: false,
-    movable: false,
-    // 待定，会影响触摸事件
-    // focusable: is.dev,
-    skipTaskbar: true,
-    alwaysOnTop: true,
-    hasShadow: false,
-    backgroundColor: '#00000000',
+    ...options,
     ...(process.platform === 'linux' ? { icon: deps.icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -138,12 +180,15 @@ function preloadOverlay(): void {
     }
   })
 
-  overlayWindow.setAlwaysOnTop(true, 'screen-saver', 20)
-  overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  if (immersive) {
+    overlayWindow.setAlwaysOnTop(true, 'screen-saver', 20)
+    overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+    // 预加载阶段：隐藏窗口并转发鼠标事件，用户触发前不拦截任何操作
+    overlayWindow.setIgnoreMouseEvents(true, { forward: true })
+  }
+
   // 开发模式：打开 DevTools 方便调试
   if (is.dev) overlayWindow.webContents.openDevTools({ mode: 'detach' })
-  // 预加载阶段：隐藏窗口并转发鼠标事件，用户触发前不拦截任何操作
-  overlayWindow.setIgnoreMouseEvents(true, { forward: true })
 
   deps.loadWindow(overlayWindow, { mode: 'mouse-hook-overlay' }).catch(() => null)
 
@@ -164,30 +209,19 @@ function createOverlay(): void {
   if (overlayWindow && !overlayWindow.isDestroyed()) {
     dbg('覆盖窗口已存在，showInactive')
     overlayWindow.showInactive()
-    overlayWindow.setIgnoreMouseEvents(false)
+    if (isImmersive()) {
+      overlayWindow.setIgnoreMouseEvents(false)
+    }
     return
   }
 
-  dbg('覆盖窗口不存在，即时创建（预加载未完成或窗口已销毁）...')
+  const immersive = isImmersive()
+  dbg(`覆盖窗口不存在，即时创建（${immersive ? '沉浸' : '窗口'}模式）...`)
   const primaryDisplay = screen.getPrimaryDisplay()
-  const { x, y, width, height } = primaryDisplay.bounds
-  dbg(`覆盖窗口: ${width}x${height} @ (${x}, ${y})`)
+  const options = buildWindowOptions(primaryDisplay.bounds)
 
   overlayWindow = new BrowserWindow({
-    x,
-    y,
-    width,
-    height,
-    show: false,
-    frame: false,
-    transparent: true,
-    resizable: false,
-    movable: false,
-    focusable: is.dev,
-    skipTaskbar: true,
-    alwaysOnTop: true,
-    hasShadow: false,
-    backgroundColor: '#00000000',
+    ...options,
     ...(process.platform === 'linux' ? { icon: deps.icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -195,8 +229,11 @@ function createOverlay(): void {
     }
   })
 
-  overlayWindow.setAlwaysOnTop(true, 'screen-saver', 20)
-  overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  if (immersive) {
+    overlayWindow.setAlwaysOnTop(true, 'screen-saver', 20)
+    overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  }
+
   // 开发模式：打开 DevTools 方便调试
   if (is.dev) overlayWindow.webContents.openDevTools({ mode: 'detach' })
 
@@ -205,7 +242,9 @@ function createOverlay(): void {
   overlayWindow.webContents.once('did-finish-load', () => {
     overlayReady = true
     overlayWindow?.showInactive()
-    overlayWindow?.setIgnoreMouseEvents(false)
+    if (immersive) {
+      overlayWindow?.setIgnoreMouseEvents(false)
+    }
     dbg('覆盖窗口已加载并就绪（可直接点击关闭）')
   })
 
@@ -219,7 +258,9 @@ function createOverlay(): void {
 function hideOverlay(): void {
   if (overlayWindow && !overlayWindow.isDestroyed()) {
     overlayWindow.hide()
-    overlayWindow.setIgnoreMouseEvents(true, { forward: true })
+    if (isImmersive()) {
+      overlayWindow.setIgnoreMouseEvents(true, { forward: true })
+    }
   }
 }
 
@@ -285,6 +326,8 @@ export function createMouseHookDomain(dependencies: Deps): {
   stop: () => Promise<void>
   isRunning: () => boolean
   hideOverlay: () => void
+  showOverlay: () => void
+  getOverlayWindow: () => BrowserWindow | null
   dispose: () => void
 } {
   deps = dependencies
@@ -295,6 +338,8 @@ export function createMouseHookDomain(dependencies: Deps): {
     stop: stopHook,
     isRunning: () => hookRunning,
     hideOverlay,
+    showOverlay: () => createOverlay(),
+    getOverlayWindow: () => overlayWindow,
     dispose: () => {
       stopHook().catch(() => null)
       destroyOverlay()

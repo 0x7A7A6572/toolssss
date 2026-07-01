@@ -78,136 +78,6 @@ const typeColor = computed(() => {
   return 'rgba(60, 180, 120, 0.85)'
 })
 
-function tryParseRankings(rawText: string): CustomModuleRankingItem[] | null {
-  const cleaned = rawText
-    .replace(/```json\s*/gi, '')
-    .replace(/```\s*/g, '')
-    .trim()
-
-  try {
-    const firstBrace = cleaned.indexOf('{')
-    const lastBrace = cleaned.lastIndexOf('}')
-    if (firstBrace >= 0 && lastBrace > firstBrace) {
-      const jsonStr = cleaned.slice(firstBrace, lastBrace + 1)
-      const data = JSON.parse(jsonStr) as { rankings?: unknown }
-      if (data.rankings && Array.isArray(data.rankings)) {
-        const rankings: CustomModuleRankingItem[] = []
-        for (const item of data.rankings) {
-          if (item && typeof item === 'object') {
-            const r = item as Record<string, unknown>
-            const title = typeof r.title === 'string' ? r.title.trim() : ''
-            const items = Array.isArray(r.items)
-              ? r.items.filter((i): i is string => typeof i === 'string')
-              : []
-            if (title && items.length > 0) {
-              rankings.push({ title, items })
-            }
-          }
-        }
-        if (rankings.length > 0) return rankings
-      }
-    }
-  } catch {
-    // full parse failed — fall through
-  }
-
-  const extracted: CustomModuleRankingItem[] = []
-  let idx = 0
-  while (idx < cleaned.length) {
-    const objStart = cleaned.indexOf('{', idx)
-    if (objStart < 0) break
-    let depth = 0
-    let objEnd = -1
-    for (let i = objStart; i < cleaned.length; i++) {
-      if (cleaned[i] === '{') depth++
-      else if (cleaned[i] === '}') {
-        depth--
-        if (depth === 0) {
-          objEnd = i
-          break
-        }
-      }
-    }
-    if (objEnd < 0) break
-    try {
-      const obj = JSON.parse(cleaned.slice(objStart, objEnd + 1)) as Record<string, unknown>
-      const title = typeof obj.title === 'string' ? obj.title.trim() : ''
-      const items = Array.isArray(obj.items)
-        ? obj.items.filter((i): i is string => typeof i === 'string')
-        : []
-      if (title && items.length > 0) extracted.push({ title, items })
-    } catch {
-      /* skip */
-    }
-    idx = objEnd + 1
-  }
-  return extracted.length > 0 ? extracted : null
-}
-
-function tryParseLinks(rawText: string): CustomModuleLinkItem[] | null {
-  const cleaned = rawText
-    .replace(/```json\s*/gi, '')
-    .replace(/```\s*/g, '')
-    .trim()
-
-  try {
-    const firstBrace = cleaned.indexOf('{')
-    const lastBrace = cleaned.lastIndexOf('}')
-    if (firstBrace >= 0 && lastBrace > firstBrace) {
-      const jsonStr = cleaned.slice(firstBrace, lastBrace + 1)
-      const data = JSON.parse(jsonStr) as { items?: unknown }
-      if (data.items && Array.isArray(data.items)) {
-        const items: CustomModuleLinkItem[] = []
-        for (const item of data.items) {
-          if (item && typeof item === 'object') {
-            const r = item as Record<string, unknown>
-            const title = typeof r.title === 'string' ? r.title.trim() : ''
-            const link = typeof r.link === 'string' ? r.link.trim() : ''
-            const description = typeof r.description === 'string' ? r.description.trim() : undefined
-            if (title && link) {
-              items.push({ title, link, description })
-            }
-          }
-        }
-        if (items.length > 0) return items
-      }
-    }
-  } catch {
-    // full parse failed — fall through
-  }
-
-  const extracted: CustomModuleLinkItem[] = []
-  let idx = 0
-  while (idx < cleaned.length) {
-    const objStart = cleaned.indexOf('{', idx)
-    if (objStart < 0) break
-    let depth = 0
-    let objEnd = -1
-    for (let i = objStart; i < cleaned.length; i++) {
-      if (cleaned[i] === '{') depth++
-      else if (cleaned[i] === '}') {
-        depth--
-        if (depth === 0) {
-          objEnd = i
-          break
-        }
-      }
-    }
-    if (objEnd < 0) break
-    try {
-      const obj = JSON.parse(cleaned.slice(objStart, objEnd + 1)) as Record<string, unknown>
-      const title = typeof obj.title === 'string' ? obj.title.trim() : ''
-      const link = typeof obj.link === 'string' ? obj.link.trim() : ''
-      const description = typeof obj.description === 'string' ? obj.description.trim() : undefined
-      if (title && link) extracted.push({ title, link, description })
-    } catch {
-      /* skip */
-    }
-    idx = objEnd + 1
-  }
-  return extracted.length > 0 ? extracted : null
-}
-
 const displayText = computed(() => {
   if (props.content?.text) return props.content.text
   if (props.content?.rawText) return props.content.rawText
@@ -239,10 +109,6 @@ const rankings = computed<CustomModuleRankingItem[] | null>(() => {
   if (props.content?.rankings && props.content.rankings.length > 0) {
     return props.content.rankings
   }
-  if (props.content?.rawText) {
-    const parsed = tryParseRankings(props.content.rawText)
-    if (parsed) return parsed
-  }
   return null
 })
 
@@ -250,120 +116,12 @@ const linkItems = computed<CustomModuleLinkItem[] | null>(() => {
   if (props.content?.links && props.content.links.length > 0) {
     return props.content.links
   }
-  if (props.content?.rawText) {
-    const parsed = tryParseLinks(props.content.rawText)
-    if (parsed) return parsed
-  }
   return null
 })
-
-function tryParseCharts(rawText: string): CustomModuleChartItem[] | null {
-  const cleaned = rawText
-    .replace(/```json\s*/gi, '')
-    .replace(/```\s*/g, '')
-    .trim()
-
-  try {
-    const firstBrace = cleaned.indexOf('{')
-    const lastBrace = cleaned.lastIndexOf('}')
-    if (firstBrace >= 0 && lastBrace > firstBrace) {
-      const jsonStr = cleaned.slice(firstBrace, lastBrace + 1)
-      const data = JSON.parse(jsonStr) as { charts?: unknown }
-      if (data.charts && Array.isArray(data.charts)) {
-        const charts: CustomModuleChartItem[] = []
-        for (const item of data.charts) {
-          if (item && typeof item === 'object') {
-            const c = item as Record<string, unknown>
-            const title = typeof c.title === 'string' ? c.title.trim() : ''
-            const type = c.type === 'bar' || c.type === 'line' || c.type === 'pie' ? c.type : 'bar'
-            const labels = Array.isArray(c.labels)
-              ? c.labels.filter((l): l is string => typeof l === 'string')
-              : []
-            const series = Array.isArray(c.series)
-              ? c.series
-                  .filter((s): s is Record<string, unknown> => s !== null && typeof s === 'object')
-                  .map((s) => ({
-                    name: typeof s.name === 'string' ? s.name.trim() : '',
-                    type: (s.type === 'bar' || s.type === 'line' || s.type === 'pie'
-                      ? s.type
-                      : 'bar') as 'bar' | 'line' | 'pie',
-                    data: Array.isArray(s.data)
-                      ? s.data.filter((d): d is number => typeof d === 'number')
-                      : [],
-                    color: typeof s.color === 'string' ? s.color : undefined
-                  }))
-                  .filter((s) => s.name && s.data.length > 0)
-              : []
-            if (title && labels.length > 0 && series.length > 0) {
-              charts.push({ title, type, labels, series })
-            }
-          }
-        }
-        if (charts.length > 0) return charts
-      }
-    }
-  } catch {
-    // full parse failed — fall through
-  }
-
-  const extracted: CustomModuleChartItem[] = []
-  let idx = 0
-  while (idx < cleaned.length) {
-    const objStart = cleaned.indexOf('{', idx)
-    if (objStart < 0) break
-    let depth = 0
-    let objEnd = -1
-    for (let i = objStart; i < cleaned.length; i++) {
-      if (cleaned[i] === '{') depth++
-      else if (cleaned[i] === '}') {
-        depth--
-        if (depth === 0) {
-          objEnd = i
-          break
-        }
-      }
-    }
-    if (objEnd < 0) break
-    try {
-      const obj = JSON.parse(cleaned.slice(objStart, objEnd + 1)) as Record<string, unknown>
-      if (obj.series && Array.isArray(obj.series) && Array.isArray(obj.labels)) {
-        const title = typeof obj.title === 'string' ? obj.title.trim() : ''
-        const type =
-          obj.type === 'bar' || obj.type === 'line' || obj.type === 'pie' ? obj.type : 'bar'
-        const labels = obj.labels.filter((l: unknown): l is string => typeof l === 'string')
-        const series = obj.series
-          .filter((s: unknown): s is Record<string, unknown> => s !== null && typeof s === 'object')
-          .map((s: Record<string, unknown>) => ({
-            name: typeof s.name === 'string' ? s.name.trim() : '',
-            type: (s.type === 'bar' || s.type === 'line' || s.type === 'pie' ? s.type : 'bar') as
-              | 'bar'
-              | 'line'
-              | 'pie',
-            data: Array.isArray(s.data)
-              ? s.data.filter((d: unknown): d is number => typeof d === 'number')
-              : [],
-            color: typeof s.color === 'string' ? s.color : undefined
-          }))
-          .filter((s: { name: string; data: number[] }) => s.name && s.data.length > 0)
-        if (title && labels.length > 0 && series.length > 0) {
-          extracted.push({ title, type, labels, series })
-        }
-      }
-    } catch {
-      /* skip */
-    }
-    idx = objEnd + 1
-  }
-  return extracted.length > 0 ? extracted : null
-}
 
 const chartItems = computed<CustomModuleChartItem[] | null>(() => {
   if (props.content?.charts && props.content.charts.length > 0) {
     return props.content.charts
-  }
-  if (props.content?.rawText) {
-    const parsed = tryParseCharts(props.content.rawText)
-    if (parsed) return parsed
   }
   return null
 })

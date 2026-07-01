@@ -6,6 +6,7 @@ import { useSettingsForm } from '../composables/useSettingsForm'
 
 const { settings, update } = useSettingsForm()
 const appPaths = ref<{ userData: string; pictures: string } | null>(null)
+const isDev = import.meta.env.DEV
 
 const snipPlaceholder = computed(() => {
   const pictures = appPaths.value?.pictures
@@ -137,6 +138,25 @@ onMounted(() => {
       </div>
     </div>
 
+    <div v-if="isDev" class="section-card">
+      <div class="card-head">
+        <div class="card-title">覆盖窗口</div>
+      </div>
+
+      <div class="row">
+        <div class="label">
+          <div>
+            <div>沉浸模式</div>
+            <div class="desc">开启后，中键唤出工具面板时以全屏透明覆盖层展示；关闭后以标准窗口展示</div>
+          </div>
+        </div>
+        <AppSwitch
+          :model-value="settings.general.immersiveMode"
+          @update:model-value="update({ general: { immersiveMode: $event } })"
+        />
+      </div>
+    </div>
+
     <div class="section-card">
       <div class="card-head">
         <div class="card-title">截图</div>
@@ -194,6 +214,13 @@ onMounted(() => {
   font-size: 13px;
   color: var(--ev-c-text-2);
   flex: 1;
+
+  .desc {
+    font-size: 11px;
+    color: var(--ev-c-text-3, #999);
+    margin-top: 2px;
+    line-height: 1.5;
+  }
 }
 
 .path-row {
