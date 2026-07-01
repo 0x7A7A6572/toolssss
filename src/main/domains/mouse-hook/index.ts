@@ -188,7 +188,7 @@ function preloadOverlay(): void {
   }
 
   // 开发模式：打开 DevTools 方便调试
-  if (is.dev) overlayWindow.webContents.openDevTools({ mode: 'detach' })
+  // if (is.dev) overlayWindow.webContents.openDevTools({ mode: 'detach' })
 
   deps.loadWindow(overlayWindow, { mode: 'mouse-hook-overlay' }).catch(() => null)
 

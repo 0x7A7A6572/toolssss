@@ -236,7 +236,7 @@ app.whenReady().then(async () => {
 
   // 启动 Python 后端服务（异步，不阻塞 UI）
   startPythonServer(
-    { getSettings: () => settings, getUserDataPath: () => app.getPath('userData') },
+    { getSettings: () => settings },
     (next) => commitSettings(next)
   )
     .then((port) => {

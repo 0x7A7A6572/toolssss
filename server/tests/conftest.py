@@ -18,7 +18,7 @@ from main import create_app
 @pytest.fixture
 def client() -> TestClient:
     """FastAPI TestClient —— 无需实际启动服务器"""
-    os.environ.setdefault("FS_USER_DATA_PATH", str(server_dir / "tests" / "_data"))
+    os.environ.setdefault("FS_DATA_DIR", str(server_dir / "tests" / "_data"))
     os.environ.setdefault("FS_DEBUG", "1")
     app = create_app()
     return TestClient(app)

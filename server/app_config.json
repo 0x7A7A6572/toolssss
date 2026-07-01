@@ -2,7 +2,6 @@
   "base": {
     "port": 8710,
     "host": "127.0.0.1",
-    "user_data_path": "",
     "debug": false
   },
   "ai": {

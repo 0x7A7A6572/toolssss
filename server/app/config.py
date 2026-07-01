@@ -103,7 +103,7 @@ class SettingsPayload(BaseModel):
 
     顶层 JSON 键由 pushConfigToPython 构造，已使用 snake_case：
     - ai, agents, translate → 嵌套对象内部是 camelCase（通过子模型的 alias 处理）
-    - api_key, fun_fact, user_data_path, callback_port → snake_case，无需 alias
+    - api_key, fun_fact, callback_port → snake_case，无需 alias
     """
     model_config = {"populate_by_name": True}
 
@@ -115,7 +115,6 @@ class SettingsPayload(BaseModel):
     # 翻译
     translate: Optional[TranslateSettings] = None
     # 生命周期
-    user_data_path: Optional[str] = None
     callback_port: Optional[int] = None
 
 
@@ -130,7 +129,6 @@ class AppConfig:
 
     port: int = 8710
     host: str = "127.0.0.1"
-    user_data_path: str = ""
     debug: bool = False
 
     # Electron 推送的动态配置
@@ -147,7 +145,6 @@ class AppConfig:
         return cls(
             port=int(os.getenv("FS_PORT", "8710")),
             host=os.getenv("FS_HOST", "127.0.0.1"),
-            user_data_path=os.getenv("FS_USER_DATA_PATH", ""),
             debug=os.getenv("FS_DEBUG", "0") == "1",
         )
 
@@ -167,7 +164,5 @@ class AppConfig:
                 for key, value in payload.ai_api_keys.items()
                 if isinstance(key, str) and key.strip() and isinstance(value, str) and value.strip()
             }
-        if payload.user_data_path is not None:
-            self.user_data_path = payload.user_data_path
         if payload.callback_port is not None:
             self.callback_port = payload.callback_port

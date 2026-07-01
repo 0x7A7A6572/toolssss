@@ -2,10 +2,10 @@
 Forge Studio Python 后端服务入口
 
 启动方式：
-  python main.py --port 8710 --user-data-path "C:\\Users\\..."
+  python main.py --port 8710
   uvicorn main:create_app --factory --port 8710
 
-Electron 主进程通过子进程方式启动此服务，传递端口和用户数据目录。
+Electron 主进程通过子进程方式启动此服务，传递端口。
 """
 
 import argparse
@@ -97,7 +97,6 @@ def main():
     parser = argparse.ArgumentParser(description="Forge Studio Python 服务")
     parser.add_argument("--port", type=int, default=8710, help="监听端口（默认 8710）")
     parser.add_argument("--host", type=str, default="127.0.0.1", help="监听地址（默认 127.0.0.1）")
-    parser.add_argument("--user-data-path", type=str, default="", help="Electron userData 目录路径")
     parser.add_argument("--debug", action="store_true", help="开启调试模式")
     args = parser.parse_args()
 
@@ -108,7 +107,7 @@ def main():
 
     os.environ["FS_PORT"] = str(args.port)
     os.environ["FS_HOST"] = str(args.host)
-    os.environ["FS_USER_DATA_PATH"] = str(args.user_data_path)
+    os.environ["FS_DATA_DIR"] = str(_SERVER_DIR / "data")
     os.environ["FS_DEBUG"] = "1" if args.debug else "0"
 
     uvicorn.run(

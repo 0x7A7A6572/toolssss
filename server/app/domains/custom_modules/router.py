@@ -45,8 +45,8 @@ def _generate_id() -> str:
 def _get_module_service(request: Request) -> ModuleService:
     """从 app.state 获取 ModuleService 单例"""
     if not hasattr(request.app.state, "module_service"):
-        user_data_path = request.app.state.config.base_config.user_data_path
-        request.app.state.module_service = ModuleService(user_data_path)
+        data_dir = request.app.state.config.base_config.data_dir
+        request.app.state.module_service = ModuleService(data_dir)
     return request.app.state.module_service
 
 
@@ -140,10 +140,13 @@ async def module_stream(body: ModuleStreamRequest, request: Request):
 
     if not body.module_id:
         raise ValidationError("模块 ID 不能为空")
-    if not body.prompt:
-        raise ValidationError("提示词不能为空")
+
 
     svc = _get_module_service(request)
+    # 获取模块
+    mod = svc.get_module(body.module_id)
+    if not mod:
+        raise NotFoundError("模块不存在")
 
     stream_id = _generate_id()
     cancel_event = asyncio.Event()
@@ -154,10 +157,10 @@ async def module_stream(body: ModuleStreamRequest, request: Request):
         done_search_meta = None
         try:
             async for event in run_module_stream(
-                module_type=body.type,
-                prompt=body.prompt,
-                web_search=body.web_search,
-                enable_markdown=body.enable_markdown,
+                module_type=mod.type,
+                prompt=mod.prompt,
+                web_search=mod.web_search,
+                enable_markdown=mod.enable_markdown,
                 signal=cancel_event,
             ):
                 if cancel_event.is_set():
@@ -165,7 +168,7 @@ async def module_stream(body: ModuleStreamRequest, request: Request):
                         "event": "error",
                         "data": json.dumps({
                             "id": stream_id,
-                            "module_id": body.module_id,
+                            "module_id": mod.id,
                             "message": "已取消",
                         }, ensure_ascii=False),
                     }
@@ -178,7 +181,7 @@ async def module_stream(body: ModuleStreamRequest, request: Request):
                         "event": "searching",
                         "data": json.dumps({
                             "id": stream_id,
-                            "module_id": body.module_id,
+                            "module_id": mod.id,
                             "status": "searching",
                         }, ensure_ascii=False),
                     }
@@ -187,7 +190,7 @@ async def module_stream(body: ModuleStreamRequest, request: Request):
                         "event": "delta",
                         "data": json.dumps({
                             "id": stream_id,
-                            "module_id": body.module_id,
+                            "module_id": mod.id,
                             "delta": event["delta"],
                         }, ensure_ascii=False),
                     }
@@ -198,7 +201,7 @@ async def module_stream(body: ModuleStreamRequest, request: Request):
                         "event": "done",
                         "data": json.dumps({
                             "id": stream_id,
-                            "module_id": body.module_id,
+                            "module_id": mod.id,
                             "text": done_text,
                             "search_meta": done_search_meta,
                         }, ensure_ascii=False),
@@ -208,7 +211,7 @@ async def module_stream(body: ModuleStreamRequest, request: Request):
                         "event": "error",
                         "data": json.dumps({
                             "id": stream_id,
-                            "module_id": body.module_id,
+                            "module_id":  mod.id,
                             "message": event["message"],
                         }, ensure_ascii=False),
                     }
@@ -220,7 +223,7 @@ async def module_stream(body: ModuleStreamRequest, request: Request):
                 "event": "error",
                 "data": json.dumps({
                     "id": stream_id,
-                    "module_id": body.module_id,
+                    "module_id": mod.id,
                     "message": str(e),
                 }, ensure_ascii=False),
             }
@@ -237,10 +240,10 @@ async def module_stream(body: ModuleStreamRequest, request: Request):
                         )
                     cache = ModuleCacheUpdateRequest(
                         raw_text=done_text,
-                        text=done_text if body.type == "text" else None,
+                        text=done_text if mod.type == "text" else None,
                         search_meta=sm,
                     )
-                    svc.update_cache(body.module_id, cache)
+                    svc.update_cache( mod.id, cache)
                 except Exception:
                     logger.exception("自动保存模块缓存失败")
             _active_module_streams.pop(stream_id, None)
@@ -271,8 +274,6 @@ async def enhance(body: ModuleEnhanceRequest, request: Request):
         raise ValidationError("未配置 AI API Key")
 
     enhanced = await enhance_prompt(
-        config=config,
-        api_key=api_key,
         title=body.title,
         prompt=body.prompt,
         module_type=body.type,

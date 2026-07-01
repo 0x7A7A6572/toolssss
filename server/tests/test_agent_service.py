@@ -25,7 +25,7 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
         with TemporaryDirectory() as temp_dir:
             tmp_path = Path(temp_dir)
             service = AgentService(str(tmp_path))
-            config = AppConfig(user_data_path=str(tmp_path))
+            config = AppConfig()
             config.agents.configs = [
                 AgentConfig(
                     id="agent-1",
@@ -63,7 +63,7 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
         with TemporaryDirectory() as temp_dir:
             tmp_path = Path(temp_dir)
             service = AgentService(str(tmp_path))
-            config = AppConfig(user_data_path=str(tmp_path))
+            config = AppConfig()
             config.agents.configs = [
                 AgentConfig(
                     id="agent-1",

@@ -43,7 +43,6 @@ class AppConfig:
     def load_from_file(cls) -> "AppConfig":
         """从本地 JSON 文件加载配置，文件不存在时返回默认配置"""
         config = cls()
-        # config.base_config.user_data_path = user_data_path
 
         if not config.config_dir.exists():
             config.update_setting()

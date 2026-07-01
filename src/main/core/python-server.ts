@@ -33,7 +33,6 @@ export interface PythonEnvInfo {
 /** Python 服务管理器依赖 */
 type Deps = {
   getSettings: () => import('@shared/settings').AppSettings
-  getUserDataPath: () => string
 }
 
 // =============================================================================
@@ -133,21 +132,8 @@ function runPythonVersion(command: string): Promise<string | null> {
   })
 }
 
-// =============================================================================
-// 端口管理
-// =============================================================================
-
-/** 查找可用端口 */
-async function findAvailablePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = require('net').createServer()
-    server.listen(0, '127.0.0.1', () => {
-      const port = server.address().port
-      server.close(() => resolve(port))
-    })
-    server.on('error', reject)
-  })
-}
+/** Python 服务固定端口 */
+const PYTHON_PORT = 8710
 
 // =============================================================================
 // 回调 HTTP 服务器
@@ -320,8 +306,8 @@ export async function startPythonServer(
   console.log('[PythonServer] Python 环境:', env.version)
 
   // 查找可用端口
-  pythonPort = await findAvailablePort()
-  console.log('[PythonServer] 分配端口:', pythonPort)
+  pythonPort = PYTHON_PORT
+  console.log('[PythonServer] 端口:', pythonPort)
 
   // 启动回调服务器
   await startCallbackServer()
@@ -358,9 +344,7 @@ async function spawnPythonProcess(): Promise<boolean> {
       '--port',
       String(pythonPort),
       '--host',
-      '127.0.0.1',
-      '--user-data-path',
-      deps.getUserDataPath()
+      '127.0.0.1'
     ],
     {
       cwd: serverDir,
@@ -504,12 +488,10 @@ export async function pushConfigToPython(): Promise<void> {
 
   const http = require('http') as typeof import('http')
   const settings = deps.getSettings()
-  const userDataPath = deps.getUserDataPath()
 
   const payload = JSON.stringify({
     agents: settings.agents,
     translate: settings.translate,
-    user_data_path: userDataPath,
     callback_port: callbackPort,
   })
 

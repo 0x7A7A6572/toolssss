@@ -33,22 +33,22 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 SYSTEM_PROMPTS = {
-    "text": "你是一个知识丰富的助手。根据用户的要求输出简洁、准确的内容。可以直接输出内容。",
-    "text_md": "你是一个知识丰富的助手。根据用户的要求输出简洁、准确的内容。可以使用 Markdown 格式排版。",
+    "text": "根据用户的要求输出简洁、准确的内容。。",
+    "text_md": "根据用户的要求输出简洁、准确的内容。必须使用 Markdown 格式排版。",
     "ranking": (
-        "你是一个数据分析师。根据用户的要求输出结构化的排行榜数据，"
+        "根据用户的要求输出结构化的排行榜数据，"
         "必须只输出 JSON 格式，不要附加任何解释或标记。"
         'JSON 格式：{"rankings":[{"title":"榜单标题","items":["项目1","项目2","项目3"]}]}。'
         "如果有多个维度，可以在 rankings 数组中包含多个元素。"
     ),
     "link": (
-        "你是一个资讯编辑。根据用户的要求输出结构化的信息列表，"
+        "根据用户的要求输出结构化的信息列表，"
         "必须只输出 JSON 格式，不要附加任何解释或标记。"
         'JSON 格式：{"items":[{"title":"标题","link":"https://...","description":"简短描述"}]}。'
         "其中 link 字段必须是真实可访问的 URL，description 为可选字段。"
     ),
     "chart": (
-        "你是一个数据可视化专家。根据用户的要求输出结构化的图表数据，"
+        "根据用户的要求输出结构化的图表数据，"
         "必须只输出 JSON 格式，不要附加任何解释或标记。"
         'JSON 格式：{"charts":[{"title":"图表标题","type":"bar","labels":["标签1","标签2","标签3"],'
         '"series":[{"name":"系列名","type":"bar","data":[10,20,30]}]}]}。'
@@ -392,8 +392,8 @@ _DEFAULT_CACHES: dict[str, dict] = {
 class ModuleService:
     """模块管理服务 —— 配置持久化 + 缓存管理"""
 
-    def __init__(self, user_data_path: str) -> None:
-        self._store = ModuleStore(user_data_path)
+    def __init__(self, data_dir: str) -> None:
+        self._store = ModuleStore(data_dir)
         self._seeded = False
 
     def _seed_defaults(self) -> None:

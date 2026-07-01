@@ -12,3 +12,7 @@ __pycache__/
 *.pyo
 server/agents/
 server/.venv/
+server/data/
+
+# Build
+*.tsbuildinfo
