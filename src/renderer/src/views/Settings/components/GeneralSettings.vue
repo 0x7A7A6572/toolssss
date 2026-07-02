@@ -147,7 +147,9 @@ onMounted(() => {
         <div class="label">
           <div>
             <div>沉浸模式</div>
-            <div class="desc">开启后，中键唤出工具面板时以全屏透明覆盖层展示；关闭后以标准窗口展示</div>
+            <div class="desc">
+              开启后，中键唤出工具面板时以全屏透明覆盖层展示；关闭后以标准窗口展示
+            </div>
           </div>
         </div>
         <AppSwitch

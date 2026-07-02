@@ -7,7 +7,7 @@
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pydantic import BaseModel
 
-from app.config import RagRuntimeConfig
+# from app.configs import RagRuntimeConfig
 from app.models.agents import AgentKnowledgeDoc
 
 

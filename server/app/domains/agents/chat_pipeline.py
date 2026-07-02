@@ -12,7 +12,7 @@ from typing import AsyncIterator, Optional
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
-from app.config import AppConfig
+from app.configs.main import AppConfig
 from app.core.ai_client import create_chat_model, normalize_base_url
 from app.domains.agents.rag_engine import (
     RagContext,

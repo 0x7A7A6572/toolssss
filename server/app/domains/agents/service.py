@@ -10,7 +10,7 @@ import os
 import time
 from typing import Optional
 
-from app.config import AppConfig
+from app.configs.main import AppConfig
 from app.core.exceptions import NotFoundError, ValidationError
 from app.domains.agents.chat_pipeline import run_chat_pipeline
 from app.domains.agents.conversation_store import ConversationStore, generate_id

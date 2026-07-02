@@ -1,0 +1,21 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Electron: Dev with Debug",
+      "type": "shell",
+      "command": "npx",
+      "args": ["electron-vite", "dev", "--inspect", "5858"],
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "electron",
+        "pattern": { "regexp": "." },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "electron-vite.*ready"
+        }
+      }
+    }
+  ]
+}

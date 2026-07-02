@@ -26,14 +26,17 @@ def create_app() -> "fastapi.FastAPI":
     import os
 
     # 如果传入了 FS_DEBUG_PORT 环境变量，启动 debugpy 监听
-    _debug_port = os.environ.get("FS_DEBUG_PORT")
-    if _debug_port:
-        try:
-            import debugpy
-            debugpy.listen(("127.0.0.1", int(_debug_port)))
-            print(f"[debugpy] 监听端口 {_debug_port}，请在 VS Code 中 Attach")
-        except Exception as e:
-            print(f"[debugpy] 启动失败: {e}")
+    # _debug_port = os.environ.get("FS_DEBUG_PORT")
+    # if _debug_port:
+    #     try:
+    #         import debugpy
+    #         debugpy.listen(("127.0.0.1", int(_debug_port)))
+    #         print(f"[debugpy] 监听端口 {_debug_port}，等待 VS Code 连接...")
+    #         # 阻塞直到 VS Code attach 上来，确保断点在模块加载前生效
+    #         debugpy.wait_for_client()
+    #         print(f"[debugpy] VS Code 已连接，继续启动")
+    #     except Exception as e:
+    #         print(f"[debugpy] 启动失败: {e}")
 
     # from app.config import AppConfig
     
@@ -44,8 +47,6 @@ def create_app() -> "fastapi.FastAPI":
     from app.domains.agents.router import router as agents_router
     from app.domains.ai.router import router as ai_router
     from app.domains.custom_modules.router import router as custom_modules_router
-    from app.domains.mouse_hook.router import router as mouse_hook_router
-    from app.domains.mouse_hook.service import get_mouse_hook
     from app.domains.windows.router import router as windows_router
     from app.domains.windows.service import shutdown_windows_runtime
 
@@ -60,7 +61,6 @@ def create_app() -> "fastapi.FastAPI":
             yield
         finally:
             shutdown_windows_runtime()
-            get_mouse_hook().stop()
 
     app = FastAPI(
         title="Forge Studio Server",
@@ -82,7 +82,6 @@ def create_app() -> "fastapi.FastAPI":
     app.include_router(ai_router, prefix="/api/ai", tags=["AI 模型配置"])
     app.include_router(custom_modules_router, prefix="/api/modules", tags=["自定义模块"])
     app.include_router(windows_router, prefix="/api/windows", tags=["Windows 窗口"])
-    app.include_router(mouse_hook_router, prefix="/api/mouse-hook", tags=["鼠标钩子"])
 
     # 系统端点
     @app.get("/health")

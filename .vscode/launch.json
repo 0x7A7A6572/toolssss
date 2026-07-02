@@ -2,78 +2,48 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Attach to Python Server",
-      "type": "debugpy",
+      "name": "Electron: Full Launch",
+      "type": "node",
       "request": "attach",
-      "connect": {
-        "host": "127.0.0.1",
-        "port": 5678
-      },
-      "pathMappings": [
-        {
-          "localRoot": "${workspaceFolder}/server",
-          "remoteRoot": "${workspaceFolder}/server"
-        }
-      ],
-      "justMyCode": false
+      "port": 5858,
+      "restart": true,
+      "timeout": 30000,
+      "sourceMaps": true,
+      "outFiles": ["${workspaceFolder}/out/**/*.js"],
+      "resolveSourceMapLocations": ["${workspaceFolder}/**", "!**/node_modules/**"],
+      "preLaunchTask": "Electron: Dev with Debug"
     },
     {
-      "name": "Debug Python Server (Standalone)",
+      "name": "Electron: Attach Main",
+      "type": "node",
+      "request": "attach",
+      "port": 5858,
+      "restart": true,
+      "sourceMaps": true,
+      "outFiles": ["${workspaceFolder}/out/**/*.js"],
+      "resolveSourceMapLocations": ["${workspaceFolder}/**", "!**/node_modules/**"]
+    },
+    {
+      "name": "Python Server",
       "type": "debugpy",
       "request": "launch",
       "module": "uvicorn",
-      "args": [
-        "main:create_app",
-        "--factory",
-        "--host", "127.0.0.1",
-        "--port", "8710",
-        "--log-level", "debug"
-      ],
+      "args": ["main:create_app", "--factory", "--host", "127.0.0.1", "--port", "8710", "--reload"],
+      "jinja": true,
       "cwd": "${workspaceFolder}/server",
       "env": {
-        "FS_DEBUG": "1"
+        "FS_DEBUG": "1",
+        "PYTHONPATH": "${workspaceFolder}/server"
       },
-      "justMyCode": false
-    },
-    {
-      "name": "Debug Main Process",
-      "type": "node",
-      "request": "launch",
-      "cwd": "${workspaceRoot}",
-      "runtimeExecutable": "${workspaceRoot}/node_modules/.bin/electron-vite",
-      "windows": {
-        "runtimeExecutable": "${workspaceRoot}/node_modules/.bin/electron-vite.cmd"
-      },
-      "runtimeArgs": ["--sourcemap"],
-      "env": {
-        "REMOTE_DEBUGGING_PORT": "9222",
-        "FS_DEBUG_PORT": "5678"
-      },
-      "serverReadyAction": {
-        "pattern": "\\[debugpy\\] 监听端口 (\\d+)",
-        "action": "startDebugging",
-        "name": "Attach to Python Server"
-      }
-    },
-    {
-      "name": "Debug Renderer Process",
-      "port": 9222,
-      "request": "attach",
-      "type": "chrome",
-      "webRoot": "${workspaceFolder}/src/renderer",
-      "timeout": 60000,
-      "presentation": {
-        "hidden": true
-      }
+      "justMyCode": false,
+      "console": "integratedTerminal"
     }
   ],
   "compounds": [
     {
-      "name": "Debug All (Electron + Python)",
-      "configurations": ["Debug Main Process", "Debug Renderer Process"],
-      "presentation": {
-        "order": 1
-      }
+      "name": "Full Stack (Electron + Python)",
+      "configurations": ["Electron: Full Launch", "Python Server"],
+      "stopAll": true
     }
   ]
 }

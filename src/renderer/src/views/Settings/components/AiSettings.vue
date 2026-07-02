@@ -125,14 +125,13 @@ onMounted(() => {
         <div v-if="serviceModels.length" class="selector-group-section">
           <div class="selector-group-title">服务商模型</div>
           <div v-for="item in serviceModels" :key="item.modelId" class="selector-item">
-            <button
-              class="selector-item-main"
-              type="button"
-              @click="openEditModal(item.modelId)"
-            >
+            <button class="selector-item-main" type="button" @click="openEditModal(item.modelId)">
               <span class="selector-item-label">{{ item.name || item.modelId }}</span>
               <span class="model-type-tag" :style="getModelTypeTagStyle(item.modelType)">
-                {{ AI_MODEL_TYPE_LABELS[item.modelType as keyof typeof AI_MODEL_TYPE_LABELS] ?? item.modelType }}
+                {{
+                  AI_MODEL_TYPE_LABELS[item.modelType as keyof typeof AI_MODEL_TYPE_LABELS] ??
+                  item.modelType
+                }}
               </span>
             </button>
             <button
@@ -151,14 +150,13 @@ onMounted(() => {
         <div v-if="customModels.length" class="selector-group-section">
           <div class="selector-group-title">自定义模型</div>
           <div v-for="item in customModels" :key="item.modelId" class="selector-item">
-            <button
-              class="selector-item-main"
-              type="button"
-              @click="openEditModal(item.modelId)"
-            >
+            <button class="selector-item-main" type="button" @click="openEditModal(item.modelId)">
               <span class="selector-item-label">{{ item.name || item.modelId }}</span>
               <span class="model-type-tag" :style="getModelTypeTagStyle(item.modelType)">
-                {{ AI_MODEL_TYPE_LABELS[item.modelType as keyof typeof AI_MODEL_TYPE_LABELS] ?? item.modelType }}
+                {{
+                  AI_MODEL_TYPE_LABELS[item.modelType as keyof typeof AI_MODEL_TYPE_LABELS] ??
+                  item.modelType
+                }}
               </span>
             </button>
             <button

@@ -9,7 +9,7 @@ from typing import AsyncIterator, Optional
 
 from langchain_core.messages import BaseMessage
 
-from app.config import AppConfig
+from app.configs.main import AppConfig
 from app.core.ai_client import create_chat_model, invoke_text, stream_text
 from app.core.exceptions import AiServiceError
 

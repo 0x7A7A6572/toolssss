@@ -6,7 +6,7 @@ RAG 检索引擎 —— 从知识库向量索引中检索相关文档片段
 
 from typing import Optional
 
-from app.config import AppConfig
+from app.configs.main import AppConfig
 from app.core.embeddings import create_embeddings_model
 from app.domains.agents.kb_index_store import KbIndexStore, KnowledgeBaseIndex
 from app.domains.agents.vector_search import RankedKnowledgeChunk, rank_indexed_chunks

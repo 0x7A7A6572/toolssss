@@ -9,9 +9,10 @@
  * 对应计划文件中的 "Electron ↔ Python 生命周期" 设计。
  */
 
-import { spawn, type ChildProcess } from 'child_process'
-import { createServer, type Server } from 'http'
+import { spawn, type ChildProcess, execSync } from 'child_process'
+import { app } from 'electron'
 import { join } from 'path'
+import { platform } from 'os'
 // =============================================================================
 // 类型定义
 // =============================================================================
@@ -33,6 +34,8 @@ export interface PythonEnvInfo {
 /** Python 服务管理器依赖 */
 type Deps = {
   getSettings: () => import('@shared/settings').AppSettings
+  /** 健康检查每次尝试时回调，用于外部显示启动进度 */
+  onHealthCheckAttempt?: (attempt: number, max: number) => void
 }
 
 // =============================================================================
@@ -42,11 +45,11 @@ type Deps = {
 /** 最大重启次数 */
 const MAX_RESTART_COUNT = 3
 
-/** 健康检查轮询间隔（毫秒） */
-const HEALTH_CHECK_INTERVAL_MS = 300
+/** 健康检查尝试次数 */
+const HEALTH_CHECK_MAX_ATTEMPTS = 3
 
-/** 健康检查最大等待时间（毫秒） */
-const HEALTH_CHECK_TIMEOUT_MS = 15000
+/** 单次健康检查超时（毫秒） */
+const HEALTH_CHECK_PER_ATTEMPT_TIMEOUT_MS = 5000
 
 /** Python 关闭超时（毫秒），超时后强制 SIGKILL */
 const PYTHON_SHUTDOWN_TIMEOUT_MS = 5000
@@ -59,8 +62,6 @@ const MIN_PYTHON_VERSION = [3, 11] as const
 // =============================================================================
 
 let pythonProcess: ChildProcess | null = null
-let callbackServer: Server | null = null
-let callbackPort = 0
 let pythonPort = 0
 let status: PythonServerStatus = 'stopped'
 let restartCount = 0
@@ -136,165 +137,109 @@ function runPythonVersion(command: string): Promise<string | null> {
 const PYTHON_PORT = 8710
 
 // =============================================================================
-// 回调 HTTP 服务器
+// Python 进程管理
 // =============================================================================
 
 /**
- * 启动本地回调服务器
- * Python 通过此接口请求 Electron 写入配置
+ * 检查端口是否被占用，如果被 Python 进程占用则尝试释放
+ *
+ * 场景：VS Code 停止调试时，Electron 主进程被强制终止，
+ * 但 Python 子进程在 Windows 上不会自动退出，端口仍被占用。
+ * 启动前主动清理，避免 "端口被占用" 错误。
  */
-function startCallbackServer(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    callbackServer = createServer((req, res) => {
-      // POST /internal/config-callback —— Python 请求写入配置
-      if (req.url === '/internal/config-callback' && req.method === 'POST') {
-        let body = ''
-        req.on('data', (chunk: Buffer) => {
-          body += chunk.toString()
-        })
-        req.on('end', () => {
-          try {
-            const payload = JSON.parse(body) as {
-              action: string
-              [key: string]: unknown
-            }
-            handleConfigCallback(payload)
-            res.writeHead(200, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ status: 'ok' }))
-          } catch {
-            res.writeHead(400, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ error: '无效的请求体' }))
-          }
-        })
-        return
-      }
+async function ensurePortFree(port: number): Promise<void> {
+  const pid = findPidByPort(port)
+  if (!pid) return
 
-      // POST /internal/mouse-hook —— 鼠标钩子事件
-      if (req.url === '/internal/mouse-hook' && req.method === 'POST') {
-        let body = ''
-        req.on('data', (chunk: Buffer) => {
-          body += chunk.toString()
-        })
-        req.on('end', () => {
-          try {
-            const payload = JSON.parse(body) as { action: string; deltaY: number; startX: number; startY: number }
-            if (onMouseHookEvent) {
-              onMouseHookEvent(payload)
-            }
-            res.writeHead(200, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ status: 'ok' }))
-          } catch {
-            res.writeHead(400, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ error: '无效的请求体' }))
-          }
-        })
-        return
-      }
+  const isPython = isProcessPython(pid)
+  console.log(
+    `[PythonServer] 端口 ${port} 被占用 (PID: ${pid}, ${isPython ? '疑似上次残留的 Python 进程' : '未知进程'})`
+  )
 
-      res.writeHead(404)
-      res.end()
-    })
+  if (!isPython) {
+    // 不是 Python 进程，不强制终止，让正常的端口冲突错误处理
+    console.warn(`[PythonServer] 端口 ${port} 被非 Python 进程占用，跳过清理`)
+    return
+  }
 
-    callbackServer.listen(0, '127.0.0.1', () => {
-      const addr = callbackServer!.address()
-      if (addr && typeof addr === 'object') {
-        callbackPort = addr.port
-      }
-      resolve(callbackPort)
-    })
-    callbackServer.on('error', reject)
-  })
-}
-
-/** 处理 Python 发来的配置回调 */
-function handleConfigCallback(payload: { action: string; [key: string]: unknown }): void {
-  if (!deps) return
-
-  const settings = deps.getSettings()
-
-  switch (payload.action) {
-    case 'updateKnowledgeBase': {
-      const kbId = typeof payload.kbId === 'string' ? payload.kbId : ''
-      const fields = payload.fields as Record<string, unknown> | undefined
-      if (!kbId || !fields) break
-
-      const updatedBases = settings.agents.knowledgeBases.map((item) =>
-        item.id === kbId ? { ...item, ...fields } : item
-      )
-
-      // 通过 commitSettings 写入（由外部注入）
-      if (onConfigWrite) {
-        onConfigWrite({
-          agents: {
-            ...settings.agents,
-            knowledgeBases: updatedBases
-          }
-        } as Partial<import('@shared/settings').AppSettings>)
-      }
-      break
+  try {
+    console.log(`[PythonServer] 正在终止残留进程 PID: ${pid}...`)
+    if (platform() === 'win32') {
+      execSync(`taskkill /F /PID ${pid}`, { windowsHide: true })
+    } else {
+      process.kill(pid, 'SIGKILL')
     }
-    case 'updateAgentConfig': {
-      const agentId = typeof payload.agentId === 'string' ? payload.agentId : ''
-      const fields = payload.fields as Record<string, unknown> | undefined
-      if (!agentId || !fields) break
-
-      const updatedConfigs = settings.agents.configs.map((item) =>
-        item.id === agentId ? { ...item, ...fields } : item
-      )
-
-      if (onConfigWrite) {
-        onConfigWrite({
-          agents: {
-            ...settings.agents,
-            configs: updatedConfigs
-          }
-        } as Partial<import('@shared/settings').AppSettings>)
-      }
-      break
-    }
+    // 等待端口释放
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    console.log(`[PythonServer] 残留进程已终止，端口 ${port} 已释放`)
+  } catch (err) {
+    console.warn(`[PythonServer] 终止残留进程失败:`, err)
   }
 }
 
-/** 配置写入回调（由外部注入 commitSettings） */
-let onConfigWrite: ((patch: Partial<import('@shared/settings').AppSettings>) => void) | null = null
+/** 查找占用指定端口的进程 PID */
+function findPidByPort(port: number): number | null {
+  try {
+    if (platform() === 'win32') {
+      const output = execSync(`netstat -ano | findstr :${port}`, {
+        windowsHide: true,
+        encoding: 'utf-8'
+      })
+      // netstat 输出格式: TCP    127.0.0.1:8710    0.0.0.0:0    LISTENING    12345
+      const lines = output.trim().split(/\r?\n/)
+      for (const line of lines) {
+        // 只匹配 LISTENING 状态的行
+        if (!line.includes('LISTENING')) continue
+        const parts = line.trim().split(/\s+/)
+        const pidStr = parts[parts.length - 1]
+        const pid = parseInt(pidStr, 10)
+        if (!isNaN(pid) && pid > 0) return pid
+      }
+      return null
+    }
+    // macOS / Linux
+    try {
+      const output = execSync(`lsof -ti tcp:${port}`, { encoding: 'utf-8' })
+      const pid = parseInt(output.trim(), 10)
+      return isNaN(pid) ? null : pid
+    } catch {
+      return null
+    }
+  } catch {
+    return null
+  }
+}
 
-/** 鼠标钩子事件回调（由外部注入） */
-let onMouseHookEvent: ((event: { action: string; deltaY: number; startX: number; startY: number }) => void) | null = null
-
-// =============================================================================
-// Python 进程管理
-// =============================================================================
+/** 检查进程是否为 Python */
+function isProcessPython(pid: number): boolean {
+  try {
+    if (platform() === 'win32') {
+      const output = execSync(`tasklist /FI "PID eq ${pid}" /FO CSV /NH`, {
+        windowsHide: true,
+        encoding: 'utf-8'
+      })
+      const lowered = output.toLowerCase()
+      return lowered.includes('python') || lowered.includes('python3')
+    }
+    try {
+      const output = execSync(`ps -p ${pid} -o comm=`, { encoding: 'utf-8' })
+      const name = output.trim().toLowerCase()
+      return name.includes('python')
+    } catch {
+      return false
+    }
+  } catch {
+    return false
+  }
+}
 
 /**
  * 启动 Python 后端服务
  *
  * @returns Python 服务的监听端口，失败返回 0
  */
-export async function startPythonServer(
-  dependencies: Deps,
-  commitSettings: (next: import('@shared/settings').AppSettings) => void
-): Promise<number> {
+export async function startPythonServer(dependencies: Deps): Promise<number> {
   deps = dependencies
-
-  // 注入配置写入回调（保持设置权威源在 Electron）
-  onConfigWrite = (patch) => {
-    const current = deps!.getSettings()
-    // 使用 structuredClone + 浅合并，保持类型安全
-    const merged: import('@shared/settings').AppSettings = {
-      ...current,
-      ...patch,
-      agents: patch.agents
-        ? {
-            ...current.agents,
-            ...patch.agents,
-            knowledgeBases: patch.agents.knowledgeBases ?? current.agents.knowledgeBases,
-            configs: patch.agents.configs ?? current.agents.configs,
-            rag: patch.agents.rag ?? current.agents.rag
-          }
-        : current.agents
-    }
-    commitSettings(merged)
-  }
 
   // 检测环境
   const env = await detectPythonEnv()
@@ -305,13 +250,10 @@ export async function startPythonServer(
   }
   console.log('[PythonServer] Python 环境:', env.version)
 
-  // 查找可用端口
+  // 端口固定使用 8710，启动前清理可能残留的进程（调试停止时子进程可能未被终止）
   pythonPort = PYTHON_PORT
+  await ensurePortFree(pythonPort)
   console.log('[PythonServer] 端口:', pythonPort)
-
-  // 启动回调服务器
-  await startCallbackServer()
-  console.log('[PythonServer] 回调端口:', callbackPort)
 
   // 启动 Python 进程
   const started = await spawnPythonProcess()
@@ -321,8 +263,6 @@ export async function startPythonServer(
   }
 
   status = 'running'
-  // 推送初始配置
-  await pushConfigToPython()
   restartCount = 0
   return pythonPort
 }
@@ -337,26 +277,22 @@ async function spawnPythonProcess(): Promise<boolean> {
 
   status = 'starting'
 
-  pythonProcess = spawn(
-    pythonCmd,
-    [
-      'main.py',
-      '--port',
-      String(pythonPort),
-      '--host',
-      '127.0.0.1'
-    ],
-    {
-      cwd: serverDir,
-      windowsHide: true,
-      env: {
-        ...process.env,
-        FS_CALLBACK_PORT: String(callbackPort),
-        PYTHONUNBUFFERED: '1',
-        PYTHONIOENCODING: 'utf-8'
-      }
+  const args = ['main.py', '--port', String(pythonPort), '--host', '127.0.0.1']
+
+  // 开发模式下开启 debug（/docs、debug 日志）
+  if (!app.isPackaged) {
+    args.push('--debug')
+  }
+
+  pythonProcess = spawn(pythonCmd, args, {
+    cwd: serverDir,
+    windowsHide: true,
+    env: {
+      ...process.env,
+      PYTHONUNBUFFERED: '1',
+      PYTHONIOENCODING: 'utf-8'
     }
-  )
+  })
 
   pythonProcess.stdout?.on('data', (data: Buffer) => {
     const text = data.toString().trim()
@@ -385,7 +321,7 @@ async function spawnPythonProcess(): Promise<boolean> {
   })
 
   // 等待健康检查通过
-  return await waitForHealth()
+  return await waitForHealth(deps?.onHealthCheckAttempt)
 }
 
 /** 查找可用的 Python 命令 */
@@ -401,132 +337,47 @@ async function findPythonCommand(): Promise<string | null> {
   return null
 }
 
-/** 轮询等待健康检查通过 */
-function waitForHealth(): Promise<boolean> {
+/** 尝试 3 次健康检查，每次 5 秒超时，总共最多 15 秒 */
+function waitForHealth(onAttempt?: (attempt: number, max: number) => void): Promise<boolean> {
   return new Promise((resolve) => {
-    const startTime = Date.now()
     const http = require('http') as typeof import('http')
-    let settled = false
-    let retryTimer: ReturnType<typeof setTimeout> | null = null
-    let activeRequest: import('http').ClientRequest | null = null
+    let attempts = 0
 
-    function finish(result: boolean): void {
-      if (settled) return
-      settled = true
-      if (retryTimer) {
-        clearTimeout(retryTimer)
-        retryTimer = null
-      }
-      if (activeRequest) {
-        activeRequest.setTimeout(0)
-        activeRequest = null
-      }
-      resolve(result)
-    }
+    function tryOnce(): void {
+      attempts++
+      onAttempt?.(attempts, HEALTH_CHECK_MAX_ATTEMPTS)
+      console.log(`[PythonServer] 健康检查 (${attempts}/${HEALTH_CHECK_MAX_ATTEMPTS})...`)
 
-    function scheduleNextCheck(): void {
-      if (settled || retryTimer) return
-      retryTimer = setTimeout(() => {
-        retryTimer = null
-        check()
-      }, HEALTH_CHECK_INTERVAL_MS)
-    }
-
-    function check(): void {
-      if (settled) return
-      const elapsedMs = Date.now() - startTime
-      if (elapsedMs > HEALTH_CHECK_TIMEOUT_MS) {
-        console.error('[PythonServer] 健康检查超时')
-        finish(false)
-        return
-      }
-
-      activeRequest = http.get(
+      const req = http.get(
         `http://127.0.0.1:${pythonPort}/health`,
-        { timeout: 2000 },
+        { timeout: HEALTH_CHECK_PER_ATTEMPT_TIMEOUT_MS },
         (res: import('http').IncomingMessage) => {
-          activeRequest = null
           res.resume()
-          if (settled) return
           if (res.statusCode === 200) {
-            finish(true)
+            console.log('[PythonServer] 健康检查通过')
+            resolve(true)
             return
           }
-          scheduleNextCheck()
+          nextOrFail()
         }
       )
-      activeRequest.on('error', () => {
-        activeRequest = null
-        if (settled) return
-        scheduleNextCheck()
-      })
-      activeRequest.on('timeout', () => {
-        activeRequest?.destroy()
-        activeRequest = null
-        if (settled) return
-        scheduleNextCheck()
+      req.on('error', () => nextOrFail())
+      req.on('timeout', () => {
+        req.destroy()
+        nextOrFail()
       })
     }
 
-    // 首次检查延迟 500ms，给 Python 启动时间
-    retryTimer = setTimeout(() => {
-      retryTimer = null
-      check()
-    }, 500)
-  })
-}
-
-// =============================================================================
-// 配置同步
-// =============================================================================
-
-/**
- * 向 Python 服务推送最新配置
- */
-export async function pushConfigToPython(): Promise<void> {
-  if ((status !== 'running' && status !== 'starting') || !pythonPort || !deps) return
-
-  const http = require('http') as typeof import('http')
-  const settings = deps.getSettings()
-
-  const payload = JSON.stringify({
-    agents: settings.agents,
-    translate: settings.translate,
-    callback_port: callbackPort,
-  })
-
-  return new Promise((resolve) => {
-    const req = http.request(
-      {
-        hostname: '127.0.0.1',
-        port: pythonPort,
-        path: '/config',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(payload)
-        },
-        timeout: 5000
-      },
-      (res: import('http').IncomingMessage) => {
-        if (res.statusCode === 200) {
-          console.log('[PythonServer] 配置已推送')
-        } else {
-          console.error('[PythonServer] 配置推送失败, status:', res.statusCode)
-        }
-        resolve()
+    function nextOrFail(): void {
+      if (attempts >= HEALTH_CHECK_MAX_ATTEMPTS) {
+        console.error('[PythonServer] 健康检查超时，已达最大尝试次数')
+        resolve(false)
+        return
       }
-    )
-    req.on('error', (err: Error) => {
-      console.error('[PythonServer] 配置推送错误:', err.message)
-      resolve()
-    })
-    req.on('timeout', () => {
-      req.destroy()
-      resolve()
-    })
-    req.write(payload)
-    req.end()
+      setTimeout(tryOnce, HEALTH_CHECK_PER_ATTEMPT_TIMEOUT_MS)
+    }
+
+    tryOnce()
   })
 }
 
@@ -553,7 +404,6 @@ function scheduleRestart(): void {
     console.log('[PythonServer] 尝试重启...')
     await spawnPythonProcess()
     if (status === 'running') {
-      await pushConfigToPython()
       restartCount = 0
     }
   }, delay)
@@ -571,14 +421,6 @@ export async function stopPythonServer(): Promise<void> {
   if (restartTimer) {
     clearTimeout(restartTimer)
     restartTimer = null
-  }
-
-  // 关闭回调服务器
-  if (callbackServer) {
-    await new Promise<void>((resolve) => {
-      callbackServer!.close(() => resolve())
-    })
-    callbackServer = null
   }
 
   // 优雅关闭 Python 进程
@@ -635,21 +477,9 @@ export function getPythonPort(): number {
   return pythonPort
 }
 
-/** 获取 Electron 回调服务器端口（供 main 进程 domain 使用） */
-export function getCallbackPort(): number {
-  return callbackPort
-}
-
 /** 获取 Python 服务运行状态 */
 export function getPythonServerStatus(): PythonServerStatus {
   return status
-}
-
-/** 注册鼠标钩子事件回调 */
-export function setMouseHookCallback(
-  cb: ((event: { action: string; deltaY: number; startX: number; startY: number }) => void) | null
-): void {
-  onMouseHookEvent = cb
 }
 
 // =============================================================================

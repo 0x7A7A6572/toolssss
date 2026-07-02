@@ -12,7 +12,6 @@ from typing import AsyncIterator, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-# from app.config import AppConfig
 from app.configs.main import get_config
 from app.core.ai_client import create_chat_model
 from app.core.exceptions import NotFoundError
