@@ -2,8 +2,8 @@
 模块持久化存储
 
 存储路径：
-  {userDataPath}/custom-modules/modules/{id}.json  — 模块配置
-  {userDataPath}/custom-modules/cache/{id}.json    — 模块缓存
+  {data_dir}/custom-modules/modules/{id}.json  — 模块配置
+  {data_dir}/custom-modules/cache/{id}.json    — 模块缓存
 
 参考 agents/conversation_store.py 的 JSON 文件读写模式。
 """

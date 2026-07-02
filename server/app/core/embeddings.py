@@ -10,7 +10,7 @@ from typing import Optional
 
 from langchain_openai import OpenAIEmbeddings
 
-# from app.config import AiSettings
+from app.configs.ai import AiConfig as AiSettings
 from app.core.ai_client import normalize_base_url
 from app.core.exceptions import AiServiceError
 

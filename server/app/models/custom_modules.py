@@ -65,7 +65,7 @@ ModuleType = Literal["text", "ranking", "link", "chart"]
 
 
 class CustomModuleConfig(BaseModel):
-    """模块配置（持久化到 {userDataPath}/custom-modules/modules/{id}.json）"""
+    """模块配置（持久化到 {data_dir}/custom-modules/modules/{id}.json）"""
     id: str
     name: str
     type: ModuleType = "text"
@@ -79,7 +79,7 @@ class CustomModuleConfig(BaseModel):
 
 
 class CustomModuleCache(BaseModel):
-    """模块缓存内容（持久化到 {userDataPath}/custom-modules/cache/{id}.json）"""
+    """模块缓存内容（持久化到 {data_dir}/custom-modules/cache/{id}.json）"""
     text: Optional[str] = None
     rankings: Optional[list[dict]] = None
     links: Optional[list[dict]] = None

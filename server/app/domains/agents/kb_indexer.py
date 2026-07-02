@@ -7,7 +7,7 @@
 import logging
 import time
 
-# from app.configs.main import RagRuntimeConfig
+from app.configs.ai import AiConfig as RagRuntimeConfig
 from app.core.embeddings import create_embeddings_model, format_embedding_error
 from app.domains.agents.kb_chunker import chunk_knowledge_document
 from app.domains.agents.kb_index_store import IndexedKnowledgeChunk, KbIndexStore, KnowledgeBaseIndex

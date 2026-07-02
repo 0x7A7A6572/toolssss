@@ -12,7 +12,6 @@ from typing import AsyncIterator, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.configs.main import get_config
 from app.core.ai_client import create_chat_model
 from app.core.exceptions import NotFoundError
 from app.domains.custom_modules.module_store import ModuleStore, generate_id, _now_ms
@@ -79,6 +78,9 @@ SEARCH_EXTRACT_SYSTEM = (
 )
 
 
+
+
+
 # =============================================================================
 # 服务函数
 # =============================================================================
@@ -109,18 +111,16 @@ async def run_module_stream(
     - {"type": "error", "message": str}
     """
 
-    config = get_config().ai_config
     try:
         final_prompt = prompt
         search_meta: Optional[SearchMeta] = None
 
-        # 1. 可选的 Web 搜索（通过 MCP 子进程）
+        # 1. 可选的 Web 搜索
         if web_search:
             yield {"type": "searching", "status": "searching"}
             try:
-                from app.domains.custom_modules.search import run_mcp_search
+                from app.core.tools.web_search import search as do_search
 
-                search_cmd = config.ai.search_mcp_command
                 objective = prompt.replace("```", "").strip()[:200] or prompt[:200]
 
                 # 从 prompt 中提取 3-5 个搜索关键词
@@ -129,11 +129,9 @@ async def run_module_stream(
                 if not search_queries:
                     search_queries = [objective]
 
-                mcp_result = await run_mcp_search(
-                    command=search_cmd,
+                mcp_result = await do_search(
                     objective=objective,
                     search_queries=search_queries,
-                    signal=signal,
                 )
 
                 if mcp_result["text"]:
